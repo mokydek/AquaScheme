@@ -24,16 +24,66 @@ interface Props {
   networkLines: FeatureCollection
   networkJunctions: FeatureCollection
   fittings: FeatureCollection
+  problems: FeatureCollection
+  pressureByBuilding: Record<string, { pressureM: number; ok: boolean; requiredPressureM: number | null }>
+  hasResults: boolean
   onAddBuilding: (x: number, y: number) => Promise<void>
   onMoveSource: (x: number, y: number) => Promise<void>
   onDeleteBuilding: (id: string) => Promise<void>
 }
+
+const VELOCITY_COLOR: maplibregl.ExpressionSpecification = [
+  'interpolate',
+  ['linear'],
+  ['coalesce', ['get', 'velocity'], 0],
+  0,
+  '#b7bfcc',
+  0.7,
+  '#9bb0ea',
+  1.5,
+  '#0033cc',
+  2.5,
+  '#001a66',
+]
+
+const PRESSURE_COLOR: maplibregl.ExpressionSpecification = [
+  'interpolate',
+  ['linear'],
+  ['coalesce', ['get', 'pressure'], 0],
+  0,
+  '#e2e7f9',
+  30,
+  '#7189e2',
+  60,
+  '#0033cc',
+]
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 const MODES: Mode[] = ['view', 'addBuilding', 'moveSource']
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+function num(value: unknown): string {
+  const n = Number(value)
+  return Number.isFinite(n) ? n.toFixed(2) : String(value ?? '')
+}
+
+/** Build a compact key/value block for a map popup. */
+function kvBlock(rows: Array<[string, string]>): HTMLDivElement {
+  const block = document.createElement('div')
+  block.className = 'map-popup-kv'
+  for (const [key, value] of rows) {
+    const k = document.createElement('span')
+    k.className = 'map-popup-k'
+    k.textContent = key
+    const v = document.createElement('span')
+    v.className = 'map-popup-v'
+    v.textContent = value
+    block.append(k, v)
+  }
+  return block
 }
 
 /** Axis aligned rectangle around a local point, in geographic coordinates. */
@@ -61,6 +111,9 @@ export function ProjectMap({
   networkLines,
   networkJunctions,
   fittings,
+  problems,
+  pressureByBuilding,
+  hasResults,
   onAddBuilding,
   onMoveSource,
   onDeleteBuilding,
@@ -78,11 +131,22 @@ export function ProjectMap({
   // Keep the latest callbacks and popup labels visible to map handlers.
   const callbacksRef = useRef({ onAddBuilding, onMoveSource, onDeleteBuilding })
   callbacksRef.current = { onAddBuilding, onMoveSource, onDeleteBuilding }
-  const labelsRef = useRef({ floors: '', residents: '', remove: '' })
+  const labelsRef = useRef<Record<string, string>>({})
   labelsRef.current = {
     floors: t('project.map.floors'),
     residents: t('project.map.residents'),
     remove: t('project.map.delete'),
+    pressure: t('project.map.pop.pressure'),
+    required: t('project.map.pop.required'),
+    head: t('project.map.pop.head'),
+    elevation: t('project.map.pop.elevation'),
+    diameter: t('project.map.pop.diameter'),
+    length: t('project.map.pop.length'),
+    flow: t('project.map.pop.flow'),
+    velocity: t('project.map.pop.velocity'),
+    headloss: t('project.map.pop.headloss'),
+    well: t('project.map.pop.well'),
+    fittings: t('project.map.pop.fittings'),
   }
 
   useEffect(() => {
@@ -156,6 +220,7 @@ export function ProjectMap({
       })
       map.addSource('net-lines', { type: 'geojson', data: EMPTY_FC })
       map.addSource('net-junctions', { type: 'geojson', data: EMPTY_FC })
+      map.addSource('problems', { type: 'geojson', data: EMPTY_FC })
       map.addLayer({
         id: 'pipes-service',
         type: 'line',
@@ -174,6 +239,13 @@ export function ProjectMap({
         source: 'net-lines',
         filter: ['!=', ['get', 'kind'], 'service'],
         paint: { 'line-color': '#0033cc', 'line-width': 2 },
+      })
+      // Transparent wide hit target so thin pipes are clickable.
+      map.addLayer({
+        id: 'pipes-hit',
+        type: 'line',
+        source: 'net-lines',
+        paint: { 'line-color': '#000000', 'line-width': 12, 'line-opacity': 0 },
       })
       map.addLayer({
         id: 'net-junctions',
@@ -239,6 +311,18 @@ export function ProjectMap({
         source: 'source-point',
         paint: { 'fill-color': '#0033cc' },
       })
+      // Problem nodes: a bold ring drawn on top of everything.
+      map.addLayer({
+        id: 'problem-rings',
+        type: 'circle',
+        source: 'problems',
+        paint: {
+          'circle-radius': 9,
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-stroke-color': '#0a0a0a',
+          'circle-stroke-width': 1.6,
+        },
+      })
       setReady(true)
     })
 
@@ -262,13 +346,25 @@ export function ProjectMap({
         title: string
         floors: number
         residents: number
+        pressure?: number | null
+        required?: number | null
       }
       const labels = labelsRef.current
       const content = document.createElement('div')
       content.className = 'map-popup'
-      const info = document.createElement('p')
-      const title = props.title ? `${props.title} · ` : ''
-      info.textContent = `${title}${labels.floors}: ${props.floors} · ${labels.residents}: ${props.residents}`
+      const title = document.createElement('p')
+      title.className = 'map-popup-title'
+      title.textContent = props.title || '—'
+      content.append(title)
+      const rows: Array<[string, string]> = [
+        [labels.floors, String(props.floors)],
+        [labels.residents, String(props.residents)],
+      ]
+      if (props.pressure !== undefined && props.pressure !== null) {
+        const required = props.required != null ? ` / ${Number(props.required).toFixed(0)}` : ''
+        rows.push([labels.pressure, `${Number(props.pressure).toFixed(1)}${required}`])
+      }
+      content.append(kvBlock(rows))
       const remove = document.createElement('button')
       remove.type = 'button'
       remove.className = 'link-btn'
@@ -281,15 +377,66 @@ export function ProjectMap({
         popup.remove()
         void callbacksRef.current.onDeleteBuilding(props.id)
       })
-      content.append(info, remove)
+      content.append(remove)
     })
 
-    map.on('mouseenter', 'buildings-fill', () => {
-      if (modeRef.current === 'view') map.getCanvas().style.cursor = 'pointer'
+    map.on('click', 'pipes-hit', (e) => {
+      if (modeRef.current !== 'view') return
+      const feature = e.features?.[0]
+      if (!feature) return
+      const p = feature.properties as Record<string, unknown>
+      const labels = labelsRef.current
+      const content = document.createElement('div')
+      content.className = 'map-popup'
+      const title = document.createElement('p')
+      title.className = 'map-popup-title'
+      title.textContent = String(p.title ?? p.engineId ?? '')
+      content.append(title)
+      const rows: Array<[string, string]> = [[labels.length, `${num(p.length)} м`]]
+      if (p.diameter != null) rows.push([labels.diameter, `${num(p.diameter)}`])
+      if (p.flow != null) rows.push([labels.flow, `${num(p.flow)}`])
+      if (p.velocity != null) rows.push([labels.velocity, `${num(p.velocity)}`])
+      if (p.headloss != null) rows.push([labels.headloss, `${num(p.headloss)}`])
+      content.append(kvBlock(rows))
+      new maplibregl.Popup({ closeButton: false, maxWidth: '280px' })
+        .setLngLat(e.lngLat)
+        .setDOMContent(content)
+        .addTo(map)
     })
-    map.on('mouseleave', 'buildings-fill', () => {
-      if (modeRef.current === 'view') map.getCanvas().style.cursor = ''
+
+    map.on('click', 'net-junctions', (e) => {
+      if (modeRef.current !== 'view') return
+      const feature = e.features?.[0]
+      if (!feature) return
+      const p = feature.properties as Record<string, unknown>
+      const labels = labelsRef.current
+      const content = document.createElement('div')
+      content.className = 'map-popup'
+      const title = document.createElement('p')
+      title.className = 'map-popup-title'
+      const well = p.well ? `${p.well} · ` : ''
+      title.textContent = `${well}${p.label ?? ''}`
+      content.append(title)
+      const rows: Array<[string, string]> = []
+      if (p.elevation != null) rows.push([labels.elevation, num(p.elevation)])
+      if (p.head != null) rows.push([labels.head, num(p.head)])
+      if (p.pressure != null) rows.push([labels.pressure, num(p.pressure)])
+      if (p.marks) rows.push([labels.fittings, String(p.marks)])
+      if (rows.length > 0) content.append(kvBlock(rows))
+      new maplibregl.Popup({ closeButton: false, maxWidth: '280px' })
+        .setLngLat(e.lngLat)
+        .setDOMContent(content)
+        .addTo(map)
     })
+
+    for (const layer of ['buildings-fill', 'pipes-hit', 'net-junctions']) {
+      map.on('mouseenter', layer, () => {
+        if (modeRef.current === 'view') map.getCanvas().style.cursor = 'pointer'
+      })
+      map.on('mouseleave', layer, () => {
+        if (modeRef.current === 'view') map.getCanvas().style.cursor = ''
+      })
+    }
 
     mapRef.current = map
     return () => {
@@ -344,31 +491,38 @@ export function ProjectMap({
     if (!map || !ready) return
     const buildingsFc: FeatureCollection = {
       type: 'FeatureCollection',
-      features: buildings.map((b) =>
-        rectFeature(b.x, b.y, 7, 5, {
+      features: buildings.map((b) => {
+        const p = pressureByBuilding[b.id]
+        return rectFeature(b.x, b.y, 7, 5, {
           id: b.id,
           title: b.label ?? '',
           floors: b.floors,
           residents: b.residents ?? 0,
-        }),
-      ),
+          pressure: p ? p.pressureM : null,
+          required: p ? p.requiredPressureM : null,
+        })
+      }),
     }
     ;(map.getSource('buildings') as maplibregl.GeoJSONSource).setData(buildingsFc)
+    map.setPaintProperty('buildings-fill', 'fill-color', hasResults ? PRESSURE_COLOR : '#ffffff')
+    map.setPaintProperty('buildings-fill', 'fill-opacity', hasResults ? 0.85 : 0.9)
     const sourceFc: FeatureCollection = {
       type: 'FeatureCollection',
       features: source ? [rectFeature(source.x, source.y, 8, 8, {})] : [],
     }
     ;(map.getSource('source-point') as maplibregl.GeoJSONSource).setData(sourceFc)
-  }, [ready, buildings, source])
+  }, [ready, buildings, source, pressureByBuilding, hasResults])
 
-  // Traced network: pipes and junction nodes.
+  // Traced network: pipes, junction nodes, fittings and problem rings.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
     ;(map.getSource('net-lines') as maplibregl.GeoJSONSource).setData(networkLines)
     ;(map.getSource('net-junctions') as maplibregl.GeoJSONSource).setData(networkJunctions)
     ;(map.getSource('fittings') as maplibregl.GeoJSONSource).setData(fittings)
-  }, [ready, networkLines, networkJunctions, fittings])
+    ;(map.getSource('problems') as maplibregl.GeoJSONSource).setData(problems)
+    map.setPaintProperty('pipes-main', 'line-color', hasResults ? VELOCITY_COLOR : '#0033cc')
+  }, [ready, networkLines, networkJunctions, fittings, problems, hasResults])
 
   return (
     <section className="panel">
@@ -391,6 +545,22 @@ export function ProjectMap({
         ))}
         <span className="hint map-hint">{t(`project.map.hint.${mode}`)}</span>
       </div>
+      {hasResults && (
+        <div className="map-legend">
+          <span className="legend-item">
+            <span className="legend-swatch legend-velocity" />
+            {t('project.map.legend.velocity')}
+          </span>
+          <span className="legend-item">
+            <span className="legend-swatch legend-pressure" />
+            {t('project.map.legend.pressure')}
+          </span>
+          <span className="legend-item">
+            <span className="legend-ring" />
+            {t('project.map.legend.problem')}
+          </span>
+        </div>
+      )}
       <div ref={containerRef} className="map-container" />
     </section>
   )

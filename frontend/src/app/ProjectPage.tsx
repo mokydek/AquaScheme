@@ -17,6 +17,7 @@ import type { SourceData } from './project/ProjectMap'
 import { TraceSection } from './project/TraceSection'
 import { HydraulicsSection } from './project/HydraulicsSection'
 import { EquipmentSection } from './project/EquipmentSection'
+import { ResultsSection } from './project/ResultsSection'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
 interface ProjectInfo {
@@ -190,6 +191,7 @@ export function ProjectPage() {
 
   const networkLines = useMemo<FeatureCollection>(() => {
     const nodeById = new Map(nodes.map((n) => [n.id, n]))
+    const labelOf = (nid: string) => nodeById.get(nid)?.label ?? nid
     const features: Feature[] = []
     for (const pipe of pipes) {
       const a = nodeById.get(pipe.from_node)
@@ -197,7 +199,16 @@ export function ProjectPage() {
       if (!a || !b) continue
       features.push({
         type: 'Feature',
-        properties: { kind: pipe.meta?.kind ?? 'ring' },
+        properties: {
+          kind: pipe.meta?.kind ?? 'ring',
+          engineId: pipe.meta?.engineId ?? pipe.id,
+          title: `${labelOf(pipe.from_node)}–${labelOf(pipe.to_node)}`,
+          length: pipe.length_m ?? 0,
+          diameter: pipe.diameter_mm ?? null,
+          flow: pipe.meta?.flowLps != null ? Math.abs(pipe.meta.flowLps) : null,
+          velocity: pipe.meta?.velocityMs ?? null,
+          headloss: pipe.meta?.headlossM ?? null,
+        },
         geometry: {
           type: 'LineString',
           coordinates: [localToLonLat(a.x, a.y), localToLonLat(b.x, b.y)],
@@ -207,11 +218,45 @@ export function ProjectPage() {
     return { type: 'FeatureCollection', features }
   }, [nodes, pipes])
 
-  const networkJunctions = useMemo<FeatureCollection>(
-    () => ({
+  const networkJunctions = useMemo<FeatureCollection>(() => {
+    const FITTING_MARK: Record<string, string> = { hydrant: 'ПГ', valve: 'З', airValve: 'В', washout: 'ВП' }
+    return {
       type: 'FeatureCollection',
       features: nodes
         .filter((n) => n.kind !== 'source' && !n.building_id)
+        .map((n) => ({
+          type: 'Feature',
+          properties: {
+            label: n.label ?? '',
+            elevation: n.ground_elevation ?? null,
+            head: n.meta?.headM ?? null,
+            pressure: n.meta?.pressureM ?? null,
+            well: n.meta?.wellLabel ?? '',
+            marks: (n.meta?.fittings ?? []).map((f) => FITTING_MARK[f] ?? f).join(' '),
+          },
+          geometry: { type: 'Point', coordinates: localToLonLat(n.x, n.y) },
+        })),
+    }
+  }, [nodes])
+
+  const pressureByBuilding = useMemo(() => {
+    const map: Record<string, { pressureM: number; ok: boolean; requiredPressureM: number | null }> = {}
+    for (const n of nodes) {
+      if (!n.building_id || n.meta?.pressureM == null) continue
+      map[n.building_id] = {
+        pressureM: n.meta.pressureM,
+        ok: n.meta.ok ?? true,
+        requiredPressureM: n.meta.requiredPressureM ?? null,
+      }
+    }
+    return map
+  }, [nodes])
+
+  const problemsGeo = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: nodes
+        .filter((n) => n.meta?.ok === false)
         .map((n) => ({
           type: 'Feature',
           properties: { label: n.label ?? '' },
@@ -220,6 +265,8 @@ export function ProjectPage() {
     }),
     [nodes],
   )
+
+  const hasResults = pipes.some((p) => p.meta?.velocityMs != null)
 
   const FITTING_MARKS: Record<string, string> = { hydrant: 'ПГ', valve: 'З', airValve: 'В', washout: 'ВП' }
   const fittingsGeo = useMemo<FeatureCollection>(
@@ -293,6 +340,9 @@ export function ProjectPage() {
             networkLines={networkLines}
             networkJunctions={networkJunctions}
             fittings={fittingsGeo}
+            problems={problemsGeo}
+            pressureByBuilding={pressureByBuilding}
+            hasResults={hasResults}
             onAddBuilding={addBuildingAt}
             onMoveSource={moveSourceTo}
             onDeleteBuilding={deleteBuilding}
@@ -316,6 +366,7 @@ export function ProjectPage() {
             lastSummary={lastRun}
             onChanged={load}
           />
+          <ResultsSection lastRun={lastRun} nodes={nodes} buildings={buildings} />
           <EquipmentSection
             projectId={project.id}
             geologyDataset={datasets.geology}
