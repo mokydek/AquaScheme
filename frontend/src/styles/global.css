@@ -1,13 +1,23 @@
-/* Design tokens. Full design system arrives in Phase 3; light theme only. */
+/*
+ * AquaScheme design tokens and base styles.
+ * Rules: light theme only, monochrome plus one deep blue accent,
+ * sharp corners, 1px hairlines, drafting aesthetics.
+ */
+
 :root {
   --bg: #ffffff;
+  --surface: #fafafa;
   --ink: #0a0a0a;
-  --ink-soft: #4a4a4a;
+  --ink-soft: #555555;
+  --ink-faint: #8a8a8a;
   --line: #e6e6e6;
+  --line-strong: #0a0a0a;
   --accent: #0033cc;
+  --accent-tint: #eef1fb;
   --radius: 0px;
-  --font-ui: system-ui, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", Consolas, monospace;
+  --font-ui: 'Geologica', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', Consolas, monospace;
+  --container: 1120px;
 }
 
 * {
@@ -27,8 +37,17 @@ body {
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
 }
 
 a {
@@ -42,4 +61,231 @@ select,
 textarea {
   font: inherit;
   border-radius: var(--radius);
+}
+
+::selection {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------
+ * Layout primitives
+ * ---------------------------------------------------------- */
+
+.container {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.site {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.site-main {
+  flex: 1;
+}
+
+/* Header */
+
+.header {
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.header-inner {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.wordmark-mark {
+  width: 9px;
+  height: 9px;
+  background: var(--accent);
+  flex: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 14px;
+}
+
+.nav a:hover {
+  color: var(--accent);
+}
+
+.lang-group {
+  display: flex;
+  gap: 2px;
+  border-left: 1px solid var(--line);
+  padding-left: 14px;
+}
+
+.lang-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 4px 6px;
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.lang-btn:hover {
+  color: var(--ink);
+}
+
+.lang-btn.active {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Footer */
+
+.footer {
+  border-top: 1px solid var(--line);
+}
+
+.footer-inner {
+  padding: 20px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------
+ * Typography helpers
+ * ---------------------------------------------------------- */
+
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------
+ * Controls
+ * ---------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: var(--ink);
+  color: #ffffff;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--accent);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+}
+
+.btn-ghost:hover {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+/* ------------------------------------------------------------
+ * Pages
+ * ---------------------------------------------------------- */
+
+.hero {
+  padding: 96px 0;
+}
+
+.hero h1 {
+  margin-top: 20px;
+  max-width: 720px;
+  font-size: clamp(34px, 6vw, 52px);
+  letter-spacing: -0.015em;
+}
+
+.hero .lead {
+  margin-top: 24px;
+  max-width: 620px;
+  font-size: 16px;
+  color: var(--ink-soft);
+}
+
+.hero-cta {
+  margin-top: 40px;
+}
+
+.page {
+  padding: 48px 0;
+}
+
+.page h1 {
+  font-size: 24px;
+}
+
+.page .lead {
+  margin-top: 12px;
+  color: var(--ink-soft);
+}
+
+.status-block {
+  margin-top: 32px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.status-line {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.status-line + .status-line {
+  margin-top: 8px;
+}
+
+.status-line.ok {
+  color: var(--accent);
 }
