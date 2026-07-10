@@ -5,7 +5,7 @@
 | # | Фаза | Статус |
 | --- | --- | --- |
 | 1 | Инициализация: Vite + React + TypeScript, структура папок, роутинг | DONE |
-| 2 | Supabase: схема БД, Auth, Storage, RLS | — |
+| 2 | Supabase: схема БД, Auth, Storage, RLS | DONE |
 | 3 | UI-каркас: дизайн-токены, шрифты, layout, навигация, i18n (RU/KZ/EN) | — |
 | 4 | Landing page | — |
 | 5 | Auth: Sign in / Sign up (Email + Password) | — |
@@ -23,3 +23,4 @@
 ## Журнал
 
 - 2026-07-10 — Фаза 1 выполнена: монорепозиторий (npm workspaces), фронтенд Vite + React + TS с lazy-роутингом, пакет engine с первым unit-тестом, git init и первый пуш в GitHub.
+- 2026-07-10 — Фаза 2 выполнена: миграция 0001_init.sql (8 таблиц, RLS, триггеры, Storage-бакеты), supabase-js во фронтенде, индикатор соединения с БД на /app. Миграцию применяет пользователь через SQL Editor.
