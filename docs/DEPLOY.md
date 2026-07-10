@@ -11,7 +11,8 @@
 - `installCommand: npm install` — ставит зависимости в корне (так находится
   внутренний пакет `@aquascheme/engine`);
 - `buildCommand: npm run build` — собирает фронтенд;
-- `outputDirectory: frontend/dist` — готовый сайт лежит здесь;
+- `outputDirectory: dist` — Vite складывает готовый сайт в корневой `dist`
+  (`frontend/vite.config.ts`, `build.outDir: ../dist`), куда Vercel и смотрит;
 - `rewrites` — все адреса (`/app`, `/auth`, ...) отдают `index.html`, иначе при
   обновлении страницы по прямой ссылке был бы 404.
 
@@ -46,10 +47,8 @@
 
 - **Root Directory** должен остаться пустым (корень репозитория), НЕ `frontend`.
   Иначе не установится внутренний пакет `@aquascheme/engine` из соседней папки.
-- **Output Directory**: значение берётся из `vercel.json` (`frontend/dist`).
-  Если Vercel всё же жалуется `No Output Directory named "dist" found`, откройте
-  Settings → Build and Deployment → Output Directory, включите Override и впишите
-  `frontend/dist`, затем Redeploy.
+- **Output Directory**: сборка кладётся в корневой `dist`. Если в дашборде
+  включён Override для Output Directory, укажите `dist` (или выключите Override).
 
 ## Если сборка упала
 
