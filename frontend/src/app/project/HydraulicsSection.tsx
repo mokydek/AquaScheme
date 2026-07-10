@@ -1,13 +1,12 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
 import type { SizingResult } from '@aquascheme/engine/sizing'
-import type { HydraulicsWorkerResponse } from '../../workers/hydraulics.worker'
-import { supabase } from '../../shared/supabase'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
+import { persistSizing, runSizingInWorker } from '../../shared/pipeline'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
 
@@ -35,126 +34,33 @@ export function HydraulicsSection({
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'done' | 'error' | null>(null)
-  const workerRef = useRef<Worker | null>(null)
 
   const canRun = pipes.length > 0 && buildings.length > 0 && source !== null
 
-  const persist = async (result: SizingResult, norms: NormativeParams, availableHeadM: number) => {
-    const pipeByEngineId = new Map(pipes.map((p) => [p.meta?.engineId ?? '', p]))
-    const pipeUpdates = result.pipes.flatMap((rp) => {
-      const row = pipeByEngineId.get(rp.id)
-      if (!row) return []
-      return [
-        {
-          id: row.id,
-          project_id: projectId,
-          from_node: row.from_node,
-          to_node: row.to_node,
-          length_m: row.length_m,
-          diameter_mm: rp.nominalMm,
-          material: 'ПЭ100 SDR17',
-          meta: {
-            ...row.meta,
-            kind: rp.kind,
-            engineId: rp.id,
-            flowLps: rp.flowLps,
-            velocityMs: rp.velocityMs,
-            headlossM: rp.headlossM,
-            internalMm: rp.internalMm,
-          },
-        },
-      ]
-    })
-    const pipesUpsert = await supabase.from('pipes').upsert(pipeUpdates)
-    if (pipesUpsert.error) throw pipesUpsert.error
-
-    const nodeByLabel = new Map(nodes.map((n) => [n.label ?? '', n]))
-    const nodeUpdates = result.nodes.flatMap((rn) => {
-      const row = nodeByLabel.get(rn.id)
-      if (!row) return []
-      return [
-        {
-          id: row.id,
-          project_id: projectId,
-          kind: row.kind,
-          label: row.label,
-          x: row.x,
-          y: row.y,
-          ground_elevation: row.ground_elevation,
-          building_id: row.building_id,
-          meta: {
-            ...row.meta,
-            pressureM: rn.pressureM,
-            headM: rn.headM,
-            requiredPressureM: rn.requiredPressureM ?? null,
-            ok: rn.ok,
-          },
-        },
-      ]
-    })
-    const nodesUpsert = await supabase.from('nodes').upsert(nodeUpdates)
-    if (nodesUpsert.error) throw nodesUpsert.error
-
-    const runInsert = await supabase.from('calc_runs').insert({
-      project_id: projectId,
-      status: 'done',
-      params: { ...norms, availableHeadM },
-      summary: result as unknown as Record<string, unknown>,
-      finished_at: new Date().toISOString(),
-    })
-    if (runInsert.error) throw runInsert.error
-  }
-
-  const run = () => {
+  const run = async () => {
     if (!canRun || busy || !source) return
     setBusy(true)
     setNotice(null)
-
-    const network = networkFromRows(nodes, pipes)
-
     const norms: NormativeParams = {
       ...NORMATIVE_DEFAULTS,
       ...((normsDataset?.content ?? {}) as Partial<NormativeParams>),
     }
     const availableHeadM = source.availableHead ?? 45
-
-    workerRef.current?.terminate()
-    const worker = new Worker(new URL('../../workers/hydraulics.worker.ts', import.meta.url), {
-      type: 'module',
-    })
-    workerRef.current = worker
-    worker.onmessage = (event: MessageEvent<HydraulicsWorkerResponse>) => {
-      worker.terminate()
-      if (workerRef.current === worker) workerRef.current = null
-      const response = event.data
-      if (!response.ok) {
-        setNotice('error')
-        setBusy(false)
-        return
-      }
-      persist(response.result, norms, availableHeadM)
-        .then(async () => {
-          setNotice('done')
-          await onChanged()
-        })
-        .catch(() => setNotice('error'))
-        .finally(() => setBusy(false))
-    }
-    worker.onerror = () => {
-      worker.terminate()
+    try {
+      const result: SizingResult = await runSizingInWorker({
+        network: networkFromRows(nodes, pipes),
+        buildings: buildings.map((b) => ({ id: b.id, floors: b.floors, residents: b.residents ?? 0 })),
+        availableHeadM,
+        norms,
+      })
+      await persistSizing(projectId, result, nodes, pipes, norms, availableHeadM, new Date().toISOString())
+      setNotice('done')
+      await onChanged()
+    } catch {
       setNotice('error')
+    } finally {
       setBusy(false)
     }
-    worker.postMessage({
-      network,
-      buildings: buildings.map((b) => ({
-        id: b.id,
-        floors: b.floors,
-        residents: b.residents ?? 0,
-      })),
-      availableHeadM,
-      norms,
-    })
   }
 
   const summary = lastSummary
@@ -174,7 +80,7 @@ export function HydraulicsSection({
           type="button"
           className="btn btn-sm"
           disabled={!canRun || busy}
-          onClick={run}
+          onClick={() => void run()}
         >
           {t('project.hydraulics.run')}
         </button>

@@ -1,13 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { placeFittings, selectMaterials } from '@aquascheme/engine'
 import type { FittingsPlan, GeologyInput, MaterialSelection, SeismicInput } from '@aquascheme/engine'
 import type { SizingResult } from '@aquascheme/engine/sizing'
-import { supabase } from '../../shared/supabase'
-import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
+import { persistEquipment } from '../../shared/pipeline'
 import { Panel } from './Panel'
 
 interface EquipmentContent {
@@ -52,65 +50,23 @@ export function EquipmentSection({
     if (!canRun || busy) return
     setBusy(true)
     setNotice(null)
-    try {
-      const geology = geologyDataset?.content as GeologyInput
-      const seismicity = seismicDataset?.content as SeismicInput
-      const network = networkFromRows(nodes, pipes)
-
-      const elevations = network.nodes.map((n) => n.groundElevation)
-      const fallbackPressure =
-        45 + (elevations.length > 0 ? Math.max(...elevations) - Math.min(...elevations) : 0)
-      const maxPressureM = lastRun
-        ? Math.max(...lastRun.nodes.filter((n) => n.kind !== 'source').map((n) => n.pressureM))
-        : fallbackPressure
-
-      const material = selectMaterials({ geology, seismicity, maxPressureM })
-      const fittings = placeFittings(network)
-
-      await saveDataset(projectId, 'equipment', { material, fittings } as unknown as Record<string, unknown>)
-
-      // Mark fittings and well labels on the nodes for the map and exports.
-      const fittingsByEngineId = new Map(fittings.items.map((i) => [i.nodeId, i.types]))
-      const wellByEngineId = new Map(fittings.wells.map((w) => [w.nodeId, w.label]))
-      const updates = nodes.flatMap((row) => {
-        const engineId = row.label ?? row.id
-        const types = fittingsByEngineId.get(engineId)
-        const well = wellByEngineId.get(engineId)
-        if (!types && !well && !row.meta?.fittings) return []
-        return [
-          {
-            id: row.id,
-            project_id: projectId,
-            kind: row.kind,
-            label: row.label,
-            x: row.x,
-            y: row.y,
-            ground_elevation: row.ground_elevation,
-            building_id: row.building_id,
-            meta: { ...row.meta, fittings: types ?? [], wellLabel: well ?? null },
-          },
-        ]
-      })
-      if (updates.length > 0) {
-        const upsert = await supabase.from('nodes').upsert(updates)
-        if (upsert.error) throw upsert.error
-      }
-
-      const materialLabel = `${MATERIAL_LABELS[material.primary]} PN${material.pnBar}`
-      const pipesUpdate = await supabase
-        .from('pipes')
-        .update({ material: materialLabel })
-        .eq('project_id', projectId)
-      if (pipesUpdate.error) throw pipesUpdate.error
-
+    const geology = geologyDataset?.content as GeologyInput
+    const seismicity = seismicDataset?.content as SeismicInput
+    const result = await persistEquipment(
+      projectId,
+      networkFromRows(nodes, pipes),
+      nodes,
+      geology,
+      seismicity,
+      lastRun,
+    )
+    if (result.ok) {
       setNotice('done')
       await onChanged()
-    } catch (error) {
-      const code = (error as { code?: string } | null)?.code
-      setNotice(code === '23514' ? 'migrationNeeded' : 'error')
-    } finally {
-      setBusy(false)
+    } else {
+      setNotice(result.reason)
     }
+    setBusy(false)
   }
 
   const content = (equipmentDataset?.content ?? null) as EquipmentContent | null

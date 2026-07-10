@@ -8,6 +8,8 @@ import { supabase } from '../shared/supabase'
 import { saveDataset } from '../shared/datasets'
 import type { BuildingRow, DatasetKind, DatasetRow } from '../shared/datasets'
 import type { NodeRow, PipeRow } from '../shared/network'
+import { runFullPipeline } from '../shared/pipeline'
+import type { GeologyInput, SeismicInput, SurveyPoint as EngineSurveyPoint } from '@aquascheme/engine'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
 import { GeologySection, NormsSection, SeismicSection, SourceSection } from './project/FormSections'
@@ -38,6 +40,8 @@ export function ProjectPage() {
   const [state, setState] = useState<'loading' | 'ready' | 'notFound'>('loading')
   const [demoBusy, setDemoBusy] = useState(false)
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
+  const [pipelineBusy, setPipelineBusy] = useState(false)
+  const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -88,8 +92,8 @@ export function ProjectPage() {
     void load()
   }, [load])
 
-  const loadDemo = async () => {
-    if (!id || demoBusy) return
+  const loadDemo = async (): Promise<boolean> => {
+    if (!id || demoBusy) return false
     setDemoBusy(true)
     setDemoNotice(null)
     try {
@@ -125,11 +129,69 @@ export function ProjectPage() {
       await saveDataset(id, 'normative', { ...NORMATIVE_DEFAULTS })
       setDemoNotice('demoDone')
       await load()
+      return true
     } catch {
       setDemoNotice('demoError')
+      return false
     } finally {
       setDemoBusy(false)
     }
+  }
+
+  const runPipeline = async (): Promise<void> => {
+    if (!id || pipelineBusy) return
+    setPipelineBusy(true)
+    setPipelineNotice(null)
+    try {
+      const [buildingsRes, datasetsRes] = await Promise.all([
+        supabase.from('buildings').select('id,x,y,floors,residents').eq('project_id', id),
+        supabase.from('datasets').select('kind,content').eq('project_id', id),
+      ])
+      const freshBuildings = buildingsRes.data ?? []
+      const ds: Partial<Record<DatasetKind, { content: unknown }>> = {}
+      for (const row of (datasetsRes.data ?? []) as Array<{ kind: DatasetKind; content: unknown }>) {
+        ds[row.kind] = { content: row.content }
+      }
+      const source = ds.source?.content as SourceData | undefined
+      const geology = ds.geology?.content as GeologyInput | undefined
+      const seismicity = ds.seismic?.content as SeismicInput | undefined
+      if (freshBuildings.length === 0 || !source || !geology || !seismicity) {
+        setPipelineNotice('needData')
+        return
+      }
+      const norms = {
+        ...NORMATIVE_DEFAULTS,
+        ...((ds.normative?.content ?? {}) as Partial<typeof NORMATIVE_DEFAULTS>),
+      }
+      const surveyPoints = (ds.topography?.content as { points?: EngineSurveyPoint[] } | undefined)?.points ?? []
+      const result = await runFullPipeline({
+        projectId: id,
+        buildings: freshBuildings.map((b) => ({
+          id: b.id,
+          x: b.x,
+          y: b.y,
+          floors: b.floors,
+          residents: b.residents ?? 0,
+        })),
+        source: { x: source.x, y: source.y, availableHead: source.availableHead ?? 45 },
+        surveyPoints,
+        norms,
+        geology,
+        seismicity,
+        isoTimestamp: new Date().toISOString(),
+      })
+      setPipelineNotice(result.ok ? 'done' : result.reason)
+      await load()
+    } catch {
+      setPipelineNotice('error')
+    } finally {
+      setPipelineBusy(false)
+    }
+  }
+
+  const demoAndRun = async (): Promise<void> => {
+    const ok = await loadDemo()
+    if (ok) await runPipeline()
   }
 
   const topoPoints = useMemo<SurveyPoint[]>(() => {
@@ -319,18 +381,35 @@ export function ProjectPage() {
           <div className="project-head-actions">
             <button
               type="button"
+              className="btn btn-sm"
+              disabled={demoBusy || pipelineBusy}
+              onClick={() => void demoAndRun()}
+            >
+              {pipelineBusy || demoBusy ? t('project.pipeline.running') : t('project.pipeline.demoRun')}
+            </button>
+            <button
+              type="button"
               className="btn btn-ghost btn-sm"
-              disabled={demoBusy}
+              disabled={demoBusy || pipelineBusy}
+              onClick={() => void runPipeline()}
+            >
+              {t('project.pipeline.run')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={demoBusy || pipelineBusy}
               onClick={() => void loadDemo()}
             >
               {t('project.demo')}
             </button>
           </div>
         </div>
-        <p className="hint">{t('project.demoHint')}</p>
-        {demoNotice && (
-          <p className={`notice ${demoNotice === 'demoDone' ? 'info' : 'error'}`}>
-            {t(`project.${demoNotice}`)}
+        <p className="hint">{t('project.pipeline.hint')}</p>
+        {demoNotice === 'demoError' && <p className="notice error">{t('project.demoError')}</p>}
+        {pipelineNotice && (
+          <p className={`notice ${pipelineNotice === 'done' ? 'info' : 'error'}`}>
+            {t(`project.pipeline.${pipelineNotice}`)}
           </p>
         )}
         <div className="panels">
