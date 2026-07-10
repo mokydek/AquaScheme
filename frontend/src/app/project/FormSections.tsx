@@ -316,6 +316,7 @@ export function NormsSection(props: {
   const fields: Array<{ key: keyof typeof NORMATIVE_DEFAULTS; label: string }> = [
     { key: 'perCapitaDemandLpd', label: 'perCapita' },
     { key: 'dayMaxCoefficient', label: 'kDayMax' },
+    { key: 'alphaMax', label: 'alphaMax' },
     { key: 'fireFlowLps', label: 'fireFlow' },
     { key: 'minFreeHeadBaseM', label: 'minHead' },
     { key: 'freeHeadPerFloorM', label: 'perFloor' },

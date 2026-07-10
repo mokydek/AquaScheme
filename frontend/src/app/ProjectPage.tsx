@@ -9,6 +9,7 @@ import type { BuildingRow, DatasetKind, DatasetRow } from '../shared/datasets'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
 import { GeologySection, NormsSection, SeismicSection, SourceSection } from './project/FormSections'
+import { DemandSection } from './project/DemandSection'
 import { ProjectMap } from './project/ProjectMap'
 import type { SourceData } from './project/ProjectMap'
 
@@ -217,6 +218,7 @@ export function ProjectPage() {
           <GeologySection projectId={project.id} dataset={datasets.geology} onSaved={load} />
           <SeismicSection projectId={project.id} dataset={datasets.seismic} onSaved={load} />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />
+          <DemandSection buildings={buildings} normsDataset={datasets.normative} />
         </div>
       </div>
     </section>

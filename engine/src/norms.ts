@@ -23,6 +23,11 @@ export interface NormativeParams {
   perCapitaDemandLpd: number
   /** Daily unevenness coefficient K_day.max. */
   dayMaxCoefficient: number
+  /**
+   * Alpha max: hourly unevenness factor reflecting the level of building
+   * services, 1.2..1.4 (SNiP 2.04.02-84* clause 2.2). K_hour.max = alpha * beta.
+   */
+  alphaMax: number
   /** Fire fighting design flow, L/s. */
   fireFlowLps: number
   /** Minimum free head for a one storey building, m. */
@@ -36,6 +41,7 @@ export interface NormativeParams {
 export const NORMATIVE_DEFAULTS: NormativeParams = {
   perCapitaDemandLpd: 200,
   dayMaxCoefficient: 1.2,
+  alphaMax: 1.3,
   fireFlowLps: 15,
   minFreeHeadBaseM: 10,
   freeHeadPerFloorM: 4,

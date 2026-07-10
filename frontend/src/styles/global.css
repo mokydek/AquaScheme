@@ -765,6 +765,35 @@ textarea {
   accent-color: var(--accent);
 }
 
+/* Key value list */
+
+.kv-list {
+  margin-top: 16px;
+  border-bottom: 1px solid var(--line);
+  max-width: 560px;
+}
+
+.kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.kv-label {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.kv-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* Map */
 
 .map-toolbar {

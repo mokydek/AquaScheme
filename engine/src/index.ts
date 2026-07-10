@@ -6,6 +6,7 @@ export * from './csv'
 export * from './topography'
 export * from './buildings'
 export * from './norms'
+export * from './demand'
 export * from './demo'
 export * from './geo'
 // Note: ./terrain is exported as the subpath @aquascheme/engine/terrain only,
