@@ -1,6 +1,23 @@
 import { supabase } from './supabase'
 import type { TracedNetwork } from '@aquascheme/engine'
 
+export interface NodeMeta {
+  engineKind?: string
+  pressureM?: number
+  headM?: number
+  requiredPressureM?: number | null
+  ok?: boolean
+}
+
+export interface PipeMeta {
+  kind?: string
+  engineId?: string
+  flowLps?: number
+  velocityMs?: number
+  headlossM?: number
+  internalMm?: number
+}
+
 export interface NodeRow {
   id: string
   kind: string
@@ -9,7 +26,7 @@ export interface NodeRow {
   y: number
   ground_elevation: number | null
   building_id: string | null
-  meta: { engineKind?: string } | null
+  meta: NodeMeta | null
 }
 
 export interface PipeRow {
@@ -19,7 +36,7 @@ export interface PipeRow {
   length_m: number | null
   diameter_mm: number | null
   material: string | null
-  meta: { kind?: string; engineId?: string } | null
+  meta: PipeMeta | null
 }
 
 /** Replace the project network with a freshly traced one. */

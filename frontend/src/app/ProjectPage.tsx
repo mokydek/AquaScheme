@@ -15,6 +15,8 @@ import { DemandSection } from './project/DemandSection'
 import { ProjectMap } from './project/ProjectMap'
 import type { SourceData } from './project/ProjectMap'
 import { TraceSection } from './project/TraceSection'
+import { HydraulicsSection } from './project/HydraulicsSection'
+import type { SizingResult } from '@aquascheme/engine/sizing'
 
 interface ProjectInfo {
   id: string
@@ -29,13 +31,14 @@ export function ProjectPage() {
   const [buildings, setBuildings] = useState<BuildingRow[]>([])
   const [nodes, setNodes] = useState<NodeRow[]>([])
   const [pipes, setPipes] = useState<PipeRow[]>([])
+  const [lastRun, setLastRun] = useState<SizingResult | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'notFound'>('loading')
   const [demoBusy, setDemoBusy] = useState(false)
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
-    const [projectRes, datasetsRes, buildingsRes, nodesRes, pipesRes] = await Promise.all([
+    const [projectRes, datasetsRes, buildingsRes, nodesRes, pipesRes, runRes] = await Promise.all([
       supabase.from('projects').select('id,name').eq('id', id).maybeSingle(),
       supabase.from('datasets').select('*').eq('project_id', id),
       supabase
@@ -53,6 +56,13 @@ export function ProjectPage() {
         .select('id,from_node,to_node,length_m,diameter_mm,material,meta')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
+      supabase
+        .from('calc_runs')
+        .select('summary')
+        .eq('project_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ])
     if (!projectRes.data) {
       setState('notFound')
@@ -67,6 +77,7 @@ export function ProjectPage() {
     setBuildings(buildingsRes.data ?? [])
     setNodes((nodesRes.data ?? []) as NodeRow[])
     setPipes((pipesRes.data ?? []) as PipeRow[])
+    setLastRun((runRes.data?.summary ?? null) as SizingResult | null)
     setState('ready')
   }, [id])
 
@@ -271,6 +282,16 @@ export function ProjectPage() {
             points={topoPoints}
             nodes={nodes}
             pipes={pipes}
+            onChanged={load}
+          />
+          <HydraulicsSection
+            projectId={project.id}
+            buildings={buildings}
+            source={sourceData}
+            normsDataset={datasets.normative}
+            nodes={nodes}
+            pipes={pipes}
+            lastSummary={lastRun}
             onChanged={load}
           />
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />

@@ -13,6 +13,14 @@
     "./terrain": {
       "types": "./src/terrain.ts",
       "default": "./src/terrain.ts"
+    },
+    "./hydraulics": {
+      "types": "./src/hydraulics.ts",
+      "default": "./src/hydraulics.ts"
+    },
+    "./sizing": {
+      "types": "./src/sizing.ts",
+      "default": "./src/sizing.ts"
     }
   },
   "scripts": {
@@ -20,7 +28,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@turf/turf": "^7.2.0"
+    "@turf/turf": "^7.2.0",
+    "epanet-js": "^0.9.0"
   },
   "devDependencies": {
     "typescript": "~5.8.0",
