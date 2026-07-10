@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { createDemoDataset, NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import type { SurveyPoint } from '@aquascheme/engine'
 import { supabase } from '../shared/supabase'
 import { saveDataset } from '../shared/datasets'
 import type { BuildingRow, DatasetKind, DatasetRow } from '../shared/datasets'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
 import { GeologySection, NormsSection, SeismicSection, SourceSection } from './project/FormSections'
+import { ProjectMap } from './project/ProjectMap'
+import type { SourceData } from './project/ProjectMap'
 
 interface ProjectInfo {
   id: string
@@ -97,6 +100,64 @@ export function ProjectPage() {
     }
   }
 
+  const topoPoints = useMemo<SurveyPoint[]>(() => {
+    const content = datasets.topography?.content as { points?: SurveyPoint[] } | null | undefined
+    return content?.points ?? []
+  }, [datasets.topography])
+
+  const sourceData = (datasets.source?.content ?? null) as SourceData | null
+
+  const nearestZ = useCallback(
+    (x: number, y: number): number | undefined => {
+      let best: SurveyPoint | undefined
+      let bestDist = Number.POSITIVE_INFINITY
+      for (const p of topoPoints) {
+        const d = (p.x - x) ** 2 + (p.y - y) ** 2
+        if (d < bestDist) {
+          bestDist = d
+          best = p
+        }
+      }
+      return best?.z
+    },
+    [topoPoints],
+  )
+
+  const addBuildingAt = useCallback(
+    async (x: number, y: number) => {
+      if (!id) return
+      await supabase.from('buildings').insert({
+        project_id: id,
+        label: `Д${buildings.length + 1}`,
+        x,
+        y,
+        floors: 2,
+        residents: 32,
+      })
+      await load()
+    },
+    [id, buildings.length, load],
+  )
+
+  const moveSourceTo = useCallback(
+    async (x: number, y: number) => {
+      if (!id) return
+      const current = (datasets.source?.content ?? { availableHead: 45 }) as SourceData
+      const groundElevation = nearestZ(x, y) ?? current.groundElevation ?? 0
+      await saveDataset(id, 'source', { ...current, x, y, groundElevation })
+      await load()
+    },
+    [id, datasets.source, nearestZ, load],
+  )
+
+  const deleteBuilding = useCallback(
+    async (buildingId: string) => {
+      await supabase.from('buildings').delete().eq('id', buildingId)
+      await load()
+    },
+    [load],
+  )
+
   if (state === 'loading') return null
 
   if (state === 'notFound' || !project) {
@@ -142,6 +203,14 @@ export function ProjectPage() {
           </p>
         )}
         <div className="panels">
+          <ProjectMap
+            points={topoPoints}
+            buildings={buildings}
+            source={sourceData}
+            onAddBuilding={addBuildingAt}
+            onMoveSource={moveSourceTo}
+            onDeleteBuilding={deleteBuilding}
+          />
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
           <BuildingsSection projectId={project.id} buildings={buildings} onChanged={load} />
           <SourceSection projectId={project.id} dataset={datasets.source} onSaved={load} />

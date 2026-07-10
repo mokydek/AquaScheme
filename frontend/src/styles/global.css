@@ -765,6 +765,52 @@ textarea {
   accent-color: var(--accent);
 }
 
+/* Map */
+
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.map-hint {
+  margin-top: 0;
+  margin-left: 8px;
+}
+
+.map-container {
+  height: 480px;
+}
+
+.btn-ghost.active {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.maplibregl-popup-content {
+  border-radius: 0;
+  border: 1px solid var(--ink);
+  box-shadow: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.map-popup p {
+  margin-bottom: 8px;
+}
+
+.maplibregl-ctrl-group {
+  border-radius: 0;
+}
+
+.maplibregl-ctrl-group button {
+  border-radius: 0;
+}
+
 /* ------------------------------------------------------------
  * Pages
  * ---------------------------------------------------------- */

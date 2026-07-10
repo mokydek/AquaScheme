@@ -9,11 +9,18 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./terrain": {
+      "types": "./src/terrain.ts",
+      "default": "./src/terrain.ts"
     }
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@turf/turf": "^7.2.0"
   },
   "devDependencies": {
     "typescript": "~5.8.0",

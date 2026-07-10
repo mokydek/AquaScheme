@@ -152,6 +152,20 @@ export const en = {
         empty: 'No data',
         default: 'Defaults',
       },
+      map: {
+        title: 'Map',
+        view: 'View',
+        addBuilding: 'Add building',
+        moveSource: 'Move source',
+        hint: {
+          view: 'Click a building to see its parameters',
+          addBuilding: 'Click the map to place a building',
+          moveSource: 'Click the map to move the source',
+        },
+        floors: 'Storeys',
+        residents: 'Residents',
+        delete: 'Delete',
+      },
       topo: {
         title: 'Survey',
         hint: 'CSV with X, Y, Z columns or GeoJSON with points. Delimiters: comma, semicolon or tab. Decimal comma is accepted',
