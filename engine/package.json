@@ -21,6 +21,10 @@
     "./sizing": {
       "types": "./src/sizing.ts",
       "default": "./src/sizing.ts"
+    },
+    "./dxf": {
+      "types": "./src/dxf.ts",
+      "default": "./src/dxf.ts"
     }
   },
   "scripts": {
@@ -28,6 +32,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tarikjabiri/dxf": "^2.8.9",
     "@turf/turf": "^7.2.0",
     "epanet-js": "^0.9.0"
   },

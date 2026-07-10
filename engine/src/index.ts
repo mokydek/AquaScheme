@@ -10,7 +10,12 @@ export * from './demand'
 export * from './trace'
 export * from './equipment'
 export * from './recommendations'
+export * from './exportdata'
+export * from './specification'
+export * from './note'
 export * from './demo'
+// Note: ./dxf is a subpath export only (it pulls in @tarikjabiri/dxf), so the
+// DXF library stays out of bundles that do not generate drawings.
 export * from './geo'
 // Note: ./terrain is exported as the subpath @aquascheme/engine/terrain only,
 // so that turf.js stays out of the main frontend bundle (it is worker only).

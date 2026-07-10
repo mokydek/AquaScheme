@@ -18,6 +18,7 @@ import { TraceSection } from './project/TraceSection'
 import { HydraulicsSection } from './project/HydraulicsSection'
 import { EquipmentSection } from './project/EquipmentSection'
 import { ResultsSection } from './project/ResultsSection'
+import { ExportSection } from './project/ExportSection'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
 interface ProjectInfo {
@@ -367,6 +368,15 @@ export function ProjectPage() {
             onChanged={load}
           />
           <ResultsSection lastRun={lastRun} nodes={nodes} buildings={buildings} />
+          <ExportSection
+            projectId={project.id}
+            projectName={project.name}
+            buildings={buildings}
+            nodes={nodes}
+            pipes={pipes}
+            datasets={datasets}
+            lastRun={lastRun}
+          />
           <EquipmentSection
             projectId={project.id}
             geologyDataset={datasets.geology}

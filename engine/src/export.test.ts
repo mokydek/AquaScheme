@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest'
+import { createDemoDataset } from './demo'
+import { computeNetworkDemand } from './demand'
+import { placeFittings, selectMaterials } from './equipment'
+import { NORMATIVE_DEFAULTS } from './norms'
+import { sizeNetwork } from './sizing'
+import { traceNetwork } from './trace'
+import { buildNetworkDxf } from './dxf'
+import { buildSpecification, specificationToCsv } from './specification'
+import { buildNoteDoc } from './note'
+import type { ExportInput } from './exportdata'
+
+async function demoExportInput(): Promise<ExportInput> {
+  const demo = createDemoDataset()
+  const buildings = demo.buildings.map((b, i) => ({
+    id: `bld-${i}`,
+    label: b.label,
+    x: b.x,
+    y: b.y,
+    floors: b.floors,
+    residents: b.residents,
+  }))
+  const network = traceNetwork(
+    buildings.map((b) => ({ id: b.id, x: b.x, y: b.y })),
+    demo.source,
+    demo.surveyPoints,
+  )
+  const sizing = await sizeNetwork({
+    network,
+    buildings: buildings.map((b) => ({ id: b.id, floors: b.floors, residents: b.residents })),
+    availableHeadM: demo.source.availableHead,
+  })
+  const demand = computeNetworkDemand(buildings.map((b) => ({ id: b.id, residents: b.residents })))
+  const maxPressure = Math.max(
+    ...sizing.nodes.filter((n) => n.kind !== 'source').map((n) => n.pressureM),
+  )
+  const material = selectMaterials({
+    geology: demo.geology,
+    seismicity: demo.seismicity,
+    maxPressureM: maxPressure,
+  })
+  const fittings = placeFittings(network)
+  return {
+    projectName: 'Демо микрорайон',
+    dateIso: '2026-07-11',
+    source: {
+      x: demo.source.x,
+      y: demo.source.y,
+      groundElevation: demo.source.groundElevation,
+      availableHead: demo.source.availableHead,
+    },
+    buildings,
+    network,
+    sizing,
+    demand,
+    material,
+    fittings,
+    norms: NORMATIVE_DEFAULTS,
+    geology: demo.geology,
+    seismicity: demo.seismicity,
+    surveyPoints: demo.surveyPoints,
+  }
+}
+
+describe('DXF export', () => {
+  it('produces a valid DXF with GOST layers and network entities', async () => {
+    const input = await demoExportInput()
+    const dxf = buildNetworkDxf(input)
+
+    expect(dxf).toContain('SECTION')
+    expect(dxf).toContain('ENTITIES')
+    expect(dxf.trimEnd().endsWith('EOF')).toBe(true)
+    expect(dxf).toContain('В1-сеть')
+    expect(dxf).toContain('В1-колодцы')
+    expect(dxf).toContain('В1-здания')
+    expect(dxf).toContain('LWPOLYLINE') // profile lines
+    expect(dxf).toContain('CIRCLE') // wells
+    expect(dxf).toContain('ВОС')
+    expect(dxf).toContain('Продольный профиль магистрали В1')
+  }, 60000)
+})
+
+describe('specification', () => {
+  it('lists pipes by diameter and fittings by count', async () => {
+    const input = await demoExportInput()
+    const items = buildSpecification(input)
+
+    const pipeItems = items.filter((i) => i.name.includes('Труба'))
+    expect(pipeItems.length).toBeGreaterThan(0)
+    expect(pipeItems.every((i) => i.unit === 'м' && i.quantity > 0)).toBe(true)
+
+    const hydrant = items.find((i) => i.name.includes('Гидрант'))
+    expect(hydrant?.quantity).toBe(input.fittings.counts.hydrants)
+
+    const wells = items.find((i) => i.name.includes('Колодец'))
+    expect(wells?.quantity).toBe(input.fittings.counts.wells)
+
+    const csv = specificationToCsv(items)
+    expect(csv.charCodeAt(0)).toBe(0xfeff) // BOM
+    expect(csv).toContain('Наименование')
+    expect(csv.split('\r\n').length).toBeGreaterThan(items.length)
+  }, 60000)
+})
+
+describe('explanatory note', () => {
+  it('builds a document definition with all sections', async () => {
+    const input = await demoExportInput()
+    const doc = buildNoteDoc(input)
+    const json = JSON.stringify(doc)
+
+    expect(json).toContain('Пояснительная записка')
+    expect(json).toContain('1. Исходные данные')
+    expect(json).toContain('4. Гидравлический расчёт по участкам')
+    expect(json).toContain('Проверка свободных напоров')
+    expect(json).toContain('СП РК 4.01-101-2012')
+    expect(Array.isArray((doc as { content: unknown[] }).content)).toBe(true)
+  }, 60000)
+})

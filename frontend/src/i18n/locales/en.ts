@@ -257,6 +257,17 @@ export const en = {
           lowVelocity: '{{id}}: velocity {{value}} m/s is below the economic {{limit}} m/s',
         },
       },
+      export: {
+        title: 'Export documentation',
+        hint: 'DXF drawing for AutoCAD (plan and longitudinal profile), a PDF explanatory note and a bill of materials. The files are also saved in the project',
+        needData: 'Run the hydraulic calculation and material selection first',
+        dxf: 'Download DXF',
+        pdf: 'Download PDF note',
+        csv: 'Download bill of materials',
+        generating: 'Generating',
+        done: 'File generated',
+        error: 'Failed to generate the file',
+      },
       equipment: {
         title: 'Materials and fittings',
         hint: 'Pipe material from geology, seismicity and pressure. Burial depth from the freezing depth. Hydrants at most 150 m apart, gate valves, air valves at high points, washouts at low points, manholes',
