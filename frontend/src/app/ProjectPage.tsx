@@ -16,6 +16,7 @@ import { ProjectMap } from './project/ProjectMap'
 import type { SourceData } from './project/ProjectMap'
 import { TraceSection } from './project/TraceSection'
 import { HydraulicsSection } from './project/HydraulicsSection'
+import { EquipmentSection } from './project/EquipmentSection'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
 interface ProjectInfo {
@@ -220,6 +221,26 @@ export function ProjectPage() {
     [nodes],
   )
 
+  const FITTING_MARKS: Record<string, string> = { hydrant: 'ПГ', valve: 'З', airValve: 'В', washout: 'ВП' }
+  const fittingsGeo = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: nodes
+        .filter((n) => (n.meta?.fittings?.length ?? 0) > 0 || n.meta?.wellLabel)
+        .map((n) => {
+          const marks = (n.meta?.fittings ?? []).map((f) => FITTING_MARKS[f] ?? f).join(' ')
+          const well = n.meta?.wellLabel ?? ''
+          return {
+            type: 'Feature',
+            properties: { marks: well ? `${well}${marks ? ' · ' + marks : ''}` : marks },
+            geometry: { type: 'Point', coordinates: localToLonLat(n.x, n.y) },
+          }
+        }),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nodes],
+  )
+
   if (state === 'loading') return null
 
   if (state === 'notFound' || !project) {
@@ -271,6 +292,7 @@ export function ProjectPage() {
             source={sourceData}
             networkLines={networkLines}
             networkJunctions={networkJunctions}
+            fittings={fittingsGeo}
             onAddBuilding={addBuildingAt}
             onMoveSource={moveSourceTo}
             onDeleteBuilding={deleteBuilding}
@@ -292,6 +314,16 @@ export function ProjectPage() {
             nodes={nodes}
             pipes={pipes}
             lastSummary={lastRun}
+            onChanged={load}
+          />
+          <EquipmentSection
+            projectId={project.id}
+            geologyDataset={datasets.geology}
+            seismicDataset={datasets.seismic}
+            equipmentDataset={datasets.equipment}
+            nodes={nodes}
+            pipes={pipes}
+            lastRun={lastRun}
             onChanged={load}
           />
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />

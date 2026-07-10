@@ -23,6 +23,7 @@ interface Props {
   source: SourceData | null
   networkLines: FeatureCollection
   networkJunctions: FeatureCollection
+  fittings: FeatureCollection
   onAddBuilding: (x: number, y: number) => Promise<void>
   onMoveSource: (x: number, y: number) => Promise<void>
   onDeleteBuilding: (id: string) => Promise<void>
@@ -59,6 +60,7 @@ export function ProjectMap({
   source,
   networkLines,
   networkJunctions,
+  fittings,
   onAddBuilding,
   onMoveSource,
   onDeleteBuilding,
@@ -182,6 +184,24 @@ export function ProjectMap({
           'circle-color': '#ffffff',
           'circle-stroke-color': '#0033cc',
           'circle-stroke-width': 1.25,
+        },
+      })
+      map.addSource('fittings', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'fittings-labels',
+        type: 'symbol',
+        source: 'fittings',
+        layout: {
+          'text-field': ['get', 'marks'],
+          'text-size': 9,
+          'text-font': ['Noto Sans Regular'],
+          'text-offset': [0, -1.1],
+          'text-anchor': 'bottom',
+        },
+        paint: {
+          'text-color': '#0033cc',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1,
         },
       })
       map.addLayer({
@@ -347,7 +367,8 @@ export function ProjectMap({
     if (!map || !ready) return
     ;(map.getSource('net-lines') as maplibregl.GeoJSONSource).setData(networkLines)
     ;(map.getSource('net-junctions') as maplibregl.GeoJSONSource).setData(networkJunctions)
-  }, [ready, networkLines, networkJunctions])
+    ;(map.getSource('fittings') as maplibregl.GeoJSONSource).setData(fittings)
+  }, [ready, networkLines, networkJunctions, fittings])
 
   return (
     <section className="panel">

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { TracedNetwork } from '@aquascheme/engine'
+import type { NetworkNodeKind, NetworkPipeKind, TracedNetwork } from '@aquascheme/engine'
 
 export interface NodeMeta {
   engineKind?: string
@@ -7,6 +7,8 @@ export interface NodeMeta {
   headM?: number
   requiredPressureM?: number | null
   ok?: boolean
+  fittings?: string[]
+  wellLabel?: string | null
 }
 
 export interface PipeMeta {
@@ -37,6 +39,29 @@ export interface PipeRow {
   diameter_mm: number | null
   material: string | null
   meta: PipeMeta | null
+}
+
+/** Rebuild the engine network from database rows (labels are engine ids). */
+export function networkFromRows(nodes: NodeRow[], pipes: PipeRow[]): TracedNetwork {
+  const labelById = new Map(nodes.map((n) => [n.id, n.label ?? n.id]))
+  return {
+    nodes: nodes.map((n) => ({
+      id: n.label ?? n.id,
+      kind: (n.meta?.engineKind ?? (n.kind === 'source' ? 'source' : 'ring')) as NetworkNodeKind,
+      x: n.x,
+      y: n.y,
+      groundElevation: n.ground_elevation ?? 0,
+      buildingId: n.building_id ?? undefined,
+    })),
+    pipes: pipes.map((p) => ({
+      id: p.meta?.engineId ?? p.id,
+      kind: (p.meta?.kind ?? 'ring') as NetworkPipeKind,
+      fromNode: labelById.get(p.from_node) ?? p.from_node,
+      toNode: labelById.get(p.to_node) ?? p.to_node,
+      lengthM: p.length_m ?? 0,
+    })),
+    totalLengthM: pipes.reduce((sum, p) => sum + (p.length_m ?? 0), 0),
+  }
 }
 
 /** Replace the project network with a freshly traced one. */

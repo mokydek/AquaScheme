@@ -1,6 +1,13 @@
 import { supabase } from './supabase'
 
-export type DatasetKind = 'topography' | 'buildings' | 'source' | 'geology' | 'seismic' | 'normative'
+export type DatasetKind =
+  | 'topography'
+  | 'buildings'
+  | 'source'
+  | 'geology'
+  | 'seismic'
+  | 'normative'
+  | 'equipment'
 
 export interface DatasetRow {
   id: string

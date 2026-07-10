@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
-import type { NetworkNodeKind, NetworkPipeKind, NormativeParams, TracedNetwork } from '@aquascheme/engine'
+import type { NormativeParams } from '@aquascheme/engine'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 import type { HydraulicsWorkerResponse } from '../../workers/hydraulics.worker'
 import { supabase } from '../../shared/supabase'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
+import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
@@ -109,25 +110,7 @@ export function HydraulicsSection({
     setBusy(true)
     setNotice(null)
 
-    const labelById = new Map(nodes.map((n) => [n.id, n.label ?? n.id]))
-    const network: TracedNetwork = {
-      nodes: nodes.map((n) => ({
-        id: n.label ?? n.id,
-        kind: (n.meta?.engineKind ?? (n.kind === 'source' ? 'source' : 'ring')) as NetworkNodeKind,
-        x: n.x,
-        y: n.y,
-        groundElevation: n.ground_elevation ?? 0,
-        buildingId: n.building_id ?? undefined,
-      })),
-      pipes: pipes.map((p) => ({
-        id: p.meta?.engineId ?? p.id,
-        kind: (p.meta?.kind ?? 'ring') as NetworkPipeKind,
-        fromNode: labelById.get(p.from_node) ?? p.from_node,
-        toNode: labelById.get(p.to_node) ?? p.to_node,
-        lengthM: p.length_m ?? 0,
-      })),
-      totalLengthM: pipes.reduce((sum, p) => sum + (p.length_m ?? 0), 0),
-    }
+    const network = networkFromRows(nodes, pipes)
 
     const norms: NormativeParams = {
       ...NORMATIVE_DEFAULTS,
