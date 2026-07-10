@@ -42,8 +42,20 @@
   URL Configuration → Site URL. Это нужно на будущее, если включите подтверждение
   почты.
 
+## Важно про настройки проекта в Vercel
+
+- **Root Directory** должен остаться пустым (корень репозитория), НЕ `frontend`.
+  Иначе не установится внутренний пакет `@aquascheme/engine` из соседней папки.
+- **Output Directory**: значение берётся из `vercel.json` (`frontend/dist`).
+  Если Vercel всё же жалуется `No Output Directory named "dist" found`, откройте
+  Settings → Build and Deployment → Output Directory, включите Override и впишите
+  `frontend/dist`, затем Redeploy.
+
 ## Если сборка упала
 
 Откройте вкладку **Deployments** → последний деплой → **Building** и прочитайте
-лог. Чаще всего причина — забытая переменная окружения: приложение при старте
-показывает понятную ошибку про `VITE_SUPABASE_URL`.
+лог. Частые причины:
+
+- Забытая переменная окружения — приложение при старте показывает понятную
+  ошибку про `VITE_SUPABASE_URL`.
+- `No Output Directory ... "dist"` — смотрите пункт про Output Directory выше.
