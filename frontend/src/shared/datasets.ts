@@ -1,0 +1,52 @@
+import { supabase } from './supabase'
+
+export type DatasetKind = 'topography' | 'buildings' | 'source' | 'geology' | 'seismic' | 'normative'
+
+export interface DatasetRow {
+  id: string
+  project_id: string
+  kind: DatasetKind
+  file_name: string | null
+  content: unknown
+  meta: unknown
+  created_at: string
+}
+
+export interface BuildingRow {
+  id: string
+  label: string | null
+  x: number
+  y: number
+  floors: number
+  residents: number | null
+}
+
+/** Insert or update the single dataset row of the given kind for a project. */
+export async function saveDataset(
+  projectId: string,
+  kind: DatasetKind,
+  content: unknown,
+  meta: unknown = null,
+  fileName: string | null = null,
+): Promise<void> {
+  const { data: existing, error: selectError } = await supabase
+    .from('datasets')
+    .select('id')
+    .eq('project_id', projectId)
+    .eq('kind', kind)
+    .maybeSingle()
+  if (selectError) throw selectError
+
+  if (existing) {
+    const { error } = await supabase
+      .from('datasets')
+      .update({ content, meta, file_name: fileName })
+      .eq('id', existing.id)
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('datasets')
+      .insert({ project_id: projectId, kind, content, meta, file_name: fileName })
+    if (error) throw error
+  }
+}

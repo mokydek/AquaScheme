@@ -1,0 +1,210 @@
+import { useState } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
+import { parseBuildingsCsv } from '@aquascheme/engine'
+import { supabase } from '../../shared/supabase'
+import type { BuildingRow } from '../../shared/datasets'
+import { Panel } from './Panel'
+
+interface DraftBuilding {
+  label: string
+  x: string
+  y: string
+  floors: string
+  residents: string
+}
+
+const EMPTY_DRAFT: DraftBuilding = { label: '', x: '', y: '', floors: '', residents: '' }
+
+export function BuildingsSection({
+  projectId,
+  buildings,
+  onChanged,
+}: {
+  projectId: string
+  buildings: BuildingRow[]
+  onChanged: () => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useState<DraftBuilding>(EMPTY_DRAFT)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
+
+  const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setNotice(null)
+    setBusy(true)
+    try {
+      const parsed = parseBuildingsCsv(await file.text())
+      if (parsed.buildings.length === 0) {
+        setNotice({ kind: 'error', text: t('project.buildings.issues', { count: parsed.issues.length }) })
+        return
+      }
+      await supabase.from('buildings').delete().eq('project_id', projectId)
+      const { error } = await supabase.from('buildings').insert(
+        parsed.buildings.map((b) => ({
+          project_id: projectId,
+          label: b.label ?? null,
+          x: b.x,
+          y: b.y,
+          floors: b.floors,
+          residents: b.residents,
+        })),
+      )
+      if (error) throw error
+      const parts = [t('project.buildings.replaced', { count: parsed.buildings.length })]
+      if (parsed.issues.length > 0) {
+        parts.push(t('project.buildings.issues', { count: parsed.issues.length }))
+      }
+      setNotice({ kind: 'info', text: parts.join('. ') })
+      await onChanged()
+    } catch {
+      setNotice({ kind: 'error', text: t('project.saveError') })
+    } finally {
+      setBusy(false)
+      event.target.value = ''
+    }
+  }
+
+  const addBuilding = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setNotice(null)
+    const x = Number(draft.x.replace(',', '.'))
+    const y = Number(draft.y.replace(',', '.'))
+    const floors = Number(draft.floors)
+    const residents = Number(draft.residents)
+    const valid =
+      Number.isFinite(x) &&
+      Number.isFinite(y) &&
+      Number.isInteger(floors) &&
+      floors >= 1 &&
+      Number.isFinite(residents) &&
+      residents >= 0
+    if (!valid) {
+      setNotice({ kind: 'error', text: t('project.buildings.invalidRow') })
+      return
+    }
+    setBusy(true)
+    try {
+      const { error } = await supabase.from('buildings').insert({
+        project_id: projectId,
+        label: draft.label.trim() || null,
+        x,
+        y,
+        floors,
+        residents: Math.round(residents),
+      })
+      if (error) throw error
+      setDraft(EMPTY_DRAFT)
+      await onChanged()
+    } catch {
+      setNotice({ kind: 'error', text: t('project.saveError') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeBuilding = async (id: string) => {
+    await supabase.from('buildings').delete().eq('id', id)
+    await onChanged()
+  }
+
+  const setField = (field: keyof DraftBuilding) => (e: ChangeEvent<HTMLInputElement>) =>
+    setDraft((d) => ({ ...d, [field]: e.target.value }))
+
+  return (
+    <Panel title={t('project.buildings.title')} status={buildings.length > 0 ? 'filled' : 'empty'}>
+      <p className="hint">{t('project.buildings.hint')}</p>
+      <div className="section-actions">
+        <input
+          className="file-input"
+          type="file"
+          accept=".csv,.txt"
+          onChange={(e) => void onFile(e)}
+        />
+      </div>
+      {buildings.length === 0 ? (
+        <p className="stat-line">{t('project.buildings.emptyList')}</p>
+      ) : (
+        <>
+          <p className="stat-line">{t('project.buildings.count', { count: buildings.length })}</p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t('project.buildings.thLabel')}</th>
+                  <th className="num">{t('project.buildings.thX')}</th>
+                  <th className="num">{t('project.buildings.thY')}</th>
+                  <th className="num">{t('project.buildings.thFloors')}</th>
+                  <th className="num">{t('project.buildings.thResidents')}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {buildings.map((b) => (
+                  <tr key={b.id}>
+                    <td>{b.label ?? ''}</td>
+                    <td className="num">{b.x}</td>
+                    <td className="num">{b.y}</td>
+                    <td className="num">{b.floors}</td>
+                    <td className="num">{b.residents ?? ''}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => void removeBuilding(b.id)}
+                      >
+                        {t('project.buildings.delete')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      <form className="add-row" onSubmit={(e) => void addBuilding(e)}>
+        <input
+          className="input input-sm"
+          placeholder={t('project.buildings.thLabel')}
+          value={draft.label}
+          onChange={setField('label')}
+        />
+        <input
+          className="input input-sm"
+          placeholder={t('project.buildings.thX')}
+          value={draft.x}
+          onChange={setField('x')}
+          required
+        />
+        <input
+          className="input input-sm"
+          placeholder={t('project.buildings.thY')}
+          value={draft.y}
+          onChange={setField('y')}
+          required
+        />
+        <input
+          className="input input-sm"
+          placeholder={t('project.buildings.thFloors')}
+          value={draft.floors}
+          onChange={setField('floors')}
+          required
+        />
+        <input
+          className="input input-sm"
+          placeholder={t('project.buildings.thResidents')}
+          value={draft.residents}
+          onChange={setField('residents')}
+          required
+        />
+        <button className="btn btn-sm" type="submit" disabled={busy}>
+          {t('project.buildings.add')}
+        </button>
+      </form>
+      {notice && <p className={`notice ${notice.kind}`}>{notice.text}</p>}
+    </Panel>
+  )
+}
