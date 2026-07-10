@@ -1,0 +1,45 @@
+/* Design tokens. Full design system arrives in Phase 3; light theme only. */
+:root {
+  --bg: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #4a4a4a;
+  --line: #e6e6e6;
+  --accent: #0033cc;
+  --radius: 0px;
+  --font-ui: system-ui, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  border-radius: var(--radius);
+}

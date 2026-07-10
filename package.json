@@ -1,0 +1,16 @@
+{
+  "name": "aquascheme",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Automated designer of outdoor water supply networks: hydraulic calculation, pipe sizing, DXF drawings",
+  "workspaces": [
+    "frontend",
+    "engine"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace frontend",
+    "test": "npm run test --workspace engine",
+    "typecheck": "npm run typecheck --workspace frontend && npm run typecheck --workspace engine"
+  }
+}
