@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { createDemoDataset, NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import { createDemoDataset, localToLonLat, NORMATIVE_DEFAULTS } from '@aquascheme/engine'
 import type { SurveyPoint } from '@aquascheme/engine'
+import type { Feature, FeatureCollection } from 'geojson'
 import { supabase } from '../shared/supabase'
 import { saveDataset } from '../shared/datasets'
 import type { BuildingRow, DatasetKind, DatasetRow } from '../shared/datasets'
+import type { NodeRow, PipeRow } from '../shared/network'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
 import { GeologySection, NormsSection, SeismicSection, SourceSection } from './project/FormSections'
 import { DemandSection } from './project/DemandSection'
 import { ProjectMap } from './project/ProjectMap'
 import type { SourceData } from './project/ProjectMap'
+import { TraceSection } from './project/TraceSection'
 
 interface ProjectInfo {
   id: string
@@ -24,18 +27,30 @@ export function ProjectPage() {
   const [project, setProject] = useState<ProjectInfo | null>(null)
   const [datasets, setDatasets] = useState<Partial<Record<DatasetKind, DatasetRow>>>({})
   const [buildings, setBuildings] = useState<BuildingRow[]>([])
+  const [nodes, setNodes] = useState<NodeRow[]>([])
+  const [pipes, setPipes] = useState<PipeRow[]>([])
   const [state, setState] = useState<'loading' | 'ready' | 'notFound'>('loading')
   const [demoBusy, setDemoBusy] = useState(false)
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
-    const [projectRes, datasetsRes, buildingsRes] = await Promise.all([
+    const [projectRes, datasetsRes, buildingsRes, nodesRes, pipesRes] = await Promise.all([
       supabase.from('projects').select('id,name').eq('id', id).maybeSingle(),
       supabase.from('datasets').select('*').eq('project_id', id),
       supabase
         .from('buildings')
         .select('id,label,x,y,floors,residents')
+        .eq('project_id', id)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('nodes')
+        .select('id,kind,label,x,y,ground_elevation,building_id,meta')
+        .eq('project_id', id)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('pipes')
+        .select('id,from_node,to_node,length_m,diameter_mm,material,meta')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
     ])
@@ -50,6 +65,8 @@ export function ProjectPage() {
     }
     setDatasets(map)
     setBuildings(buildingsRes.data ?? [])
+    setNodes((nodesRes.data ?? []) as NodeRow[])
+    setPipes((pipesRes.data ?? []) as PipeRow[])
     setState('ready')
   }, [id])
 
@@ -159,6 +176,39 @@ export function ProjectPage() {
     [load],
   )
 
+  const networkLines = useMemo<FeatureCollection>(() => {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]))
+    const features: Feature[] = []
+    for (const pipe of pipes) {
+      const a = nodeById.get(pipe.from_node)
+      const b = nodeById.get(pipe.to_node)
+      if (!a || !b) continue
+      features.push({
+        type: 'Feature',
+        properties: { kind: pipe.meta?.kind ?? 'ring' },
+        geometry: {
+          type: 'LineString',
+          coordinates: [localToLonLat(a.x, a.y), localToLonLat(b.x, b.y)],
+        },
+      })
+    }
+    return { type: 'FeatureCollection', features }
+  }, [nodes, pipes])
+
+  const networkJunctions = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: nodes
+        .filter((n) => n.kind !== 'source' && !n.building_id)
+        .map((n) => ({
+          type: 'Feature',
+          properties: { label: n.label ?? '' },
+          geometry: { type: 'Point', coordinates: localToLonLat(n.x, n.y) },
+        })),
+    }),
+    [nodes],
+  )
+
   if (state === 'loading') return null
 
   if (state === 'notFound' || !project) {
@@ -208,9 +258,20 @@ export function ProjectPage() {
             points={topoPoints}
             buildings={buildings}
             source={sourceData}
+            networkLines={networkLines}
+            networkJunctions={networkJunctions}
             onAddBuilding={addBuildingAt}
             onMoveSource={moveSourceTo}
             onDeleteBuilding={deleteBuilding}
+          />
+          <TraceSection
+            projectId={project.id}
+            buildings={buildings}
+            source={sourceData}
+            points={topoPoints}
+            nodes={nodes}
+            pipes={pipes}
+            onChanged={load}
           />
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
           <BuildingsSection projectId={project.id} buildings={buildings} onChanged={load} />

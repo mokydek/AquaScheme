@@ -21,6 +21,8 @@ interface Props {
   points: SurveyPoint[]
   buildings: BuildingRow[]
   source: SourceData | null
+  networkLines: FeatureCollection
+  networkJunctions: FeatureCollection
   onAddBuilding: (x: number, y: number) => Promise<void>
   onMoveSource: (x: number, y: number) => Promise<void>
   onDeleteBuilding: (id: string) => Promise<void>
@@ -55,6 +57,8 @@ export function ProjectMap({
   points,
   buildings,
   source,
+  networkLines,
+  networkJunctions,
   onAddBuilding,
   onMoveSource,
   onDeleteBuilding,
@@ -146,6 +150,38 @@ export function ProjectMap({
           'text-color': '#7a7a7a',
           'text-halo-color': '#ffffff',
           'text-halo-width': 1,
+        },
+      })
+      map.addSource('net-lines', { type: 'geojson', data: EMPTY_FC })
+      map.addSource('net-junctions', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'pipes-service',
+        type: 'line',
+        source: 'net-lines',
+        filter: ['==', ['get', 'kind'], 'service'],
+        paint: {
+          'line-color': '#0033cc',
+          'line-width': 1,
+          'line-dasharray': [2, 2],
+          'line-opacity': 0.8,
+        },
+      })
+      map.addLayer({
+        id: 'pipes-main',
+        type: 'line',
+        source: 'net-lines',
+        filter: ['!=', ['get', 'kind'], 'service'],
+        paint: { 'line-color': '#0033cc', 'line-width': 2 },
+      })
+      map.addLayer({
+        id: 'net-junctions',
+        type: 'circle',
+        source: 'net-junctions',
+        paint: {
+          'circle-radius': 3,
+          'circle-color': '#ffffff',
+          'circle-stroke-color': '#0033cc',
+          'circle-stroke-width': 1.25,
         },
       })
       map.addLayer({
@@ -304,6 +340,14 @@ export function ProjectMap({
     }
     ;(map.getSource('source-point') as maplibregl.GeoJSONSource).setData(sourceFc)
   }, [ready, buildings, source])
+
+  // Traced network: pipes and junction nodes.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    ;(map.getSource('net-lines') as maplibregl.GeoJSONSource).setData(networkLines)
+    ;(map.getSource('net-junctions') as maplibregl.GeoJSONSource).setData(networkJunctions)
+  }, [ready, networkLines, networkJunctions])
 
   return (
     <section className="panel">

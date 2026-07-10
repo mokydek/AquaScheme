@@ -166,6 +166,15 @@ export const en = {
         residents: 'Residents',
         delete: 'Delete',
       },
+      trace: {
+        title: 'Network routing',
+        hint: 'A looped main along the development, a cross main for the inner blocks, a supply line from the source and service connections. Node elevations come from the terrain',
+        run: 'Trace network',
+        needData: 'Buildings and a source are required',
+        stats: 'Nodes: {{nodes}}. Pipes: {{pipes}}. Network length: {{length}} m',
+        done: 'Network traced',
+        error: 'Failed to trace the network',
+      },
       topo: {
         title: 'Survey',
         hint: 'CSV with X, Y, Z columns or GeoJSON with points. Delimiters: comma, semicolon or tab. Decimal comma is accepted',
