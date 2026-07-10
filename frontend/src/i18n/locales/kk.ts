@@ -111,6 +111,23 @@ export const kk = {
         button: 'Жұмысты бастау',
       },
     },
+    auth: {
+      signIn: 'Кіру',
+      signUp: 'Тіркелу',
+      email: 'Электрондық пошта',
+      password: 'Құпиясөз',
+      submitSignIn: 'Кіру',
+      submitSignUp: 'Аккаунт құру',
+      signOut: 'Шығу',
+      confirmationPending:
+        'Аккаунт құрылды, бірақ Supabase ішінде поштаны растау қосулы. Оны Authentication параметрлерінде өшіріңіз немесе поштаңызды тексеріңіз',
+      errors: {
+        invalidCredentials: 'Пошта немесе құпиясөз қате',
+        userExists: 'Бұл поштамен пайдаланушы тіркелген',
+        weakPassword: 'Құпиясөз кемінде 6 таңбадан тұруы керек',
+        generic: 'Сұрауды орындау мүмкін болмады. Қайталап көріңіз',
+      },
+    },
     app: {
       title: 'Жобалар',
       placeholder:

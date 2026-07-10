@@ -167,6 +167,29 @@ textarea {
   text-underline-offset: 4px;
 }
 
+.nav-user {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+}
+
+.nav-btn:hover {
+  color: var(--accent);
+}
+
 /* Footer */
 
 .footer {
@@ -366,6 +389,107 @@ textarea {
 .cta-band h2 {
   font-size: clamp(24px, 3vw, 32px);
   max-width: 640px;
+}
+
+/* ------------------------------------------------------------
+ * Auth
+ * ---------------------------------------------------------- */
+
+.auth-page {
+  padding: 80px 0;
+}
+
+.auth-card {
+  max-width: 400px;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  padding: 32px;
+  background: var(--bg);
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.auth-tab {
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+  padding: 0 0 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.auth-tab:hover {
+  color: var(--ink);
+}
+
+.auth-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.field {
+  display: block;
+  margin-top: 20px;
+}
+
+.field-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink);
+  background: var(--bg);
+  font-size: 14px;
+}
+
+.input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+
+.notice {
+  margin-top: 20px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notice.error {
+  border-left: 2px solid var(--accent);
+  background: var(--accent-tint);
+}
+
+.notice.info {
+  border-left: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.auth-submit {
+  margin-top: 24px;
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* ------------------------------------------------------------

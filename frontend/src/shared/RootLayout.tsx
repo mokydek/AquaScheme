@@ -1,9 +1,12 @@
 import { Link, Outlet } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { LANGUAGES } from '../i18n'
+import { supabase } from './supabase'
+import { useAuth } from './auth'
 
 export function RootLayout() {
   const { t, i18n } = useTranslation()
+  const { session } = useAuth()
 
   return (
     <div className="site">
@@ -15,6 +18,20 @@ export function RootLayout() {
           </Link>
           <nav className="nav">
             <Link to="/app">{t('nav.app')}</Link>
+            {session ? (
+              <>
+                <span className="nav-user">{session.user.email}</span>
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => void supabase.auth.signOut()}
+                >
+                  {t('auth.signOut')}
+                </button>
+              </>
+            ) : (
+              <Link to="/auth">{t('auth.signIn')}</Link>
+            )}
             <div className="lang-group" role="group" aria-label="Language">
               {LANGUAGES.map((lang) => (
                 <button

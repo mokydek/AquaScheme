@@ -111,6 +111,23 @@ export const en = {
         button: 'Get started',
       },
     },
+    auth: {
+      signIn: 'Sign in',
+      signUp: 'Sign up',
+      email: 'Email',
+      password: 'Password',
+      submitSignIn: 'Sign in',
+      submitSignUp: 'Create account',
+      signOut: 'Sign out',
+      confirmationPending:
+        'The account was created but email confirmation is enabled in Supabase. Disable it in Authentication settings or check your inbox',
+      errors: {
+        invalidCredentials: 'Wrong email or password',
+        userExists: 'A user with this email already exists',
+        weakPassword: 'The password must be at least 6 characters',
+        generic: 'The request failed. Please try again',
+      },
+    },
     app: {
       title: 'Projects',
       placeholder:

@@ -111,6 +111,23 @@ export const ru = {
         button: 'Начать работу',
       },
     },
+    auth: {
+      signIn: 'Вход',
+      signUp: 'Регистрация',
+      email: 'Электронная почта',
+      password: 'Пароль',
+      submitSignIn: 'Войти',
+      submitSignUp: 'Создать аккаунт',
+      signOut: 'Выйти',
+      confirmationPending:
+        'Аккаунт создан, но в Supabase включено подтверждение почты. Отключите его в настройках Authentication или проверьте почту',
+      errors: {
+        invalidCredentials: 'Неверная почта или пароль',
+        userExists: 'Пользователь с такой почтой уже зарегистрирован',
+        weakPassword: 'Пароль должен быть не короче 6 символов',
+        generic: 'Не удалось выполнить запрос. Попробуйте ещё раз',
+      },
+    },
     app: {
       title: 'Проекты',
       placeholder:

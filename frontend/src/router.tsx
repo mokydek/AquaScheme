@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { RootLayout } from './shared/RootLayout'
+import { RequireAuth } from './shared/RequireAuth'
 
 export const router = createBrowserRouter([
   {
@@ -11,8 +12,17 @@ export const router = createBrowserRouter([
         lazy: () => import('./landing/LandingPage').then((m) => ({ Component: m.LandingPage })),
       },
       {
-        path: 'app',
-        lazy: () => import('./app/AppHome').then((m) => ({ Component: m.AppHome })),
+        path: 'auth',
+        lazy: () => import('./auth/AuthPage').then((m) => ({ Component: m.AuthPage })),
+      },
+      {
+        Component: RequireAuth,
+        children: [
+          {
+            path: 'app',
+            lazy: () => import('./app/AppHome').then((m) => ({ Component: m.AppHome })),
+          },
+        ],
       },
       {
         path: '*',
