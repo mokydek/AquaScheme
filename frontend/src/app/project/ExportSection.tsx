@@ -19,10 +19,19 @@ import { useAuth } from '../../shared/auth'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetKind, DatasetRow } from '../../shared/datasets'
+import {
+  CONVERTER_URL,
+  convertToDwg,
+  generateDxf,
+  generatePdf,
+  generateSpecXlsx,
+  zipBundle,
+} from '../../shared/exporters'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
 
-type Job = 'dxf' | 'pdf' | 'csv'
+type Job = 'drawing' | 'pdf' | 'spec' | 'bundle'
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 function downloadBlob(filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob)
@@ -59,7 +68,10 @@ export function ExportSection({
   const { t } = useTranslation()
   const { session } = useAuth()
   const [busy, setBusy] = useState<Job | null>(null)
-  const [notice, setNotice] = useState<'done' | 'error' | null>(null)
+  const [notice, setNotice] = useState<'done' | 'error' | 'converterError' | null>(null)
+  const [withDxf, setWithDxf] = useState(true)
+  const [withDwg, setWithDwg] = useState(false)
+  const hasConverter = CONVERTER_URL !== ''
 
   const equipment = datasets.equipment?.content as
     | { material: MaterialSelection; fittings: FittingsPlan }
@@ -114,7 +126,7 @@ export function ExportSection({
   }
 
   const archive = async (
-    kind: 'dxf_plan' | 'pdf_note' | 'spec_csv',
+    kind: 'dxf_plan' | 'pdf_note' | 'spec_xlsx',
     fileName: string,
     blob: Blob,
     contentType: string,
@@ -135,17 +147,34 @@ export function ExportSection({
 
   const slug = slugify(projectName)
 
-  const exportDxf = async () => {
-    setBusy('dxf')
+  /** DXF text plus, if selected and configured, a converted DWG blob. */
+  const buildDrawings = async (input: ExportInput) => {
+    const dxf = await generateDxf(input)
+    let dwg: Blob | null = null
+    let converterFailed = false
+    if (withDwg && hasConverter) {
+      try {
+        dwg = await convertToDwg(dxf, CONVERTER_URL)
+      } catch {
+        converterFailed = true
+      }
+    }
+    return { dxf, dwg, converterFailed }
+  }
+
+  const exportDrawing = async () => {
+    setBusy('drawing')
     setNotice(null)
     try {
       const input = assemble()
-      const { buildNetworkDxf } = await import('@aquascheme/engine/dxf')
-      const dxf = buildNetworkDxf(input)
-      const blob = new Blob([dxf], { type: 'application/dxf' })
-      downloadBlob(`${slug}_В1.dxf`, blob)
-      await archive('dxf_plan', `${slug}_В1.dxf`, blob, 'application/dxf')
-      setNotice('done')
+      const { dxf, dwg, converterFailed } = await buildDrawings(input)
+      if (withDxf || !dwg) {
+        const blob = new Blob([dxf], { type: 'application/dxf' })
+        downloadBlob(`${slug}_В1.dxf`, blob)
+        await archive('dxf_plan', `${slug}_В1.dxf`, blob, 'application/dxf')
+      }
+      if (dwg) downloadBlob(`${slug}_В1.dwg`, dwg)
+      setNotice(converterFailed ? 'converterError' : 'done')
     } catch {
       setNotice('error')
     } finally {
@@ -153,16 +182,14 @@ export function ExportSection({
     }
   }
 
-  const exportCsv = async () => {
-    setBusy('csv')
+  const exportSpec = async () => {
+    setBusy('spec')
     setNotice(null)
     try {
-      const input = assemble()
-      const { buildSpecification, specificationToCsv } = await import('@aquascheme/engine')
-      const csv = specificationToCsv(buildSpecification(input))
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-      downloadBlob(`${slug}_спецификация.csv`, blob)
-      await archive('spec_csv', `${slug}_спецификация.csv`, blob, 'text/csv')
+      const bytes = await generateSpecXlsx(assemble())
+      const blob = new Blob([bytes], { type: XLSX_TYPE })
+      downloadBlob(`${slug}_спецификация.xlsx`, blob)
+      await archive('spec_xlsx', `${slug}_спецификация.xlsx`, blob, XLSX_TYPE)
       setNotice('done')
     } catch {
       setNotice('error')
@@ -175,28 +202,9 @@ export function ExportSection({
     setBusy('pdf')
     setNotice(null)
     try {
-      const input = assemble()
-      const [{ buildNoteDoc }, pdfMakeMod, pdfFontsMod] = await Promise.all([
-        import('@aquascheme/engine'),
-        import('pdfmake/build/pdfmake'),
-        import('pdfmake/build/vfs_fonts'),
-      ])
-      const pdfMake = (pdfMakeMod as { default?: unknown }).default ?? pdfMakeMod
-      const fonts = pdfFontsMod as unknown as {
-        pdfMake?: { vfs: Record<string, string> }
-        default?: { pdfMake?: { vfs: Record<string, string> }; vfs?: Record<string, string> }
-        vfs?: Record<string, string>
-      }
-      const vfs =
-        fonts.pdfMake?.vfs ?? fonts.default?.pdfMake?.vfs ?? fonts.default?.vfs ?? fonts.vfs
-      const maker = pdfMake as { vfs?: unknown; createPdf: (doc: unknown) => { download: (name: string) => void; getBlob: (cb: (b: Blob) => void) => void } }
-      maker.vfs = vfs
-      const doc = buildNoteDoc(input)
-      const pdf = maker.createPdf(doc)
-      pdf.download(`${slug}_записка.pdf`)
-      pdf.getBlob((blob) => {
-        void archive('pdf_note', `${slug}_записка.pdf`, blob, 'application/pdf')
-      })
+      const blob = await generatePdf(assemble())
+      downloadBlob(`${slug}_записка.pdf`, blob)
+      await archive('pdf_note', `${slug}_записка.pdf`, blob, 'application/pdf')
       setNotice('done')
     } catch {
       setNotice('error')
@@ -205,22 +213,74 @@ export function ExportSection({
     }
   }
 
+  const exportBundle = async () => {
+    setBusy('bundle')
+    setNotice(null)
+    try {
+      const input = assemble()
+      const [{ dxf, dwg, converterFailed }, pdf, xlsx] = await Promise.all([
+        buildDrawings(input),
+        generatePdf(input),
+        generateSpecXlsx(input),
+      ])
+      const files: Record<string, Blob | Uint8Array | string> = {
+        [`${slug}_В1.dxf`]: dxf,
+        [`${slug}_записка.pdf`]: pdf,
+        [`${slug}_спецификация.xlsx`]: xlsx,
+      }
+      if (dwg) files[`${slug}_В1.dwg`] = dwg
+      const zip = await zipBundle(files)
+      downloadBlob(`${slug}_комплект.zip`, zip)
+      setNotice(converterFailed ? 'converterError' : 'done')
+    } catch {
+      setNotice('error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const label = (job: Job, key: string) =>
+    busy === job ? t('project.export.generating') : t(key)
+
   return (
     <Panel title={t('project.export.title')} status={canExport ? 'filled' : 'empty'}>
       <p className="hint">{t('project.export.hint')}</p>
       {!canExport && <p className="stat-line warn">{t('project.export.needData')}</p>}
+
       <div className="section-actions">
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportDxf()}>
-          {busy === 'dxf' ? t('project.export.generating') : t('project.export.dxf')}
+        <label className="check">
+          <input type="checkbox" checked={withDxf} onChange={(e) => setWithDxf(e.target.checked)} />
+          <span>DXF</span>
+        </label>
+        <label className="check" title={hasConverter ? '' : t('project.export.dwgUnavailable')}>
+          <input
+            type="checkbox"
+            checked={withDwg}
+            disabled={!hasConverter}
+            onChange={(e) => setWithDwg(e.target.checked)}
+          />
+          <span>DWG</span>
+        </label>
+        {!hasConverter && <span className="stat-line warn" style={{ marginTop: 0 }}>{t('project.export.dwgUnavailable')}</span>}
+      </div>
+
+      <div className="section-actions">
+        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null || (!withDxf && !withDwg)} onClick={() => void exportDrawing()}>
+          {label('drawing', 'project.export.drawing')}
         </button>
         <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportPdf()}>
-          {busy === 'pdf' ? t('project.export.generating') : t('project.export.pdf')}
+          {label('pdf', 'project.export.pdf')}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportCsv()}>
-          {busy === 'csv' ? t('project.export.generating') : t('project.export.csv')}
+        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportSpec()}>
+          {label('spec', 'project.export.spec')}
+        </button>
+        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportBundle()}>
+          {label('bundle', 'project.export.bundle')}
         </button>
       </div>
+
       {notice === 'done' && <p className="stat-line ok">{t('project.export.done')}</p>}
+      {notice === 'converterError' && <p className="notice error">{t('project.export.converterError')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.export.error')}</p>}
     </Panel>
   )
