@@ -95,7 +95,7 @@ export interface SizedNode {
 }
 
 export interface SizingIssue {
-  kind: 'lowPressure' | 'highPressure' | 'highVelocity' | 'lowVelocity'
+  kind: 'lowPressure' | 'highPressure' | 'highVelocity' | 'lowVelocity' | 'noSuitableItem'
   targetId: string
   value: number
   limit: number
@@ -335,16 +335,26 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
     }
   })
 
+  const maxSizeIndex = sizes.length - 1
   for (const p of pipes) {
     if (p.velocityMs > ABSOLUTE_V_MAX) {
-      issues.push({ kind: 'highVelocity', targetId: p.id, value: p.velocityMs, limit: ABSOLUTE_V_MAX })
+      // Over the limit even at the largest size the catalog offers: there is
+      // no suitable item, so we say so instead of inventing a bigger pipe.
+      const atMax = (idxByPipe.get(p.id) ?? 0) >= maxSizeIndex
+      issues.push({
+        kind: atMax ? 'noSuitableItem' : 'highVelocity',
+        targetId: p.id,
+        value: p.velocityMs,
+        limit: ABSOLUTE_V_MAX,
+      })
     } else if (p.kind !== 'service' && p.velocityMs < ECONOMIC_V_MIN && p.flowLps !== 0) {
       issues.push({ kind: 'lowVelocity', targetId: p.id, value: p.velocityMs, limit: ECONOMIC_V_MIN })
     }
   }
 
-  const converged =
-    !issues.some((i) => i.kind === 'lowPressure' || i.kind === 'highVelocity')
+  const converged = !issues.some(
+    (i) => i.kind === 'lowPressure' || i.kind === 'highVelocity' || i.kind === 'noSuitableItem',
+  )
 
   return {
     pipes,

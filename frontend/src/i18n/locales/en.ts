@@ -252,6 +252,7 @@ export const en = {
           highPressure: 'Excessive head at buildings',
           highVelocity: 'Velocity exceeded on segments',
           lowVelocity: 'Low velocity on mains',
+          noSuitableItem: 'The active catalog has no suitable diameter',
         },
         action: {
           increaseDiameter: 'Increase the diameter of segments toward the problem nodes',
@@ -260,6 +261,7 @@ export const en = {
           pressureRegulator: 'Install pressure regulators',
           zoning: 'Split the network into pressure zones',
           reduceDiameter: 'Consider reducing the diameter for economy',
+          extendCatalog: 'Add a larger diameter pipe to the catalog',
         },
         th: {
           segment: 'Segment',
@@ -277,6 +279,23 @@ export const en = {
           main: 'Main',
           cross: 'Cross',
           service: 'Service',
+        },
+      },
+      catalog: {
+        title: 'Material catalog',
+        hint: 'Diameter and material selection is done strictly from the active catalog. Upload your own XLSX or CSV using the template; if no item fits, the system says so directly',
+        template: 'Download template',
+        builtin: 'Built in catalog',
+        delete: 'Delete',
+        saved: 'Catalog loaded and set active',
+        empty: 'The file has no usable items',
+        issuesTitle: 'Rows with errors: {{count}}',
+        issueRow: 'Row {{row}}',
+        issue: {
+          unknownType: 'unknown item type',
+          noDiameter: 'pipe has no diameter (needs outer diameter and wall, or SDR)',
+          badNumber: 'non numeric value in a numeric column',
+          empty: 'empty row',
         },
       },
       parcels: {

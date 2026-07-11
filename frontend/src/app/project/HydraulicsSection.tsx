@@ -7,6 +7,7 @@ import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { persistSizing, runSizingInWorker } from '../../shared/pipeline'
+import { loadActiveCatalogSizes } from '../../shared/catalog'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
 
@@ -20,6 +21,7 @@ export function HydraulicsSection({
   nodes,
   pipes,
   lastSummary,
+  activeCatalogId,
   onChanged,
 }: {
   projectId: string
@@ -29,6 +31,7 @@ export function HydraulicsSection({
   nodes: NodeRow[]
   pipes: PipeRow[]
   lastSummary: SizingResult | null
+  activeCatalogId: string | null
   onChanged: () => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -47,6 +50,7 @@ export function HydraulicsSection({
     }
     const availableHeadM = source.availableHead ?? 45
     try {
+      const catalog = await loadActiveCatalogSizes(activeCatalogId)
       const result: SizingResult = await runSizingInWorker({
         network: networkFromRows(nodes, pipes),
         buildings: buildings.map((b) => ({
@@ -57,6 +61,7 @@ export function HydraulicsSection({
         })),
         availableHeadM,
         norms,
+        ...(catalog ? { sizes: catalog.sizes, roughnessMm: catalog.roughnessMm } : {}),
       })
       await persistSizing(projectId, result, nodes, pipes, norms, availableHeadM, new Date().toISOString())
       setNotice('done')

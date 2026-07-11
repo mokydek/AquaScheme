@@ -11,6 +11,7 @@ import type { HydraulicsWorkerResponse } from '../workers/hydraulics.worker'
 import { supabase } from './supabase'
 import { networkFromRows, replaceNetwork } from './network'
 import type { NodeRow, PipeRow } from './network'
+import { loadActiveCatalogSizes } from './catalog'
 
 /** Run the EPANET sizing loop in the hydraulics worker. */
 export function runSizingInWorker(input: SizingInput): Promise<SizingResult> {
@@ -225,6 +226,7 @@ export interface FullPipelineParams {
   geology: GeologyInput
   seismicity: SeismicInput
   isoTimestamp: string
+  activeCatalogId?: string | null
 }
 
 export type FullPipelineResult =
@@ -248,6 +250,7 @@ export async function runFullPipeline(params: FullPipelineParams): Promise<FullP
 
     const afterTrace = await fetchNetworkRows(params.projectId)
     const availableHeadM = params.source.availableHead
+    const catalog = await loadActiveCatalogSizes(params.activeCatalogId ?? null)
     const sizing = await runSizingInWorker({
       network: networkFromRows(afterTrace.nodes, afterTrace.pipes),
       buildings: params.buildings.map((b) => ({
@@ -258,6 +261,7 @@ export async function runFullPipeline(params: FullPipelineParams): Promise<FullP
       })),
       availableHeadM,
       norms: params.norms,
+      ...(catalog ? { sizes: catalog.sizes, roughnessMm: catalog.roughnessMm } : {}),
     })
     await persistSizing(
       params.projectId,

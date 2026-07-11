@@ -26,6 +26,9 @@ import { ImportSection } from './project/ImportSection'
 import { ObjectLibrary } from './project/ObjectLibrary'
 import type { Placement } from './project/ObjectLibrary'
 import { ParcelsSection } from './project/ParcelsSection'
+import { CatalogSection } from './project/CatalogSection'
+import { fetchCatalogs } from '../shared/catalog'
+import type { CatalogRow } from '../shared/catalog'
 import { Panel } from './project/Panel'
 import { analyzeParcelViolations } from '@aquascheme/engine'
 import type { ParcelKind, Vec2, ViolationPipe } from '@aquascheme/engine'
@@ -43,6 +46,7 @@ interface ProjectInfo {
   name: string
   work_type?: string | null
   system_type?: string | null
+  active_catalog_id?: string | null
 }
 
 const SYSTEM_MARKS: Record<string, string> = { water: 'В1', sewer: 'К1', storm: 'К2' }
@@ -63,6 +67,7 @@ export function ProjectPage() {
   const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
   const [placement, setPlacement] = useState<Placement | null>(null)
   const [parcels, setParcels] = useState<ParcelRow[]>([])
+  const [catalogs, setCatalogs] = useState<CatalogRow[]>([])
   const [parcelDraft, setParcelDraft] = useState<{ kind: ParcelKind; vertices: Vec2[] } | null>(null)
   const [violationPipeIds, setViolationPipeIds] = useState<string[] | null>(null)
 
@@ -112,6 +117,11 @@ export function ProjectPage() {
       setParcels(await fetchParcels(id))
     } catch {
       setParcels([])
+    }
+    try {
+      setCatalogs(await fetchCatalogs(id))
+    } catch {
+      setCatalogs([])
     }
     setState('ready')
   }, [id])
@@ -208,6 +218,7 @@ export function ProjectPage() {
         geology,
         seismicity,
         isoTimestamp: new Date().toISOString(),
+        activeCatalogId: project?.active_catalog_id ?? null,
       })
       setPipelineNotice(result.ok ? 'done' : result.reason)
       await load()
@@ -629,6 +640,7 @@ export function ProjectPage() {
                 nodes={nodes}
                 pipes={pipes}
                 lastSummary={lastRun}
+                activeCatalogId={project.active_catalog_id ?? null}
                 onChanged={load}
               />
               <ResultsSection lastRun={lastRun} nodes={nodes} buildings={buildings} />
@@ -649,6 +661,12 @@ export function ProjectPage() {
                 nodes={nodes}
                 pipes={pipes}
                 lastRun={lastRun}
+                onChanged={load}
+              />
+              <CatalogSection
+                projectId={project.id}
+                catalogs={catalogs}
+                activeCatalogId={project.active_catalog_id ?? null}
                 onChanged={load}
               />
             </>

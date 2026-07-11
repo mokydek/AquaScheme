@@ -19,6 +19,7 @@ export type RecommendationAction =
   | 'pressureRegulator'
   | 'zoning'
   | 'reduceDiameter'
+  | 'extendCatalog'
 
 export interface Recommendation {
   kind: SizingIssue['kind']
@@ -66,6 +67,16 @@ export function buildRecommendations(result: SizingResult): Recommendation[] {
       severity: 'high',
       targets: highVelocity.map((i) => i.targetId),
       actions: ['increaseDiameter'],
+    })
+  }
+
+  const noSuitable = byKind.get('noSuitableItem') ?? []
+  if (noSuitable.length > 0) {
+    recommendations.push({
+      kind: 'noSuitableItem',
+      severity: 'high',
+      targets: noSuitable.map((i) => i.targetId),
+      actions: ['extendCatalog', 'addLoop'],
     })
   }
 
