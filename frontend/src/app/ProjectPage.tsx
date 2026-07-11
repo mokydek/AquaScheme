@@ -29,6 +29,9 @@ import { ParcelsSection } from './project/ParcelsSection'
 import { CatalogSection } from './project/CatalogSection'
 import { fetchCatalogs } from '../shared/catalog'
 import type { CatalogRow } from '../shared/catalog'
+import { ExistingNetworkSection } from './project/ExistingNetworkSection'
+import { fetchExisting } from '../shared/existing'
+import type { ExistingPipeRow } from '../shared/existing'
 import { Panel } from './project/Panel'
 import { analyzeParcelViolations } from '@aquascheme/engine'
 import type { ParcelKind, Vec2, ViolationPipe } from '@aquascheme/engine'
@@ -68,6 +71,7 @@ export function ProjectPage() {
   const [placement, setPlacement] = useState<Placement | null>(null)
   const [parcels, setParcels] = useState<ParcelRow[]>([])
   const [catalogs, setCatalogs] = useState<CatalogRow[]>([])
+  const [existing, setExisting] = useState<ExistingPipeRow[]>([])
   const [parcelDraft, setParcelDraft] = useState<{ kind: ParcelKind; vertices: Vec2[] } | null>(null)
   const [violationPipeIds, setViolationPipeIds] = useState<string[] | null>(null)
 
@@ -122,6 +126,11 @@ export function ProjectPage() {
       setCatalogs(await fetchCatalogs(id))
     } catch {
       setCatalogs([])
+    }
+    try {
+      setExisting(await fetchExisting(id))
+    } catch {
+      setExisting([])
     }
     setState('ready')
   }, [id])
@@ -396,6 +405,31 @@ export function ProjectPage() {
 
   const violationCount = violationPipeIds?.length ?? null
 
+  const existingGeo = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: existing.flatMap((row) => {
+        const m = row.meta
+        if (!m) return []
+        return [
+          {
+            type: 'Feature' as const,
+            properties: { decision: row.decision },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: [localToLonLat(m.ax, m.ay), localToLonLat(m.bx, m.by)],
+            },
+          },
+        ]
+      }),
+    }),
+    [existing],
+  )
+  const designedLengthM = useMemo(
+    () => pipes.reduce((sum, p) => sum + (p.length_m ?? 0), 0),
+    [pipes],
+  )
+
   const networkLines = useMemo<FeatureCollection>(() => {
     const nodeById = new Map(nodes.map((n) => [n.id, n]))
     const labelOf = (nid: string) => nodeById.get(nid)?.label ?? nid
@@ -580,6 +614,7 @@ export function ProjectPage() {
             fittings={fittingsGeo}
             problems={problemsGeo}
             parcels={parcelsGeo}
+            existingLines={existingGeo}
             draftPolygon={parcelDraft?.vertices}
             violationPipeIds={violationPipeIds ?? undefined}
             pressureByBuilding={pressureByBuilding}
@@ -605,9 +640,13 @@ export function ProjectPage() {
             onCheck={checkViolations}
           />
           {isReconstruction && (
-            <Panel title={t('project.reconstructionSoon.title')} status="empty">
-              <p className="hint">{t('project.reconstructionSoon.hint')}</p>
-            </Panel>
+            <ExistingNetworkSection
+              projectId={project.id}
+              existing={existing}
+              points={topoPoints}
+              designedLengthM={designedLengthM}
+              onChanged={load}
+            />
           )}
           {!isWater && (
             <Panel title={t('project.moduleSoonTitle')} status="default">

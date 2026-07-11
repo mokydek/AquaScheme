@@ -26,6 +26,7 @@ interface Props {
   fittings: FeatureCollection
   problems: FeatureCollection
   parcels?: FeatureCollection
+  existingLines?: FeatureCollection
   draftPolygon?: Array<{ x: number; y: number }>
   violationPipeIds?: string[]
   pressureByBuilding: Record<string, { pressureM: number; ok: boolean; requiredPressureM: number | null }>
@@ -120,6 +121,7 @@ export function ProjectMap({
   fittings,
   problems,
   parcels,
+  existingLines,
   draftPolygon,
   violationPipeIds,
   pressureByBuilding,
@@ -267,6 +269,25 @@ export function ProjectMap({
           'line-color': ['case', ['==', ['get', 'kind'], 'right_of_way'], '#0033cc', '#8a8a8a'],
           'line-width': 1,
           'line-dasharray': ['case', ['==', ['get', 'kind'], 'right_of_way'], ['literal', [4, 3]], ['literal', [1, 0]]],
+        },
+      })
+      // Existing network (reconstruction): thin lines, dashed by decision.
+      map.addSource('existing', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'existing-lines',
+        type: 'line',
+        source: 'existing',
+        paint: {
+          'line-color': '#6a6a6a',
+          'line-width': 1,
+          'line-dasharray': [
+            'case',
+            ['==', ['get', 'decision'], 'replace'],
+            ['literal', [1, 2]],
+            ['==', ['get', 'decision'], 'rehabilitate'],
+            ['literal', [4, 3]],
+            ['literal', [1, 0]],
+          ],
         },
       })
       map.addSource('net-lines', { type: 'geojson', data: EMPTY_FC })
@@ -613,6 +634,7 @@ export function ProjectMap({
     const map = mapRef.current
     if (!map || !ready) return
     ;(map.getSource('parcels') as maplibregl.GeoJSONSource).setData(parcels ?? EMPTY_FC)
+    ;(map.getSource('existing') as maplibregl.GeoJSONSource).setData(existingLines ?? EMPTY_FC)
 
     const draftFeatures: Feature[] = []
     const draft = draftPolygon ?? []
@@ -635,7 +657,7 @@ export function ProjectMap({
       type: 'FeatureCollection',
       features: draftFeatures,
     })
-  }, [ready, parcels, draftPolygon])
+  }, [ready, parcels, existingLines, draftPolygon])
 
   return (
     <section className="panel">
