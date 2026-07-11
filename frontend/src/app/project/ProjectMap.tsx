@@ -25,13 +25,18 @@ interface Props {
   networkJunctions: FeatureCollection
   fittings: FeatureCollection
   problems: FeatureCollection
+  parcels?: FeatureCollection
+  draftPolygon?: Array<{ x: number; y: number }>
+  violationPipeIds?: string[]
   pressureByBuilding: Record<string, { pressureM: number; ok: boolean; requiredPressureM: number | null }>
   hasResults: boolean
   placementActive?: boolean
+  drawingActive?: boolean
   onAddBuilding: (x: number, y: number) => Promise<void>
   onMoveSource: (x: number, y: number) => Promise<void>
   onDeleteBuilding: (id: string) => Promise<void>
   onPlaceObject?: (x: number, y: number) => void
+  onDrawVertex?: (x: number, y: number) => void
 }
 
 const VELOCITY_COLOR: maplibregl.ExpressionSpecification = [
@@ -114,13 +119,18 @@ export function ProjectMap({
   networkJunctions,
   fittings,
   problems,
+  parcels,
+  draftPolygon,
+  violationPipeIds,
   pressureByBuilding,
   hasResults,
   placementActive = false,
+  drawingActive = false,
   onAddBuilding,
   onMoveSource,
   onDeleteBuilding,
   onPlaceObject,
+  onDrawVertex,
 }: Props) {
   const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -143,10 +153,12 @@ export function ProjectMap({
   }
 
   // Keep the latest callbacks and popup labels visible to map handlers.
-  const callbacksRef = useRef({ onAddBuilding, onMoveSource, onDeleteBuilding, onPlaceObject })
-  callbacksRef.current = { onAddBuilding, onMoveSource, onDeleteBuilding, onPlaceObject }
+  const callbacksRef = useRef({ onAddBuilding, onMoveSource, onDeleteBuilding, onPlaceObject, onDrawVertex })
+  callbacksRef.current = { onAddBuilding, onMoveSource, onDeleteBuilding, onPlaceObject, onDrawVertex }
   const placementRef = useRef(placementActive)
   placementRef.current = placementActive
+  const drawingRef = useRef(drawingActive)
+  drawingRef.current = drawingActive
   const labelsRef = useRef<Record<string, string>>({})
   labelsRef.current = {
     floors: t('project.map.floors'),
@@ -168,8 +180,11 @@ export function ProjectMap({
   useEffect(() => {
     modeRef.current = mode
     const map = mapRef.current
-    if (map) map.getCanvas().style.cursor = mode === 'view' && !placementActive ? '' : 'crosshair'
-  }, [mode, placementActive])
+    if (map) {
+      map.getCanvas().style.cursor =
+        mode === 'view' && !placementActive && !drawingActive ? '' : 'crosshair'
+    }
+  }, [mode, placementActive, drawingActive])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -234,9 +249,30 @@ export function ProjectMap({
           'text-halo-width': 1,
         },
       })
+      map.addSource('parcels', { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'parcels-fill',
+        type: 'fill',
+        source: 'parcels',
+        paint: {
+          'fill-color': ['case', ['==', ['get', 'kind'], 'right_of_way'], '#0033cc', '#8a8a8a'],
+          'fill-opacity': 0.05,
+        },
+      })
+      map.addLayer({
+        id: 'parcels-outline',
+        type: 'line',
+        source: 'parcels',
+        paint: {
+          'line-color': ['case', ['==', ['get', 'kind'], 'right_of_way'], '#0033cc', '#8a8a8a'],
+          'line-width': 1,
+          'line-dasharray': ['case', ['==', ['get', 'kind'], 'right_of_way'], ['literal', [4, 3]], ['literal', [1, 0]]],
+        },
+      })
       map.addSource('net-lines', { type: 'geojson', data: EMPTY_FC })
       map.addSource('net-junctions', { type: 'geojson', data: EMPTY_FC })
       map.addSource('problems', { type: 'geojson', data: EMPTY_FC })
+      map.addSource('parcel-draft', { type: 'geojson', data: EMPTY_FC })
       map.addLayer({
         id: 'pipes-service',
         type: 'line',
@@ -255,6 +291,14 @@ export function ProjectMap({
         source: 'net-lines',
         filter: ['!=', ['get', 'kind'], 'service'],
         paint: { 'line-color': '#0033cc', 'line-width': 2 },
+      })
+      // Foreign parcel crossings: bold dashed black overlay.
+      map.addLayer({
+        id: 'pipes-violation',
+        type: 'line',
+        source: 'net-lines',
+        filter: ['in', ['get', 'engineId'], ['literal', []]],
+        paint: { 'line-color': '#0a0a0a', 'line-width': 3, 'line-dasharray': [2, 2] },
       })
       // Transparent wide hit target so thin pipes are clickable.
       map.addLayer({
@@ -339,11 +383,30 @@ export function ProjectMap({
           'circle-stroke-width': 1.6,
         },
       })
+      // Parcel being drawn.
+      map.addLayer({
+        id: 'parcel-draft-line',
+        type: 'line',
+        source: 'parcel-draft',
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: { 'line-color': '#0033cc', 'line-width': 1.5, 'line-dasharray': [3, 2] },
+      })
+      map.addLayer({
+        id: 'parcel-draft-points',
+        type: 'circle',
+        source: 'parcel-draft',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: { 'circle-radius': 3, 'circle-color': '#0033cc' },
+      })
       setReady(true)
     })
 
     map.on('click', (e) => {
       const { x, y } = lonLatToLocal(e.lngLat.lng, e.lngLat.lat)
+      if (drawingRef.current) {
+        callbacksRef.current.onDrawVertex?.(round2(x), round2(y))
+        return
+      }
       if (placementRef.current) {
         callbacksRef.current.onPlaceObject?.(round2(x), round2(y))
         return
@@ -542,7 +605,37 @@ export function ProjectMap({
     ;(map.getSource('fittings') as maplibregl.GeoJSONSource).setData(fittings)
     ;(map.getSource('problems') as maplibregl.GeoJSONSource).setData(problems)
     map.setPaintProperty('pipes-main', 'line-color', hasResults ? VELOCITY_COLOR : '#0033cc')
-  }, [ready, networkLines, networkJunctions, fittings, problems, hasResults])
+    map.setFilter('pipes-violation', ['in', ['get', 'engineId'], ['literal', violationPipeIds ?? []]])
+  }, [ready, networkLines, networkJunctions, fittings, problems, hasResults, violationPipeIds])
+
+  // Parcels and the polygon being drawn.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    ;(map.getSource('parcels') as maplibregl.GeoJSONSource).setData(parcels ?? EMPTY_FC)
+
+    const draftFeatures: Feature[] = []
+    const draft = draftPolygon ?? []
+    if (draft.length >= 1) {
+      draftFeatures.push(...draft.map((p) => ({
+        type: 'Feature' as const,
+        properties: {},
+        geometry: { type: 'Point' as const, coordinates: localToLonLat(p.x, p.y) },
+      })))
+      if (draft.length >= 2) {
+        const ring = draft.length >= 3 ? [...draft, draft[0]] : draft
+        draftFeatures.push({
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: ring.map((p) => localToLonLat(p.x, p.y)) },
+        })
+      }
+    }
+    ;(map.getSource('parcel-draft') as maplibregl.GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: draftFeatures,
+    })
+  }, [ready, parcels, draftPolygon])
 
   return (
     <section className="panel">

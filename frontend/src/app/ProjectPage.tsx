@@ -25,7 +25,17 @@ import { ExportSection } from './project/ExportSection'
 import { ImportSection } from './project/ImportSection'
 import { ObjectLibrary } from './project/ObjectLibrary'
 import type { Placement } from './project/ObjectLibrary'
+import { ParcelsSection } from './project/ParcelsSection'
 import { Panel } from './project/Panel'
+import { analyzeParcelViolations } from '@aquascheme/engine'
+import type { ParcelKind, Vec2, ViolationPipe } from '@aquascheme/engine'
+import {
+  autoAssignParcels,
+  fetchParcels,
+  insertParcel,
+  parcelPolygons,
+} from '../shared/parcels'
+import type { ParcelRow } from '../shared/parcels'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
 interface ProjectInfo {
@@ -52,6 +62,9 @@ export function ProjectPage() {
   const [pipelineBusy, setPipelineBusy] = useState(false)
   const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
   const [placement, setPlacement] = useState<Placement | null>(null)
+  const [parcels, setParcels] = useState<ParcelRow[]>([])
+  const [parcelDraft, setParcelDraft] = useState<{ kind: ParcelKind; vertices: Vec2[] } | null>(null)
+  const [violationPipeIds, setViolationPipeIds] = useState<string[] | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -95,6 +108,11 @@ export function ProjectPage() {
     setNodes((nodesRes.data ?? []) as NodeRow[])
     setPipes((pipesRes.data ?? []) as PipeRow[])
     setLastRun((runRes.data?.summary ?? null) as SizingResult | null)
+    try {
+      setParcels(await fetchParcels(id))
+    } catch {
+      setParcels([])
+    }
     setState('ready')
   }, [id])
 
@@ -298,6 +316,75 @@ export function ProjectPage() {
     [load],
   )
 
+  // Parcels: drawing and violation analysis.
+  const startDraw = useCallback((kind: ParcelKind) => {
+    setPlacement(null)
+    setParcelDraft({ kind, vertices: [] })
+  }, [])
+  const drawVertex = useCallback((x: number, y: number) => {
+    setParcelDraft((prev) => (prev ? { ...prev, vertices: [...prev.vertices, { x, y }] } : prev))
+  }, [])
+  const cancelDraw = useCallback(() => setParcelDraft(null), [])
+  const finishDraw = useCallback(async () => {
+    if (!id || !parcelDraft || parcelDraft.vertices.length < 3) return
+    await insertParcel(id, parcelDraft.kind, parcelDraft.vertices, null)
+    setParcelDraft(null)
+    const rows = await fetchParcels(id)
+    await autoAssignParcels(rows, buildings.map((b) => ({ id: b.id, x: b.x, y: b.y })))
+    await load()
+  }, [id, parcelDraft, buildings, load])
+
+  const parcelsChanged = useCallback(async () => {
+    if (!id) return
+    const rows = await fetchParcels(id)
+    await autoAssignParcels(rows, buildings.map((b) => ({ id: b.id, x: b.x, y: b.y })))
+    setViolationPipeIds(null)
+    await load()
+  }, [id, buildings, load])
+
+  const checkViolations = useCallback(() => {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]))
+    const buildingIdByNode = new Map(nodes.filter((n) => n.building_id).map((n) => [n.id, n.building_id as string]))
+    const violationInputs: ViolationPipe[] = []
+    for (const pipe of pipes) {
+      const a = nodeById.get(pipe.from_node)
+      const b = nodeById.get(pipe.to_node)
+      if (!a || !b) continue
+      violationInputs.push({
+        id: pipe.meta?.engineId ?? pipe.id,
+        kind: pipe.meta?.kind ?? 'main',
+        a: { x: a.x, y: a.y },
+        b: { x: b.x, y: b.y },
+        buildingId: buildingIdByNode.get(pipe.to_node) ?? buildingIdByNode.get(pipe.from_node),
+      })
+    }
+    const violations = analyzeParcelViolations(violationInputs, parcelPolygons(parcels))
+    setViolationPipeIds([...new Set(violations.map((v) => v.pipeId))])
+  }, [nodes, pipes, parcels])
+
+  const parcelsGeo = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: parcels.flatMap((row) => {
+        const outer = row.geometry?.coordinates?.[0]
+        if (!Array.isArray(outer)) return []
+        return [
+          {
+            type: 'Feature' as const,
+            properties: { kind: row.kind, id: row.id },
+            geometry: {
+              type: 'Polygon' as const,
+              coordinates: [outer.map((c) => localToLonLat(c[0], c[1]))],
+            },
+          },
+        ]
+      }),
+    }),
+    [parcels],
+  )
+
+  const violationCount = violationPipeIds?.length ?? null
+
   const networkLines = useMemo<FeatureCollection>(() => {
     const nodeById = new Map(nodes.map((n) => [n.id, n]))
     const labelOf = (nid: string) => nodeById.get(nid)?.label ?? nid
@@ -481,13 +568,30 @@ export function ProjectPage() {
             networkJunctions={networkJunctions}
             fittings={fittingsGeo}
             problems={problemsGeo}
+            parcels={parcelsGeo}
+            draftPolygon={parcelDraft?.vertices}
+            violationPipeIds={violationPipeIds ?? undefined}
             pressureByBuilding={pressureByBuilding}
             hasResults={hasResults}
             placementActive={placement !== null}
+            drawingActive={parcelDraft !== null}
             onAddBuilding={addBuildingAt}
             onMoveSource={moveSourceTo}
             onDeleteBuilding={deleteBuilding}
             onPlaceObject={placeObject}
+            onDrawVertex={drawVertex}
+          />
+          <ParcelsSection
+            projectId={project.id}
+            parcels={parcels}
+            buildings={buildings}
+            draft={parcelDraft}
+            violationCount={violationCount}
+            onStartDraw={startDraw}
+            onCancelDraw={cancelDraw}
+            onFinishDraw={finishDraw}
+            onChanged={parcelsChanged}
+            onCheck={checkViolations}
           />
           {isReconstruction && (
             <Panel title={t('project.reconstructionSoon.title')} status="empty">
