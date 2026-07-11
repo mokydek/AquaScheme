@@ -3,6 +3,12 @@
  * The engine is pure TypeScript: no React, no DOM, no Supabase.
  */
 
+/** Engineering system of a project (requirements update 1). */
+export type SystemType = 'water' | 'sewer' | 'storm'
+
+/** Kind of works of a project (requirements update 1). */
+export type WorkType = 'new' | 'reconstruction'
+
 /** A topographic survey point. Coordinates in meters, Z is ground elevation. */
 export interface SurveyPoint {
   x: number

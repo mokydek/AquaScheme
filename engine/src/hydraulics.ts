@@ -1,4 +1,5 @@
 import { CountType, LinkProperty, NodeProperty, Project, Workspace } from 'epanet-js'
+import type { NetworkSolver, PressureSolveResult } from './systems'
 
 /**
  * Steady state hydraulic solver on top of EPANET (epanet-js, WASM).
@@ -98,6 +99,33 @@ async function getWorkspace(): Promise<Workspace> {
     })()
   }
   return loading
+}
+
+/**
+ * The water implementation of the NetworkSolver architecture (systems.ts).
+ * Lives here, in the heavy subpath, so EPANET WASM stays out of the main
+ * bundle; sewer and storm gravity solvers arrive in phases K1/K2.
+ */
+export const waterPressureSolver: NetworkSolver<HydraulicsInput, PressureSolveResult> = {
+  systemType: 'water',
+  async solve(input: HydraulicsInput): Promise<PressureSolveResult> {
+    const result = await solveHydraulics(input)
+    return {
+      kind: 'pressure',
+      systemType: 'water',
+      nodes: [...result.nodes.values()].map((n) => ({
+        id: n.id,
+        headM: n.headM,
+        pressureM: n.pressureM,
+      })),
+      pipes: [...result.pipes.values()].map((p) => ({
+        id: p.id,
+        flowLps: p.flowLps,
+        velocityMs: p.velocityMs,
+        headlossM: p.headlossM,
+      })),
+    }
+  },
 }
 
 export async function solveHydraulics(input: HydraulicsInput): Promise<HydraulicsResult> {
