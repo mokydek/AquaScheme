@@ -167,6 +167,14 @@ function localExtremes(
 }
 
 export function placeFittings(network: TracedNetwork, options: FittingsOptions = {}): FittingsPlan {
+  // Auto traced networks have ordered ring nodes (R1..Rn) and use the path
+  // strategy below; imported routes (importnet) have an arbitrary graph and
+  // use the graph strategy.
+  const hasRing = network.nodes.some((n) => n.kind === 'ring')
+  return hasRing ? ringPlacement(network, options) : graphPlacement(network, options)
+}
+
+function ringPlacement(network: TracedNetwork, options: FittingsOptions = {}): FittingsPlan {
   const opt = { ...FITTINGS_DEFAULTS, ...options }
   const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
 
@@ -216,6 +224,121 @@ export function placeFittings(network: TracedNetwork, options: FittingsOptions =
   const wells: FittingsPlan['wells'] = []
   let wellIndex = 0
   for (const id of orderedIds) {
+    const types: FittingType[] = []
+    if (hydrants.has(id)) types.push('hydrant')
+    if (valves.has(id)) types.push('valve')
+    if (airValves.has(id)) types.push('airValve')
+    if (washouts.has(id)) types.push('washout')
+    if (types.length > 0) {
+      items.push({ nodeId: id, types })
+      wellIndex++
+      wells.push({ nodeId: id, label: `ВК-${wellIndex}` })
+    }
+  }
+
+  return {
+    items,
+    wells,
+    counts: {
+      hydrants: hydrants.size,
+      valves: valves.size,
+      airValves: airValves.size,
+      washouts: washouts.size,
+      wells: wells.length,
+    },
+  }
+}
+
+/**
+ * Fittings placement on an arbitrary imported graph: BFS from the source
+ * connection with the same greedy spacing rule as the path strategy
+ * (an item is placed at the previous node whenever the next edge would
+ * exceed the spacing), sectioning valves additionally at branch nodes,
+ * air valves and washouts at local elevation extremes versus the graph
+ * neighbors. Deterministic: neighbor lists are sorted.
+ */
+function graphPlacement(network: TracedNetwork, options: FittingsOptions = {}): FittingsPlan {
+  const opt = { ...FITTINGS_DEFAULTS, ...options }
+  const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
+  const empty: FittingsPlan = {
+    items: [],
+    wells: [],
+    counts: { hydrants: 0, valves: 0, airValves: 0, washouts: 0, wells: 0 },
+  }
+
+  const mains = network.pipes.filter(
+    (p) => p.kind === 'main' || p.kind === 'ring' || p.kind === 'cross',
+  )
+  if (mains.length === 0) return empty
+
+  const adj = new Map<string, Array<{ to: string; lengthM: number }>>()
+  const link = (a: string, b: string, lengthM: number) => {
+    adj.set(a, [...(adj.get(a) ?? []), { to: b, lengthM }])
+  }
+  for (const pipe of mains) {
+    link(pipe.fromNode, pipe.toNode, pipe.lengthM)
+    link(pipe.toNode, pipe.fromNode, pipe.lengthM)
+  }
+
+  const supply = network.pipes.find(
+    (p) => p.kind === 'supply' && (adj.has(p.toNode) || adj.has(p.fromNode)),
+  )
+  const sortedIds = [...adj.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  const start = supply ? (adj.has(supply.toNode) ? supply.toNode : supply.fromNode) : sortedIds[0]
+
+  const order: string[] = []
+  const visited = new Set<string>([start])
+  const hydrants = new Set<string>([start])
+  const valves = new Set<string>([start])
+  const hydrantDist = new Map<string, number>([[start, 0]])
+  const valveDist = new Map<string, number>([[start, 0]])
+  const queue: string[] = [start]
+  while (queue.length > 0) {
+    const current = queue.shift() as string
+    order.push(current)
+    const neighbors = [...(adj.get(current) ?? [])].sort((a, b) =>
+      a.to.localeCompare(b.to, undefined, { numeric: true }),
+    )
+    for (const { to, lengthM } of neighbors) {
+      if (visited.has(to)) continue
+      visited.add(to)
+      let dh = (hydrantDist.get(current) ?? 0) + lengthM
+      if (dh > opt.hydrantSpacingM) {
+        hydrants.add(current)
+        dh = lengthM
+      }
+      hydrantDist.set(to, dh)
+      let dv = (valveDist.get(current) ?? 0) + lengthM
+      if (dv > opt.valveSpacingM) {
+        valves.add(current)
+        dv = lengthM
+      }
+      valveDist.set(to, dv)
+      queue.push(to)
+    }
+  }
+
+  for (const [id, list] of adj) {
+    if (list.length >= 3) valves.add(id)
+  }
+
+  const airValves = new Set<string>()
+  const washouts = new Set<string>()
+  for (const [id, list] of adj) {
+    if (list.length < 2) continue
+    const node = nodeById.get(id)
+    if (!node) continue
+    const neighborElevations = list.map(
+      (edge) => nodeById.get(edge.to)?.groundElevation ?? node.groundElevation,
+    )
+    if (neighborElevations.every((z) => node.groundElevation > z)) airValves.add(id)
+    if (neighborElevations.every((z) => node.groundElevation < z)) washouts.add(id)
+  }
+
+  const items: FittingsPlan['items'] = []
+  const wells: FittingsPlan['wells'] = []
+  let wellIndex = 0
+  for (const id of order) {
     const types: FittingType[] = []
     if (hydrants.has(id)) types.push('hydrant')
     if (valves.has(id)) types.push('valve')

@@ -6,7 +6,7 @@ import type { BuildingRow } from '../../shared/datasets'
 import type { NodeRow } from '../../shared/network'
 import { Panel } from './Panel'
 
-const KIND_ORDER: Record<string, number> = { supply: 0, ring: 1, cross: 2, service: 3 }
+const KIND_ORDER: Record<string, number> = { supply: 0, ring: 1, main: 1, cross: 2, service: 3 }
 
 export function ResultsSection({
   lastRun,

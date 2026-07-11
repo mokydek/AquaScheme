@@ -126,7 +126,17 @@ export function ProjectMap({
   const fittedRef = useRef(false)
   const terrainKeyRef = useRef('')
   const [mode, setMode] = useState<Mode>('view')
+  const [basemap, setBasemap] = useState<'osm' | 'blank'>('osm')
   const [ready, setReady] = useState(false)
+
+  const toggleBasemap = () => {
+    const next = basemap === 'osm' ? 'blank' : 'osm'
+    setBasemap(next)
+    const map = mapRef.current
+    if (map && ready) {
+      map.setLayoutProperty('osm', 'visibility', next === 'osm' ? 'visible' : 'none')
+    }
+  }
 
   // Keep the latest callbacks and popup labels visible to map handlers.
   const callbacksRef = useRef({ onAddBuilding, onMoveSource, onDeleteBuilding })
@@ -543,6 +553,9 @@ export function ProjectMap({
             {t(`project.map.${m}`)}
           </button>
         ))}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={toggleBasemap}>
+          {t(`project.map.basemap.${basemap}`)}
+        </button>
         <span className="hint map-hint">{t(`project.map.hint.${mode}`)}</span>
       </div>
       {hasResults && (

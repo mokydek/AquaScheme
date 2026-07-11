@@ -21,6 +21,7 @@ import { HydraulicsSection } from './project/HydraulicsSection'
 import { EquipmentSection } from './project/EquipmentSection'
 import { ResultsSection } from './project/ResultsSection'
 import { ExportSection } from './project/ExportSection'
+import { ImportSection } from './project/ImportSection'
 import { Panel } from './project/Panel'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
@@ -457,6 +458,13 @@ export function ProjectPage() {
           )}
           {isWater && (
             <>
+              <ImportSection
+                projectId={project.id}
+                buildings={buildings}
+                source={sourceData}
+                points={topoPoints}
+                onChanged={load}
+              />
               <TraceSection
                 projectId={project.id}
                 buildings={buildings}

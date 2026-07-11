@@ -48,6 +48,7 @@ const DISCLAIMER =
 const PIPE_KIND_LABEL: Record<string, string> = {
   supply: 'Водовод',
   ring: 'Кольцо',
+  main: 'Магистраль',
   cross: 'Перемычка',
   service: 'Ввод',
 }

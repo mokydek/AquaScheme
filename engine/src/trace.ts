@@ -42,8 +42,9 @@ export interface TraceOptions {
   crossThresholdM?: number
 }
 
-export type NetworkNodeKind = 'source' | 'ring' | 'cross' | 'building'
-export type NetworkPipeKind = 'supply' | 'ring' | 'cross' | 'service'
+/** 'junction' nodes and 'main' pipes come from imported routes (importnet). */
+export type NetworkNodeKind = 'source' | 'ring' | 'cross' | 'junction' | 'building'
+export type NetworkPipeKind = 'supply' | 'ring' | 'cross' | 'main' | 'service'
 
 export interface NetworkNode {
   id: string

@@ -25,6 +25,10 @@
     "./dxf": {
       "types": "./src/dxf.ts",
       "default": "./src/dxf.ts"
+    },
+    "./dxfread": {
+      "types": "./src/dxfread.ts",
+      "default": "./src/dxfread.ts"
     }
   },
   "scripts": {
@@ -34,6 +38,7 @@
   "dependencies": {
     "@tarikjabiri/dxf": "^2.8.9",
     "@turf/turf": "^7.2.0",
+    "dxf-parser": "^1.1.2",
     "epanet-js": "^0.9.0"
   },
   "devDependencies": {
