@@ -1,6 +1,7 @@
 import type { ExportInput } from './exportdata'
 import { materialLabel } from './exportdata'
 import type { MaterialReasonCode } from './equipment'
+import { getClause, NORM_DOCUMENTS } from './normregistry'
 
 /**
  * Builds an explanatory note as a pdfmake document definition (a plain
@@ -51,6 +52,27 @@ const PIPE_KIND_LABEL: Record<string, string> = {
   main: 'Магистраль',
   cross: 'Перемычка',
   service: 'Ввод',
+}
+
+/** Reference to a registry clause, with an unverified marker. */
+function clauseText(id: string): string {
+  const c = getClause(id)
+  if (!c) return id
+  const clause = c.clause ? `п. ${c.clause}` : 'пункт уточняется'
+  return `${c.documentCode} ${clause}${c.status === 'unverified' ? ' (требует проверки)' : ''}`
+}
+
+/** A "Нормативное обоснование" line under a decision table. */
+function basisLine(ids: string[], extra?: string): Record<string, unknown> {
+  const parts = ids.map(clauseText)
+  if (extra) parts.push(extra)
+  return {
+    text: `Нормативное обоснование: ${parts.join('; ')}`,
+    fontSize: 8,
+    italics: true,
+    color: '#555555',
+    margin: [0, 2, 0, 8],
+  }
 }
 
 function heading(text: string): Record<string, unknown> {
@@ -150,6 +172,7 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       ['Расчётный секундный расход, л/с', d.designFlowLps.toFixed(2)],
       ['С учётом пожаротушения, л/с', d.designFlowWithFireLps.toFixed(2)],
     ]),
+    basisLine(['demand.perCapita', 'demand.kDayMax', 'demand.hourly', 'fire.flow']),
 
     heading('4. Гидравлический расчёт по участкам'),
     {
@@ -157,10 +180,11 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       layout: 'lightHorizontalLines',
       fontSize: 8,
     },
+    basisLine(['velocity.economic', 'velocity.max', 'main.looped']),
 
     heading('5. Проверка свободных напоров у зданий'),
     {
-      text: 'Требуемый свободный напор: 10 м при одноэтажной застройке плюс 4 м на каждый следующий этаж (СНиП 2.04.02-84*, п. 2.26).',
+      text: 'Требуемый свободный напор: 10 м при одноэтажной застройке плюс 4 м на каждый следующий этаж.',
       margin: [0, 0, 0, 4],
     },
     {
@@ -168,6 +192,7 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       layout: 'lightHorizontalLines',
       fontSize: 8,
     },
+    basisLine(['freeHead.base', 'freeHead.perFloor', 'freeHead.max']),
 
     heading('6. Материалы, стыки и глубина заложения'),
     kvTable([
@@ -177,6 +202,10 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       ['Компенсационные вставки', m.needsCompensators ? 'требуются' : 'не требуются'],
     ]),
     { ul: m.reasons.map((r) => REASON_TEXT[r]).filter(Boolean), margin: [0, 4, 0, 0] },
+    basisLine(
+      ['burial.depth', 'seismic.joints'],
+      'выбор марки материала — проектное решение по критерию минимальной стоимости; норматив выбор не регламентирует',
+    ),
 
     heading('7. Арматура и сооружения'),
     kvTable([
@@ -186,6 +215,22 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       ['Выпуски, шт', String(input.fittings.counts.washouts)],
       ['Колодцы, шт', String(input.fittings.counts.wells)],
     ]),
+    basisLine(['hydrant.spacing']),
+
+    heading('8. Перечень использованных нормативных документов'),
+    {
+      ol: NORM_DOCUMENTS.map(
+        (dd) =>
+          `${dd.code} — ${dd.title}${dd.status === 'unverified' ? ' (ссылки на пункты требуют проверки по официальному изданию)' : ''}`,
+      ),
+    },
+    {
+      text: 'Часть ссылок на пункты нормативов помечена как требующая проверки по официальному изданию СП РК и ГОСТ. Окончательная сверка выполняется инженером.',
+      fontSize: 9,
+      italics: true,
+      color: '#555555',
+      margin: [0, 4, 0, 0],
+    },
 
     { text: DISCLAIMER, italics: true, color: '#555555', margin: [0, 16, 0, 0] },
   ]

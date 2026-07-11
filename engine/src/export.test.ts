@@ -113,6 +113,12 @@ describe('explanatory note', () => {
     expect(json).toContain('4. Гидравлический расчёт по участкам')
     expect(json).toContain('Проверка свободных напоров')
     expect(json).toContain('СП РК 4.01-101-2012')
+    // Requirements update 2: normative basis in decision sections and a list
+    // of documents, with unverified clauses marked.
+    expect(json).toContain('Нормативное обоснование')
+    expect(json).toContain('Перечень использованных нормативных документов')
+    expect(json).toContain('требует проверки')
+    expect(json).toContain('норматив выбор не регламентирует')
     expect(Array.isArray((doc as { content: unknown[] }).content)).toBe(true)
   }, 60000)
 })
