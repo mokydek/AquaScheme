@@ -33,6 +33,7 @@ import { ExistingNetworkSection } from './project/ExistingNetworkSection'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
 import { syncNormRegistry } from '../shared/norms'
+import { NormRegistrySection } from './project/NormRegistrySection'
 import { Panel } from './project/Panel'
 import { analyzeParcelViolations } from '@aquascheme/engine'
 import type { ParcelKind, Vec2, ViolationPipe } from '@aquascheme/engine'
@@ -722,6 +723,7 @@ export function ProjectPage() {
           <SeismicSection projectId={project.id} dataset={datasets.seismic} onSaved={load} />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />
           {isWater && <DemandSection buildings={buildings} normsDataset={datasets.normative} />}
+          <NormRegistrySection />
         </div>
       </div>
     </section>

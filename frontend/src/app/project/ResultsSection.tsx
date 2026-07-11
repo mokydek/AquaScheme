@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { buildRecommendations } from '@aquascheme/engine'
+import { buildRecommendations, ISSUE_BASIS, ISSUE_REFS } from '@aquascheme/engine'
 import type { SizedPipe, SizingResult } from '@aquascheme/engine/sizing'
 import type { BuildingRow } from '../../shared/datasets'
 import type { NodeRow } from '../../shared/network'
+import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
 
 const KIND_ORDER: Record<string, number> = { supply: 0, ring: 1, main: 1, cross: 2, service: 3 }
@@ -93,6 +94,9 @@ export function ResultsSection({
                   <li key={action}>{t(`project.results.action.${action}`)}</li>
                 ))}
               </ul>
+              <div style={{ marginTop: 8 }}>
+                <NormBadge refs={ISSUE_REFS[rec.kind]} basis={ISSUE_BASIS[rec.kind]} />
+              </div>
             </div>
           ))}
         </div>
@@ -130,6 +134,11 @@ export function ResultsSection({
             })}
           </tbody>
         </table>
+      </div>
+      <div className="norm-basis-list">
+        <NormBadge refs={['velocity.economic', 'velocity.max']} />
+        <NormBadge refs={['freeHead.base', 'freeHead.perFloor', 'freeHead.max']} />
+        <NormBadge refs={['main.looped']} />
       </div>
     </Panel>
   )

@@ -1019,6 +1019,66 @@ textarea {
   background: var(--accent-tint);
 }
 
+/* Norm basis badges */
+
+.norm-badge-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.norm-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.norm-badge.norm-ok {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.norm-badge.norm-unverified {
+  color: var(--ink-soft);
+  border-style: dashed;
+}
+
+.norm-badge.norm-project {
+  color: var(--ink-soft);
+  cursor: default;
+}
+
+.norm-detail {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding: 8px 10px;
+  border-left: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.norm-detail-row {
+  display: block;
+}
+
+.norm-detail-row + .norm-detail-row {
+  margin-top: 6px;
+}
+
+.norm-basis-list {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
 .btn-ghost.active {
   background: var(--ink);
   color: #ffffff;
