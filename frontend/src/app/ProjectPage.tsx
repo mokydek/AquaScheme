@@ -21,12 +21,17 @@ import { HydraulicsSection } from './project/HydraulicsSection'
 import { EquipmentSection } from './project/EquipmentSection'
 import { ResultsSection } from './project/ResultsSection'
 import { ExportSection } from './project/ExportSection'
+import { Panel } from './project/Panel'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
 interface ProjectInfo {
   id: string
   name: string
+  work_type?: string | null
+  system_type?: string | null
 }
+
+const SYSTEM_MARKS: Record<string, string> = { water: 'В1', sewer: 'К1', storm: 'К2' }
 
 export function ProjectPage() {
   const { id } = useParams<{ id: string }>()
@@ -46,7 +51,7 @@ export function ProjectPage() {
   const load = useCallback(async () => {
     if (!id) return
     const [projectRes, datasetsRes, buildingsRes, nodesRes, pipesRes, runRes] = await Promise.all([
-      supabase.from('projects').select('id,name').eq('id', id).maybeSingle(),
+      supabase.from('projects').select('*').eq('id', id).maybeSingle(),
       supabase.from('datasets').select('*').eq('project_id', id),
       supabase
         .from('buildings')
@@ -351,6 +356,11 @@ export function ProjectPage() {
     [nodes],
   )
 
+  const systemType = project?.system_type ?? 'water'
+  const workType = project?.work_type ?? 'new'
+  const isWater = systemType === 'water'
+  const isReconstruction = workType === 'reconstruction'
+
   if (state === 'loading') return null
 
   if (state === 'notFound' || !project) {
@@ -377,12 +387,20 @@ export function ProjectPage() {
           </Link>
         </p>
         <div className="project-head">
-          <h1>{project.name}</h1>
+          <div>
+            <h1>{project.name}</h1>
+            <p style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+              <span className="badge">{t(`wizard.workType.${workType}`)}</span>
+              <span className="badge ok">
+                {SYSTEM_MARKS[systemType]} · {t(`wizard.systemType.${systemType}`)}
+              </span>
+            </p>
+          </div>
           <div className="project-head-actions">
             <button
               type="button"
               className="btn btn-sm"
-              disabled={demoBusy || pipelineBusy}
+              disabled={demoBusy || pipelineBusy || !isWater}
               onClick={() => void demoAndRun()}
             >
               {pipelineBusy || demoBusy ? t('project.pipeline.running') : t('project.pipeline.demoRun')}
@@ -390,7 +408,7 @@ export function ProjectPage() {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              disabled={demoBusy || pipelineBusy}
+              disabled={demoBusy || pipelineBusy || !isWater}
               onClick={() => void runPipeline()}
             >
               {t('project.pipeline.run')}
@@ -427,52 +445,66 @@ export function ProjectPage() {
             onMoveSource={moveSourceTo}
             onDeleteBuilding={deleteBuilding}
           />
-          <TraceSection
-            projectId={project.id}
-            buildings={buildings}
-            source={sourceData}
-            points={topoPoints}
-            nodes={nodes}
-            pipes={pipes}
-            onChanged={load}
-          />
-          <HydraulicsSection
-            projectId={project.id}
-            buildings={buildings}
-            source={sourceData}
-            normsDataset={datasets.normative}
-            nodes={nodes}
-            pipes={pipes}
-            lastSummary={lastRun}
-            onChanged={load}
-          />
-          <ResultsSection lastRun={lastRun} nodes={nodes} buildings={buildings} />
-          <ExportSection
-            projectId={project.id}
-            projectName={project.name}
-            buildings={buildings}
-            nodes={nodes}
-            pipes={pipes}
-            datasets={datasets}
-            lastRun={lastRun}
-          />
-          <EquipmentSection
-            projectId={project.id}
-            geologyDataset={datasets.geology}
-            seismicDataset={datasets.seismic}
-            equipmentDataset={datasets.equipment}
-            nodes={nodes}
-            pipes={pipes}
-            lastRun={lastRun}
-            onChanged={load}
-          />
+          {isReconstruction && (
+            <Panel title={t('project.reconstructionSoon.title')} status="empty">
+              <p className="hint">{t('project.reconstructionSoon.hint')}</p>
+            </Panel>
+          )}
+          {!isWater && (
+            <Panel title={t('project.moduleSoonTitle')} status="default">
+              <p className="hint">{t(`project.moduleSoon.${systemType}`)}</p>
+            </Panel>
+          )}
+          {isWater && (
+            <>
+              <TraceSection
+                projectId={project.id}
+                buildings={buildings}
+                source={sourceData}
+                points={topoPoints}
+                nodes={nodes}
+                pipes={pipes}
+                onChanged={load}
+              />
+              <HydraulicsSection
+                projectId={project.id}
+                buildings={buildings}
+                source={sourceData}
+                normsDataset={datasets.normative}
+                nodes={nodes}
+                pipes={pipes}
+                lastSummary={lastRun}
+                onChanged={load}
+              />
+              <ResultsSection lastRun={lastRun} nodes={nodes} buildings={buildings} />
+              <ExportSection
+                projectId={project.id}
+                projectName={project.name}
+                buildings={buildings}
+                nodes={nodes}
+                pipes={pipes}
+                datasets={datasets}
+                lastRun={lastRun}
+              />
+              <EquipmentSection
+                projectId={project.id}
+                geologyDataset={datasets.geology}
+                seismicDataset={datasets.seismic}
+                equipmentDataset={datasets.equipment}
+                nodes={nodes}
+                pipes={pipes}
+                lastRun={lastRun}
+                onChanged={load}
+              />
+            </>
+          )}
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
           <BuildingsSection projectId={project.id} buildings={buildings} onChanged={load} />
           <SourceSection projectId={project.id} dataset={datasets.source} onSaved={load} />
           <GeologySection projectId={project.id} dataset={datasets.geology} onSaved={load} />
           <SeismicSection projectId={project.id} dataset={datasets.seismic} onSaved={load} />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />
-          <DemandSection buildings={buildings} normsDataset={datasets.normative} />
+          {isWater && <DemandSection buildings={buildings} normsDataset={datasets.normative} />}
         </div>
       </div>
     </section>

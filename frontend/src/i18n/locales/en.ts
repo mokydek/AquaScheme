@@ -128,9 +128,37 @@ export const en = {
         generic: 'The request failed. Please try again',
       },
     },
+    wizard: {
+      step: 'Step {{n}} of 3',
+      workTypeTitle: 'Kind of works',
+      systemTypeTitle: 'System type',
+      nameTitle: 'Project name',
+      workType: {
+        new: 'New construction',
+        reconstruction: 'Reconstruction',
+      },
+      workTypeHint: {
+        new: 'Design a network from scratch',
+        reconstruction: 'Existing network, survey act, per segment decisions',
+      },
+      systemType: {
+        water: 'Water supply',
+        sewer: 'Sewerage',
+        storm: 'Storm drainage',
+      },
+      systemTypeNote: {
+        water: 'The full calculation cycle is available',
+        sewer: 'The K1 calculation module is in development',
+        storm: 'The K2 calculation module is in development',
+      },
+      backStep: 'Back',
+      create: 'Create project',
+      error: 'Failed to create the project. Check that migration 0003 is applied',
+    },
     app: {
       title: 'Projects',
       namePlaceholder: 'Project name',
+      newProject: 'Create project',
       create: 'Create',
       empty: 'No projects yet. Create the first one and load the demo inside the project',
       delete: 'Delete',
@@ -143,6 +171,17 @@ export const en = {
       demoHint: 'A synthetic district: survey, 40 buildings, source, geology and code defaults',
       demoDone: 'Demo data loaded',
       demoError: 'Failed to load demo data',
+      moduleSoonTitle: 'Calculation module',
+      moduleSoon: {
+        sewer:
+          'The K1 sewerage module is in development: Manning gravity flow arrives after the water launch. Input data entry is already available',
+        storm:
+          'The K2 storm drainage module is in development: rain runoff calculation arrives after the water launch. Input data entry is already available',
+      },
+      reconstructionSoon: {
+        title: 'Existing network and survey act',
+        hint: 'Existing network import, the technical survey act and per segment decisions arrive in Phase 17',
+      },
       pipeline: {
         demoRun: 'Demo and full run',
         run: 'Run everything',

@@ -514,6 +514,52 @@ textarea {
   border: 1px solid var(--line);
 }
 
+/* Wizard option cards */
+
+.option-grid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  max-width: 760px;
+}
+
+.option-card {
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 20px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.option-card:hover {
+  border-color: var(--accent);
+}
+
+.option-card.active {
+  border-color: var(--accent);
+}
+
+.option-mark {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.option-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.option-hint {
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
 .row {
   display: flex;
   align-items: center;

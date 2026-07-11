@@ -23,6 +23,11 @@ export const router = createBrowserRouter([
             lazy: () => import('./app/AppHome').then((m) => ({ Component: m.AppHome })),
           },
           {
+            path: 'app/new',
+            lazy: () =>
+              import('./app/NewProjectPage').then((m) => ({ Component: m.NewProjectPage })),
+          },
+          {
             path: 'app/projects/:id',
             lazy: () => import('./app/ProjectPage').then((m) => ({ Component: m.ProjectPage })),
           },
