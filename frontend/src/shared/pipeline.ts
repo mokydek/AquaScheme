@@ -1,4 +1,4 @@
-import { MATERIAL_LABELS, placeFittings, selectMaterials, traceNetwork } from '@aquascheme/engine'
+import { buildDecisionLog, MATERIAL_LABELS, placeFittings, selectMaterials, traceNetwork } from '@aquascheme/engine'
 import type {
   GeologyInput,
   NormativeParams,
@@ -120,14 +120,36 @@ export async function persistSizing(
   const nodesUpsert = await supabase.from('nodes').upsert(nodeUpdates)
   if (nodesUpsert.error) throw nodesUpsert.error
 
-  const runInsert = await supabase.from('calc_runs').insert({
-    project_id: projectId,
-    status: 'done',
-    params: { ...norms, availableHeadM },
-    summary: result as unknown as Record<string, unknown>,
-    finished_at: isoTimestamp,
-  })
+  const runInsert = await supabase
+    .from('calc_runs')
+    .insert({
+      project_id: projectId,
+      status: 'done',
+      params: { ...norms, availableHeadM },
+      summary: result as unknown as Record<string, unknown>,
+      finished_at: isoTimestamp,
+    })
+    .select('id')
+    .single()
   if (runInsert.error) throw runInsert.error
+
+  // Decision log: applied network rules and their norm basis (best effort so a
+  // missing 0005 migration never blocks the calculation).
+  try {
+    const calcRunId = runInsert.data?.id as string | undefined
+    const entries = buildDecisionLog(norms).map((e) => ({
+      project_id: projectId,
+      calc_run_id: calcRunId ?? null,
+      key: e.key,
+      value_text: e.valueText,
+      norm_refs: e.refs,
+      basis: e.basis,
+    }))
+    await supabase.from('decision_log').delete().eq('project_id', projectId)
+    await supabase.from('decision_log').insert(entries)
+  } catch {
+    // Ignore: decision log is not critical to the calculation itself.
+  }
 }
 
 export type EquipmentPersistResult = { ok: true } | { ok: false; reason: 'migrationNeeded' | 'error' }
