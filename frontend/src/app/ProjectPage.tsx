@@ -32,6 +32,7 @@ import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
+import { syncNormRegistry } from '../shared/norms'
 import { Panel } from './project/Panel'
 import { analyzeParcelViolations } from '@aquascheme/engine'
 import type { ParcelKind, Vec2, ViolationPipe } from '@aquascheme/engine'
@@ -138,6 +139,10 @@ export function ProjectPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    void syncNormRegistry()
+  }, [])
 
   const loadDemo = async (): Promise<boolean> => {
     if (!id || demoBusy) return false
