@@ -77,7 +77,11 @@ export function ExportSection({
     const topo = datasets.topography?.content as { points?: SurveyPoint[] } | undefined
     const network = networkFromRows(nodes, pipes)
     const demand = computeNetworkDemand(
-      buildings.map((b) => ({ id: b.id, residents: b.residents ?? 0 })),
+      buildings.map((b) => ({
+        id: b.id,
+        residents: b.residents ?? 0,
+        specificDemandLpd: b.specific_demand_lpd ?? undefined,
+      })),
       norms,
     )
     return {

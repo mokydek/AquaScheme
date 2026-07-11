@@ -26,6 +26,7 @@ export interface BuildingRow {
   y: number
   floors: number
   residents: number | null
+  specific_demand_lpd?: number | null
 }
 
 /** Insert or update the single dataset row of the given kind for a project. */

@@ -27,9 +27,11 @@ interface Props {
   problems: FeatureCollection
   pressureByBuilding: Record<string, { pressureM: number; ok: boolean; requiredPressureM: number | null }>
   hasResults: boolean
+  placementActive?: boolean
   onAddBuilding: (x: number, y: number) => Promise<void>
   onMoveSource: (x: number, y: number) => Promise<void>
   onDeleteBuilding: (id: string) => Promise<void>
+  onPlaceObject?: (x: number, y: number) => void
 }
 
 const VELOCITY_COLOR: maplibregl.ExpressionSpecification = [
@@ -114,9 +116,11 @@ export function ProjectMap({
   problems,
   pressureByBuilding,
   hasResults,
+  placementActive = false,
   onAddBuilding,
   onMoveSource,
   onDeleteBuilding,
+  onPlaceObject,
 }: Props) {
   const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -139,8 +143,10 @@ export function ProjectMap({
   }
 
   // Keep the latest callbacks and popup labels visible to map handlers.
-  const callbacksRef = useRef({ onAddBuilding, onMoveSource, onDeleteBuilding })
-  callbacksRef.current = { onAddBuilding, onMoveSource, onDeleteBuilding }
+  const callbacksRef = useRef({ onAddBuilding, onMoveSource, onDeleteBuilding, onPlaceObject })
+  callbacksRef.current = { onAddBuilding, onMoveSource, onDeleteBuilding, onPlaceObject }
+  const placementRef = useRef(placementActive)
+  placementRef.current = placementActive
   const labelsRef = useRef<Record<string, string>>({})
   labelsRef.current = {
     floors: t('project.map.floors'),
@@ -162,8 +168,8 @@ export function ProjectMap({
   useEffect(() => {
     modeRef.current = mode
     const map = mapRef.current
-    if (map) map.getCanvas().style.cursor = mode === 'view' ? '' : 'crosshair'
-  }, [mode])
+    if (map) map.getCanvas().style.cursor = mode === 'view' && !placementActive ? '' : 'crosshair'
+  }, [mode, placementActive])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -337,9 +343,13 @@ export function ProjectMap({
     })
 
     map.on('click', (e) => {
+      const { x, y } = lonLatToLocal(e.lngLat.lng, e.lngLat.lat)
+      if (placementRef.current) {
+        callbacksRef.current.onPlaceObject?.(round2(x), round2(y))
+        return
+      }
       const current = modeRef.current
       if (current === 'view') return
-      const { x, y } = lonLatToLocal(e.lngLat.lng, e.lngLat.lat)
       if (current === 'addBuilding') {
         void callbacksRef.current.onAddBuilding(round2(x), round2(y))
       } else {
@@ -348,7 +358,7 @@ export function ProjectMap({
     })
 
     map.on('click', 'buildings-fill', (e) => {
-      if (modeRef.current !== 'view') return
+      if (modeRef.current !== 'view' || placementRef.current) return
       const feature = e.features?.[0]
       if (!feature) return
       const props = feature.properties as {
@@ -391,7 +401,7 @@ export function ProjectMap({
     })
 
     map.on('click', 'pipes-hit', (e) => {
-      if (modeRef.current !== 'view') return
+      if (modeRef.current !== 'view' || placementRef.current) return
       const feature = e.features?.[0]
       if (!feature) return
       const p = feature.properties as Record<string, unknown>
@@ -415,7 +425,7 @@ export function ProjectMap({
     })
 
     map.on('click', 'net-junctions', (e) => {
-      if (modeRef.current !== 'view') return
+      if (modeRef.current !== 'view' || placementRef.current) return
       const feature = e.features?.[0]
       if (!feature) return
       const p = feature.properties as Record<string, unknown>

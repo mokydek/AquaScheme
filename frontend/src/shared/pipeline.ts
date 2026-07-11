@@ -211,7 +211,14 @@ async function saveEquipmentDataset(
 
 export interface FullPipelineParams {
   projectId: string
-  buildings: Array<{ id: string; x: number; y: number; floors: number; residents: number }>
+  buildings: Array<{
+    id: string
+    x: number
+    y: number
+    floors: number
+    residents: number
+    specificDemandLpd?: number
+  }>
   source: { x: number; y: number; availableHead: number }
   surveyPoints: SurveyPoint[]
   norms: NormativeParams
@@ -243,7 +250,12 @@ export async function runFullPipeline(params: FullPipelineParams): Promise<FullP
     const availableHeadM = params.source.availableHead
     const sizing = await runSizingInWorker({
       network: networkFromRows(afterTrace.nodes, afterTrace.pipes),
-      buildings: params.buildings.map((b) => ({ id: b.id, floors: b.floors, residents: b.residents })),
+      buildings: params.buildings.map((b) => ({
+        id: b.id,
+        floors: b.floors,
+        residents: b.residents,
+        specificDemandLpd: b.specificDemandLpd,
+      })),
       availableHeadM,
       norms: params.norms,
     })

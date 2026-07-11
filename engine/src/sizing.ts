@@ -55,6 +55,8 @@ export interface SizingBuilding {
   id: string
   floors: number
   residents: number
+  /** Per unit daily norm, L/day (non residential presets). */
+  specificDemandLpd?: number
 }
 
 export interface SizingInput {
@@ -130,7 +132,11 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
   const sourceHeadM = source.groundElevation + input.availableHeadM
 
   const demand = computeNetworkDemand(
-    input.buildings.map((b) => ({ id: b.id, residents: b.residents })),
+    input.buildings.map((b) => ({
+      id: b.id,
+      residents: b.residents,
+      specificDemandLpd: b.specificDemandLpd,
+    })),
     norms,
   )
   const demandByBuilding = new Map(

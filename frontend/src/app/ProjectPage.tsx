@@ -9,6 +9,7 @@ import { saveDataset } from '../shared/datasets'
 import type { BuildingRow, DatasetKind, DatasetRow } from '../shared/datasets'
 import type { NodeRow, PipeRow } from '../shared/network'
 import { runFullPipeline } from '../shared/pipeline'
+import { buildingPreset, sourcePreset } from '@aquascheme/engine'
 import type { GeologyInput, SeismicInput, SurveyPoint as EngineSurveyPoint } from '@aquascheme/engine'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
@@ -22,6 +23,8 @@ import { EquipmentSection } from './project/EquipmentSection'
 import { ResultsSection } from './project/ResultsSection'
 import { ExportSection } from './project/ExportSection'
 import { ImportSection } from './project/ImportSection'
+import { ObjectLibrary } from './project/ObjectLibrary'
+import type { Placement } from './project/ObjectLibrary'
 import { Panel } from './project/Panel'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
@@ -48,6 +51,7 @@ export function ProjectPage() {
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
   const [pipelineBusy, setPipelineBusy] = useState(false)
   const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
+  const [placement, setPlacement] = useState<Placement | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -56,7 +60,7 @@ export function ProjectPage() {
       supabase.from('datasets').select('*').eq('project_id', id),
       supabase
         .from('buildings')
-        .select('id,label,x,y,floors,residents')
+        .select('id,label,x,y,floors,residents,specific_demand_lpd')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
       supabase
@@ -150,7 +154,7 @@ export function ProjectPage() {
     setPipelineNotice(null)
     try {
       const [buildingsRes, datasetsRes] = await Promise.all([
-        supabase.from('buildings').select('id,x,y,floors,residents').eq('project_id', id),
+        supabase.from('buildings').select('id,x,y,floors,residents,specific_demand_lpd').eq('project_id', id),
         supabase.from('datasets').select('kind,content').eq('project_id', id),
       ])
       const freshBuildings = buildingsRes.data ?? []
@@ -178,6 +182,7 @@ export function ProjectPage() {
           y: b.y,
           floors: b.floors,
           residents: b.residents ?? 0,
+          specificDemandLpd: b.specific_demand_lpd ?? undefined,
         })),
         source: { x: source.x, y: source.y, availableHead: source.availableHead ?? 45 },
         surveyPoints,
@@ -248,6 +253,41 @@ export function ProjectPage() {
       await load()
     },
     [id, datasets.source, nearestZ, load],
+  )
+
+  const placeObject = useCallback(
+    (x: number, y: number) => {
+      if (!id || !placement) return
+      const groundElevation = nearestZ(x, y) ?? 0
+      if (placement.type === 'building') {
+        const preset = buildingPreset(placement.presetId)
+        if (!preset) return
+        const count = buildings.filter((b) => (b.label ?? '').startsWith(preset.labelPrefix)).length
+        void supabase
+          .from('buildings')
+          .insert({
+            project_id: id,
+            label: `${preset.labelPrefix}${count + 1}`,
+            x,
+            y,
+            floors: preset.defaultFloors,
+            residents: preset.defaultUnits,
+            ground_elevation: groundElevation,
+            specific_demand_lpd: preset.specificDemandLpd,
+          })
+          .then(() => load())
+      } else {
+        const preset = sourcePreset(placement.presetId)
+        if (!preset) return
+        void saveDataset(id, 'source', {
+          x,
+          y,
+          groundElevation,
+          availableHead: preset.defaultAvailableHeadM,
+        }).then(() => load())
+      }
+    },
+    [id, placement, buildings, nearestZ, load],
   )
 
   const deleteBuilding = useCallback(
@@ -432,6 +472,7 @@ export function ProjectPage() {
           </p>
         )}
         <div className="panels">
+          <ObjectLibrary active={placement} onSelect={setPlacement} />
           <ProjectMap
             points={topoPoints}
             buildings={buildings}
@@ -442,9 +483,11 @@ export function ProjectPage() {
             problems={problemsGeo}
             pressureByBuilding={pressureByBuilding}
             hasResults={hasResults}
+            placementActive={placement !== null}
             onAddBuilding={addBuildingAt}
             onMoveSource={moveSourceTo}
             onDeleteBuilding={deleteBuilding}
+            onPlaceObject={placeObject}
           />
           {isReconstruction && (
             <Panel title={t('project.reconstructionSoon.title')} status="empty">

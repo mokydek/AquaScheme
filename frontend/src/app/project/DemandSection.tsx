@@ -20,7 +20,11 @@ export function DemandSection({
       ...((normsDataset?.content ?? {}) as Partial<NormativeParams>),
     }
     return computeNetworkDemand(
-      buildings.map((b) => ({ id: b.id, residents: b.residents ?? 0 })),
+      buildings.map((b) => ({
+        id: b.id,
+        residents: b.residents ?? 0,
+        specificDemandLpd: b.specific_demand_lpd ?? undefined,
+      })),
       params,
     )
   }, [buildings, normsDataset])

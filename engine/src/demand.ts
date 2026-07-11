@@ -13,7 +13,13 @@ import type { NormativeParams } from './norms'
  *   q_design = Q_hour.max / 3.6                   [L/s]
  *
  * Node demands for the hydraulic model are distributed between buildings
- * proportionally to their residents.
+ * proportionally to their average daily demand (identical to residents share
+ * for residential only networks).
+ *
+ * Each building may carry its own per unit norm (specificDemandLpd) for non
+ * residential presets (school per student, hospital per bed, ...); when it is
+ * absent the global residential per capita norm is used. The "residents"
+ * field then holds the unit count (students, beds, workers).
  */
 
 /**
@@ -57,7 +63,10 @@ export function betaMaxForResidents(residents: number): number {
 
 export interface DemandBuildingInput {
   id?: string
+  /** Number of consumption units: residents, students, beds, workers. */
   residents: number
+  /** Per unit daily norm, L/day. Falls back to the global per capita norm. */
+  specificDemandLpd?: number
 }
 
 export interface BuildingDemand {
@@ -91,22 +100,26 @@ export function computeNetworkDemand(
   params: NormativeParams = NORMATIVE_DEFAULTS,
 ): NetworkDemand {
   const residentsOf = (b: DemandBuildingInput) => Math.max(0, b.residents || 0)
-  const totalResidents = buildings.reduce((sum, b) => sum + residentsOf(b), 0)
+  const normOf = (b: DemandBuildingInput) =>
+    b.specificDemandLpd != null && b.specificDemandLpd > 0
+      ? b.specificDemandLpd
+      : params.perCapitaDemandLpd
+  const avgDailyOf = (b: DemandBuildingInput) => (normOf(b) * residentsOf(b)) / 1000
 
-  const avgDailyM3 = (params.perCapitaDemandLpd * totalResidents) / 1000
+  const totalResidents = buildings.reduce((sum, b) => sum + residentsOf(b), 0)
+  const avgDailyM3 = buildings.reduce((sum, b) => sum + avgDailyOf(b), 0)
   const maxDailyM3 = params.dayMaxCoefficient * avgDailyM3
   const betaMax = betaMaxForResidents(totalResidents)
   const kHourMax = params.alphaMax * betaMax
-  const maxHourlyM3h = totalResidents > 0 ? (kHourMax * maxDailyM3) / 24 : 0
+  const maxHourlyM3h = avgDailyM3 > 0 ? (kHourMax * maxDailyM3) / 24 : 0
   const designFlowLps = cubicMetersPerHourToLitersPerSecond(maxHourlyM3h)
 
   const perBuilding: BuildingDemand[] = buildings.map((b) => {
-    const residents = residentsOf(b)
-    const share = totalResidents > 0 ? residents / totalResidents : 0
-    const buildingAvg = (params.perCapitaDemandLpd * residents) / 1000
+    const buildingAvg = avgDailyOf(b)
+    const share = avgDailyM3 > 0 ? buildingAvg / avgDailyM3 : 0
     return {
       id: b.id,
-      residents,
+      residents: residentsOf(b),
       avgDailyM3: buildingAvg,
       maxDailyM3: params.dayMaxCoefficient * buildingAvg,
       designFlowLps: designFlowLps * share,

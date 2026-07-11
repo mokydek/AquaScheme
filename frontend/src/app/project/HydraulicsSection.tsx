@@ -49,7 +49,12 @@ export function HydraulicsSection({
     try {
       const result: SizingResult = await runSizingInWorker({
         network: networkFromRows(nodes, pipes),
-        buildings: buildings.map((b) => ({ id: b.id, floors: b.floors, residents: b.residents ?? 0 })),
+        buildings: buildings.map((b) => ({
+          id: b.id,
+          floors: b.floors,
+          residents: b.residents ?? 0,
+          specificDemandLpd: b.specific_demand_lpd ?? undefined,
+        })),
         availableHeadM,
         norms,
       })
