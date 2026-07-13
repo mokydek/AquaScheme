@@ -5,6 +5,7 @@ import { importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform 
 import type { ImportReport, ImportSegment, SurveyPoint } from '@aquascheme/engine'
 import type { DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { replaceNetwork } from '../../shared/network'
+import { routeUpload, uploadErrorText } from '../../shared/upload'
 import type { BuildingRow } from '../../shared/datasets'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
@@ -42,6 +43,8 @@ export function ImportSection({
   })
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'done' | 'error' | 'invalid' | 'georefError' | null>(null)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  const [fromDwg, setFromDwg] = useState(false)
   const [report, setReport] = useState<ImportReport | null>(null)
 
   const canImport = source !== null
@@ -50,29 +53,39 @@ export function ImportSection({
     const file = event.target.files?.[0]
     if (!file) return
     setNotice(null)
+    setUploadMessage(null)
     setReport(null)
     setParsed(null)
-    const text = await file.text()
-    if (/\.dxf$/i.test(file.name)) {
-      const { parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
-      const data = parseDxfNetwork(text)
-      if (!data.ok || data.segments.length === 0) {
-        setNotice('invalid')
+    setFromDwg(false)
+    try {
+      const routed = await routeUpload(file, ['dxf', 'geojson'])
+      if (routed.kind === 'dxf') {
+        const { parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
+        const data = parseDxfNetwork(routed.text ?? '')
+        if (!data.ok || data.segments.length === 0) {
+          setNotice('invalid')
+        } else {
+          setParsed({ kind: 'dxf', data })
+          setFromDwg(routed.fromDwg === true)
+          const selected: Record<string, boolean> = {}
+          for (const layer of data.layers) selected[layer.name] = layer.segments > 0
+          setSelectedLayers(selected)
+        }
       } else {
-        setParsed({ kind: 'dxf', data })
-        const selected: Record<string, boolean> = {}
-        for (const layer of data.layers) selected[layer.name] = layer.segments > 0
-        setSelectedLayers(selected)
+        const geo = parseGeoJsonNetwork(routed.text ?? '')
+        if (geo.invalid || geo.segments.length === 0) {
+          setNotice('invalid')
+        } else {
+          setParsed({ kind: 'geojson', segments: geo.segments, treatedAsLonLat: geo.treatedAsLonLat })
+        }
       }
-    } else {
-      const geo = parseGeoJsonNetwork(text)
-      if (geo.invalid || geo.segments.length === 0) {
-        setNotice('invalid')
-      } else {
-        setParsed({ kind: 'geojson', segments: geo.segments, treatedAsLonLat: geo.treatedAsLonLat })
-      }
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('invalid')
+    } finally {
+      event.target.value = ''
     }
-    event.target.value = ''
   }
 
   const num = (value: string): number => Number(value.trim().replace(',', '.'))
@@ -157,12 +170,13 @@ export function ImportSection({
         <input
           className="file-input"
           type="file"
-          accept=".dxf,.geojson,.json"
+          accept=".dxf,.dwg,.geojson,.json"
           disabled={!canImport}
           onChange={(e) => void onFile(e)}
         />
       </div>
 
+      {fromDwg && parsed && <p className="stat-line ok">{t('upload.convertedFromDwg')}</p>}
       {parsed?.kind === 'dxf' && (
         <div style={{ marginTop: 16 }}>
           <p className="field-label">{t('project.import.layers')}</p>
@@ -263,6 +277,7 @@ export function ImportSection({
         </>
       )}
 
+      {uploadMessage && <p className="notice error">{uploadMessage}</p>}
       {notice === 'invalid' && <p className="notice error">{t('project.import.invalid')}</p>}
       {notice === 'georefError' && <p className="notice error">{t('project.import.georefInvalid')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.import.error')}</p>}

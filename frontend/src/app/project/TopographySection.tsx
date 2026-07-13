@@ -5,6 +5,7 @@ import { parseTopographyCsv, parseTopographyGeoJson } from '@aquascheme/engine'
 import type { TopoParseResult } from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
+import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
 
 interface TopoMeta {
@@ -28,6 +29,7 @@ export function TopographySection({
   const [fileName, setFileName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'saved' | 'saveError' | null>(null)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
 
   const meta = (dataset?.meta ?? null) as TopoMeta | null
 
@@ -35,11 +37,25 @@ export function TopographySection({
     const file = event.target.files?.[0]
     if (!file) return
     setNotice(null)
-    const text = await file.text()
-    const isGeoJson = /\.(geojson|json)$/i.test(file.name) || text.trimStart().startsWith('{')
-    setResult(isGeoJson ? parseTopographyGeoJson(text) : parseTopographyCsv(text))
-    setFileName(file.name)
-    event.target.value = ''
+    setUploadMessage(null)
+    try {
+      const routed = await routeUpload(file, ['csv', 'geojson', 'dxf'])
+      if (routed.kind === 'dxf') {
+        const { parseTopographyDxf } = await import('@aquascheme/engine/dxfread')
+        setResult(parseTopographyDxf(routed.text ?? ''))
+      } else if (routed.kind === 'geojson') {
+        setResult(parseTopographyGeoJson(routed.text ?? ''))
+      } else {
+        setResult(parseTopographyCsv(routed.text ?? ''))
+      }
+      setFileName(file.name)
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      setUploadMessage(message ?? t('upload.unknown'))
+      setResult(null)
+    } finally {
+      event.target.value = ''
+    }
   }
 
   const issueCounts = result
@@ -92,10 +108,11 @@ export function TopographySection({
         <input
           className="file-input"
           type="file"
-          accept=".csv,.txt,.json,.geojson"
+          accept=".csv,.txt,.json,.geojson,.dxf,.dwg"
           onChange={(e) => void onFile(e)}
         />
       </div>
+      {uploadMessage && <p className="notice error">{uploadMessage}</p>}
       {result && (
         <div className="parse-report">
           <p className="stat-line">

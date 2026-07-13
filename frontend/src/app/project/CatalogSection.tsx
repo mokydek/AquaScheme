@@ -13,6 +13,7 @@ import {
   setActiveCatalog,
 } from '../../shared/catalog'
 import type { CatalogRow } from '../../shared/catalog'
+import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
 
 export function CatalogSection({
@@ -30,6 +31,7 @@ export function CatalogSection({
   const [busy, setBusy] = useState(false)
   const [issues, setIssues] = useState<CatalogIssue[]>([])
   const [notice, setNotice] = useState<'saved' | 'empty' | 'error' | null>(null)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
 
   const downloadTemplate = async () => {
     const XLSX = await import('xlsx')
@@ -46,10 +48,12 @@ export function CatalogSection({
     if (!file) return
     setBusy(true)
     setNotice(null)
+    setUploadMessage(null)
     setIssues([])
     try {
+      const routed = await routeUpload(file, ['xlsx', 'csv'])
       const XLSX = await import('xlsx')
-      const book = XLSX.read(await file.arrayBuffer())
+      const book = XLSX.read(await routed.file.arrayBuffer())
       const sheet = book.Sheets[book.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
       const parsed = parseCatalogRows(rows)
@@ -62,8 +66,10 @@ export function CatalogSection({
       await setActiveCatalog(projectId, catalogId)
       setNotice('saved')
       await onChanged()
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('error')
     } finally {
       setBusy(false)
       event.target.value = ''
@@ -113,6 +119,7 @@ export function CatalogSection({
         ))}
       </div>
 
+      {uploadMessage && <p className="notice error">{uploadMessage}</p>}
       {notice === 'saved' && <span className="stat-line ok">{t('project.catalog.saved')}</span>}
       {notice === 'empty' && <p className="notice error">{t('project.catalog.empty')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}

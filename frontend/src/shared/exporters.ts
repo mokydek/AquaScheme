@@ -1,5 +1,6 @@
 import { buildSpecification } from '@aquascheme/engine'
 import type { ExportInput } from '@aquascheme/engine'
+import { convertDrawing } from './upload'
 
 /** DXF drawing text. */
 export async function generateDxf(input: ExportInput): Promise<string> {
@@ -48,15 +49,8 @@ export async function generatePdf(input: ExportInput): Promise<Blob> {
 }
 
 /** Convert a DXF drawing to DWG via the converter microservice. */
-export async function convertToDwg(dxf: string, converterUrl: string): Promise<Blob> {
-  const form = new FormData()
-  form.append('file', new Blob([dxf], { type: 'application/dxf' }), 'drawing.dxf')
-  const response = await fetch(`${converterUrl.replace(/\/$/, '')}/convert?version=ACAD2018`, {
-    method: 'POST',
-    body: form,
-  })
-  if (!response.ok) throw new Error('conversion failed')
-  return response.blob()
+export async function convertToDwg(dxf: string): Promise<Blob> {
+  return convertDrawing(dxf, 'dwg')
 }
 
 async function toBytes(data: Blob | Uint8Array | string): Promise<Uint8Array> {
@@ -75,4 +69,4 @@ export async function zipBundle(files: Record<string, Blob | Uint8Array | string
   return new Blob([zipSync(entries)], { type: 'application/zip' })
 }
 
-export const CONVERTER_URL = (import.meta.env.VITE_CONVERTER_URL as string | undefined) ?? ''
+export { CONVERTER_URL } from './upload'

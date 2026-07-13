@@ -7,6 +7,7 @@ import { supabase } from '../../shared/supabase'
 import { useAuth } from '../../shared/auth'
 import { replaceExisting, updateExistingPipe } from '../../shared/existing'
 import type { ExistingPipeRow } from '../../shared/existing'
+import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
 
 const MATERIALS: ExistingMaterial[] = ['steel', 'cast_iron', 'concrete', 'asbestos', 'pe', 'pvc', 'unknown']
@@ -29,20 +30,22 @@ export function ExistingNetworkSection({
   const { session } = useAuth()
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'imported' | 'invalid' | 'scan' | 'error' | null>(null)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
 
   const importFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     setBusy(true)
     setNotice(null)
+    setUploadMessage(null)
     try {
-      const text = await file.text()
+      const routed = await routeUpload(file, ['dxf', 'geojson'])
       let segments: ImportSegment[]
-      if (/\.dxf$/i.test(file.name)) {
+      if (routed.kind === 'dxf') {
         const { parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
-        segments = parseDxfNetwork(text).segments
+        segments = parseDxfNetwork(routed.text ?? '').segments
       } else {
-        segments = parseGeoJsonNetwork(text).segments
+        segments = parseGeoJsonNetwork(routed.text ?? '').segments
       }
       if (segments.length === 0) {
         setNotice('invalid')
@@ -51,8 +54,10 @@ export function ExistingNetworkSection({
       await replaceExisting(projectId, segments, points)
       setNotice('imported')
       await onChanged()
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('error')
     } finally {
       setBusy(false)
       event.target.value = ''
@@ -69,14 +74,18 @@ export function ExistingNetworkSection({
     if (!file || !session) return
     setBusy(true)
     setNotice(null)
+    setUploadMessage(null)
     try {
-      const path = `${session.user.id}/${projectId}/act_${file.name}`
-      const up = await supabase.storage.from('source-files').upload(path, file, { upsert: true, contentType: 'application/pdf' })
+      const routed = await routeUpload(file, ['pdf'])
+      const path = `${session.user.id}/${projectId}/act_${routed.file.name}`
+      const up = await supabase.storage.from('source-files').upload(path, routed.file, { upsert: true, contentType: 'application/pdf' })
       if (up.error) throw up.error
       await supabase.from('survey_acts').insert({ project_id: projectId, scan_path: path })
       setNotice('scan')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('error')
     } finally {
       setBusy(false)
       event.target.value = ''
@@ -92,13 +101,14 @@ export function ExistingNetworkSection({
       <p className="hint">{t('project.existing.hint')}</p>
       <div className="section-actions">
         <label className="stat-line" style={{ marginTop: 0 }}>{t('project.existing.importLabel')}</label>
-        <input className="file-input" type="file" accept=".dxf,.geojson,.json" disabled={busy} onChange={(e) => void importFile(e)} />
+        <input className="file-input" type="file" accept=".dxf,.dwg,.geojson,.json" disabled={busy} onChange={(e) => void importFile(e)} />
       </div>
       <div className="section-actions">
         <label className="stat-line" style={{ marginTop: 0 }}>{t('project.existing.scanLabel')}</label>
         <input className="file-input" type="file" accept=".pdf" disabled={busy} onChange={(e) => void uploadScan(e)} />
       </div>
 
+      {uploadMessage && <p className="notice error">{uploadMessage}</p>}
       {notice === 'imported' && <span className="stat-line ok">{t('project.existing.imported')}</span>}
       {notice === 'scan' && <span className="stat-line ok">{t('project.existing.scanDone')}</span>}
       {notice === 'invalid' && <p className="notice error">{t('project.existing.invalid')}</p>}

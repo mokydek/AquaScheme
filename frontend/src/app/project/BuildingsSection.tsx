@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { parseBuildingsCsv } from '@aquascheme/engine'
 import { supabase } from '../../shared/supabase'
 import type { BuildingRow } from '../../shared/datasets'
+import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
 
 interface DraftBuilding {
@@ -36,7 +37,8 @@ export function BuildingsSection({
     setNotice(null)
     setBusy(true)
     try {
-      const parsed = parseBuildingsCsv(await file.text())
+      const routed = await routeUpload(file, ['csv'])
+      const parsed = parseBuildingsCsv(routed.text ?? '')
       if (parsed.buildings.length === 0) {
         setNotice({ kind: 'error', text: t('project.buildings.issues', { count: parsed.issues.length }) })
         return
@@ -59,8 +61,9 @@ export function BuildingsSection({
       }
       setNotice({ kind: 'info', text: parts.join('. ') })
       await onChanged()
-    } catch {
-      setNotice({ kind: 'error', text: t('project.saveError') })
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      setNotice({ kind: 'error', text: message ?? t('project.saveError') })
     } finally {
       setBusy(false)
       event.target.value = ''

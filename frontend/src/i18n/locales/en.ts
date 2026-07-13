@@ -165,6 +165,29 @@ export const en = {
       confirmDelete: 'Delete project "{{name}}"? All project data will be removed',
       loadError: 'Failed to load the project list',
     },
+    upload: {
+      kindLabel: {
+        dwg: 'DWG',
+        dxf: 'DXF',
+        geojson: 'GeoJSON',
+        csv: 'CSV',
+        xlsx: 'an XLSX spreadsheet',
+        pdf: 'PDF',
+      },
+      use: {
+        dwg: 'Drawings are accepted in the Route import, Survey, Land parcels and Existing network sections',
+        dxf: 'Drawings are accepted in the Route import, Survey, Land parcels and Existing network sections',
+        geojson: 'GeoJSON is accepted in the Route import, Survey, Land parcels and Existing network sections',
+        csv: 'CSV is accepted in the Survey, Buildings and Material catalog sections',
+        xlsx: 'Spreadsheets are accepted in the Material catalog section',
+        pdf: 'PDF is currently accepted only as the survey act scan in the Existing network section. Geology PDF import arrives with the geology module',
+      },
+      unsupported: 'The file was recognised as {{kind}} and is not accepted here. {{use}}',
+      unknown: 'File type not recognised. Supported: DWG, DXF, GeoJSON, CSV, XLSX and PDF',
+      converterNeeded: 'This is a DWG file and reading it needs the conversion service: upload a DXF or set VITE_CONVERTER_URL',
+      converterFailed: 'The conversion service is unavailable. Try again later or upload a DXF',
+      convertedFromDwg: 'The DWG was read through the conversion service',
+    },
     project: {
       back: 'Back to projects',
       demo: 'Load demo',
@@ -304,7 +327,7 @@ export const en = {
       },
       existing: {
         title: 'Existing network and survey act',
-        hint: 'Reconstruction: upload the existing network (DXF/GeoJSON) and fill in the technical survey act per segment. The actual roughness of old pipes is estimated from material and wear and used in the calculation',
+        hint: 'Reconstruction: upload the existing network (DXF, DWG or GeoJSON) and fill in the technical survey act per segment. The actual roughness of old pipes is estimated from material and wear and used in the calculation',
         importLabel: 'Existing network',
         scanLabel: 'Act scan (PDF)',
         imported: 'Existing network loaded',
@@ -353,7 +376,7 @@ export const en = {
       },
       parcels: {
         title: 'Land parcels',
-        hint: 'Building plots and the route right of way. Upload GeoJSON or DXF (closed polylines on the PARCELS layer) or draw on the map. Buildings are assigned to parcels automatically',
+        hint: 'Building plots and the route right of way. Upload GeoJSON, DXF or DWG (closed polylines on the PARCELS layer) or draw on the map. Buildings are assigned to parcels automatically',
         drawParcel: 'Draw a parcel',
         drawRow: 'Draw a right of way',
         drawing: 'Drawing: {{kind}}. Points: {{count}}. Click on the map',
@@ -399,7 +422,7 @@ export const en = {
       },
       import: {
         title: 'Route import',
-        hint: 'The primary mode: upload a ready made route as AutoCAD DXF or GeoJSON. Polylines become segments, vertices are stitched with a tolerance, connectivity is checked from the source',
+        hint: 'The primary mode: upload a ready made route as AutoCAD DXF or DWG, or GeoJSON. DWG is converted to DXF automatically. Polylines become segments, vertices are stitched with a tolerance, connectivity is checked from the source',
         needSource: 'Set the source (point A) first',
         layers: 'Network layers',
         parsedGeojson: 'File read. Lines: {{segments}}',
@@ -461,7 +484,7 @@ export const en = {
       },
       export: {
         title: 'Export documentation',
-        hint: 'DXF or DWG drawing for AutoCAD (plan and longitudinal profile), a PDF explanatory note and an XLSX bill of materials. The bundle button collects everything into one ZIP',
+        hint: 'AutoCAD drawing (plan and longitudinal profile): DWG by default when the conversion service is configured, DXF always. A PDF explanatory note and an XLSX bill of materials. The bundle button collects everything into one ZIP, including DWG versions of the sheets',
         needData: 'Run the hydraulic calculation and material selection first',
         drawing: 'Download drawing',
         pdf: 'Download PDF note',
@@ -507,7 +530,7 @@ export const en = {
       },
       topo: {
         title: 'Survey',
-        hint: 'CSV with X, Y, Z columns or GeoJSON with points. Delimiters: comma, semicolon or tab. Decimal comma is accepted',
+        hint: 'CSV with X, Y, Z columns, GeoJSON with points, or DXF/DWG with survey points (elevation in the Z coordinate). CSV delimiters: comma, semicolon or tab. Decimal comma is accepted',
         stats: 'Points in the project: {{count}}. Elevations from {{min}} to {{max}} m',
         parsed: 'Accepted points: {{count}} of {{total}}',
         missingZ: '{{count}} points have no Z mark',

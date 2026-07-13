@@ -1,5 +1,7 @@
 import DxfParser from 'dxf-parser'
 import type { ImportPoint, ImportSegment } from './importnet'
+import type { ParseIssue, TopoParseResult } from './topography'
+import type { SurveyPoint } from './types'
 
 /**
  * Reads an AutoCAD DXF drawing into network import geometry (requirements
@@ -18,7 +20,7 @@ export interface DxfLayerInfo {
 
 export interface DxfNetworkData {
   segments: ImportSegment[]
-  points: Array<ImportPoint & { layer?: string }>
+  points: Array<ImportPoint & { z?: number; layer?: string }>
   layers: DxfLayerInfo[]
   ok: boolean
 }
@@ -26,6 +28,7 @@ export interface DxfNetworkData {
 interface DxfVertex {
   x?: number
   y?: number
+  z?: number
 }
 
 interface DxfEntity {
@@ -81,7 +84,9 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
     } else if (entity.type === 'POINT' || entity.type === 'INSERT') {
       const position = entity.position
       if (position && typeof position.x === 'number' && typeof position.y === 'number') {
-        points.push({ x: position.x, y: position.y, layer })
+        const marker: ImportPoint & { z?: number; layer?: string } = { x: position.x, y: position.y, layer }
+        if (typeof position.z === 'number' && Number.isFinite(position.z)) marker.z = position.z
+        points.push(marker)
         bump(layer, 'points')
       }
     }
@@ -92,4 +97,30 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
     .sort((a, b) => a.name.localeCompare(b.name))
 
   return { segments, points, layers, ok: segments.length > 0 || points.length > 0 }
+}
+
+/**
+ * Survey points from a DXF/DWG topographic base (requirements update 3,
+ * change 2: drawing sources are accepted in both DWG and DXF). POINT and
+ * INSERT entities carry x, y and the elevation in z (group code 30). A DXF
+ * point without an explicit elevation reads as z = 0, so a file where every
+ * point sits at zero is treated as having no elevations at all and reported
+ * honestly instead of producing a silently flat terrain.
+ */
+export function parseTopographyDxf(text: string): TopoParseResult {
+  const data = parseDxfNetwork(text)
+  if (!data.ok || data.points.length === 0) {
+    return { points: [], issues: [{ row: 0, kind: 'invalidFormat' }], total: 0 }
+  }
+  const hasElevations = data.points.some((p) => typeof p.z === 'number' && p.z !== 0)
+  const points: SurveyPoint[] = []
+  const issues: ParseIssue[] = []
+  data.points.forEach((p, index) => {
+    if (!hasElevations) {
+      issues.push({ row: index + 1, kind: 'missingZ' })
+      return
+    }
+    points.push({ x: p.x, y: p.y, z: typeof p.z === 'number' ? p.z : 0 })
+  })
+  return { points, issues, total: data.points.length }
 }

@@ -5,6 +5,7 @@ import type { ParcelKind, Vec2 } from '@aquascheme/engine'
 import type { BuildingRow } from '../../shared/datasets'
 import { deleteParcel, insertParcel } from '../../shared/parcels'
 import type { ParcelRow } from '../../shared/parcels'
+import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
 
 interface DraftState {
@@ -38,6 +39,7 @@ export function ParcelsSection({
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'imported' | 'invalid' | 'error' | null>(null)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
 
   const labelOfBuilding = (id: string | null) =>
     id ? (buildings.find((b) => b.id === id)?.label ?? '—') : '—'
@@ -47,18 +49,19 @@ export function ParcelsSection({
     if (!file) return
     setBusy(true)
     setNotice(null)
+    setUploadMessage(null)
     try {
-      const text = await file.text()
+      const routed = await routeUpload(file, ['dxf', 'geojson'])
       let rings: Vec2[][] = []
-      if (/\.dxf$/i.test(file.name)) {
+      if (routed.kind === 'dxf') {
         const { parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
-        const data = parseDxfNetwork(text)
+        const data = parseDxfNetwork(routed.text ?? '')
         rings = data.segments
           .filter((s) => (s.layer ?? '').toUpperCase() === 'PARCELS')
           .map((s) => s.points)
           .filter((pts) => pts.length >= 4)
       } else {
-        const parsed = JSON.parse(text) as { features?: Array<{ geometry?: { type?: string; coordinates?: number[][][] } }> }
+        const parsed = JSON.parse(routed.text ?? '') as { features?: Array<{ geometry?: { type?: string; coordinates?: number[][][] } }> }
         for (const feature of parsed.features ?? []) {
           const g = feature.geometry
           if (g?.type === 'Polygon' && Array.isArray(g.coordinates?.[0])) {
@@ -73,8 +76,10 @@ export function ParcelsSection({
       for (const ring of rings) await insertParcel(projectId, 'parcel', ring, null)
       setNotice('imported')
       await onChanged()
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('error')
     } finally {
       setBusy(false)
       event.target.value = ''
@@ -91,7 +96,7 @@ export function ParcelsSection({
       <p className="hint">{t('project.parcels.hint')}</p>
 
       <div className="section-actions">
-        <input className="file-input" type="file" accept=".geojson,.json,.dxf" disabled={busy || draft !== null} onChange={(e) => void onFile(e)} />
+        <input className="file-input" type="file" accept=".geojson,.json,.dxf,.dwg" disabled={busy || draft !== null} onChange={(e) => void onFile(e)} />
       </div>
 
       {draft ? (
@@ -120,6 +125,7 @@ export function ParcelsSection({
         </div>
       )}
 
+      {uploadMessage && <p className="notice error">{uploadMessage}</p>}
       {notice === 'imported' && <span className="stat-line ok">{t('project.parcels.imported')}</span>}
       {notice === 'invalid' && <p className="notice error">{t('project.parcels.invalid')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}

@@ -67,11 +67,13 @@ export function ExportSection({
 }) {
   const { t } = useTranslation()
   const { session } = useAuth()
+  const hasConverter = CONVERTER_URL !== ''
   const [busy, setBusy] = useState<Job | null>(null)
   const [notice, setNotice] = useState<'done' | 'error' | 'converterError' | null>(null)
   const [withDxf, setWithDxf] = useState(true)
-  const [withDwg, setWithDwg] = useState(false)
-  const hasConverter = CONVERTER_URL !== ''
+  // DWG is the default drawing format (requirements update 3, change 2) as
+  // soon as the converter service is configured.
+  const [withDwg, setWithDwg] = useState(hasConverter)
 
   const equipment = datasets.equipment?.content as
     | { material: MaterialSelection; fittings: FittingsPlan }
@@ -154,7 +156,7 @@ export function ExportSection({
     let converterFailed = false
     if (withDwg && hasConverter) {
       try {
-        dwg = await convertToDwg(dxf, CONVERTER_URL)
+        dwg = await convertToDwg(dxf)
       } catch {
         converterFailed = true
       }
