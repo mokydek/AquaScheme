@@ -64,6 +64,7 @@ export const NORM_DOCUMENTS: NormDocument[] = [
   { code: 'ГОСТ 21.704-2011', title: 'Правила выполнения рабочей документации наружных сетей', edition: '2011', status: 'unverified' },
   { code: 'СП РК 2.04-01-2017', title: 'Строительная климатология', edition: '2017', status: 'unverified' },
   { code: 'СНиП 2.01.15-90', title: 'Инженерная защита территорий, зданий и сооружений от опасных геологических процессов', edition: '1990 (справочно)', status: 'unverified' },
+  { code: 'СНиП 2.04.03-85', title: 'Канализация. Наружные сети и сооружения', edition: '1985 (справочно)', status: 'unverified' },
 ]
 
 /**
@@ -313,6 +314,18 @@ export const NORM_REGISTRY: NormClause[] = [
     valueText: 'УГВ выше дна',
     units: '—',
     appliesSystem: WATER,
+    appliesWork: BOTH_WORK,
+    status: 'unverified',
+  },
+  {
+    id: 'drainage.equalsWater',
+    documentCode: 'СНиП 2.04.03-85',
+    clause: null,
+    requirement:
+      'Удельное водоотведение принимается равным удельному водопотреблению без учёта расхода на полив',
+    valueText: 'водоотведение = водопотребление без полива',
+    units: '—',
+    appliesSystem: ['sewer'],
     appliesWork: BOTH_WORK,
     status: 'unverified',
   },

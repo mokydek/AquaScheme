@@ -35,6 +35,7 @@ import type { ExistingPipeRow } from '../shared/existing'
 import { GeologySection } from './project/GeologySection'
 import { fetchGeology } from '../shared/geology'
 import type { Borehole } from '@aquascheme/engine'
+import { DrainageSection } from './project/DrainageSection'
 import { syncNormRegistry } from '../shared/norms'
 import { syncRegions } from '../shared/regions'
 import { NormRegistrySection } from './project/NormRegistrySection'
@@ -56,6 +57,7 @@ interface ProjectInfo {
   work_type?: string | null
   system_type?: string | null
   active_catalog_id?: string | null
+  water_source_project_id?: string | null
 }
 
 const SYSTEM_MARKS: Record<string, string> = { water: 'В1', sewer: 'К1', storm: 'К2' }
@@ -549,6 +551,7 @@ export function ProjectPage() {
   const systemType = project?.system_type ?? 'water'
   const workType = project?.work_type ?? 'new'
   const isWater = systemType === 'water'
+  const isSewer = systemType === 'sewer'
   const isReconstruction = workType === 'reconstruction'
 
   if (state === 'loading') return null
@@ -665,7 +668,17 @@ export function ProjectPage() {
               onChanged={load}
             />
           )}
-          {!isWater && (
+          {isSewer && (
+            <DrainageSection
+              projectId={project.id}
+              buildings={buildings}
+              normsDataset={datasets.normative}
+              drainageDataset={datasets.drainage}
+              waterSourceProjectId={project.water_source_project_id ?? null}
+              onChanged={load}
+            />
+          )}
+          {!isWater && !isSewer && (
             <Panel title={t('project.moduleSoonTitle')} status="default">
               <p className="hint">{t(`project.moduleSoon.${systemType}`)}</p>
             </Panel>
