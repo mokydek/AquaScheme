@@ -136,6 +136,66 @@ const HEADER_FIELDS: Array<{ field: Field; aliases: string[] }> = [
   { field: 'aggressivenessPe', aliases: ['агрессивность к пэ', 'агрессивность пэ', 'pe'] },
 ]
 
+/** Fields a PDF column can be mapped to (G2). Same set as the parser reads. */
+export type GeologyFieldId = Field
+
+/** Mappable fields with their canonical template header, in template order. */
+export const GEOLOGY_FIELDS: Array<{ id: GeologyFieldId; header: string }> = [
+  { id: 'label', header: 'Скважина' },
+  { id: 'x', header: 'X' },
+  { id: 'y', header: 'Y' },
+  { id: 'mouthElevationM', header: 'Отметка устья, м' },
+  { id: 'igeCode', header: 'ИГЭ' },
+  { id: 'soilName', header: 'Грунт' },
+  { id: 'topDepthM', header: 'Кровля слоя, м' },
+  { id: 'bottomDepthM', header: 'Подошва слоя, м' },
+  { id: 'densityGCm3', header: 'Плотность, г/см3' },
+  { id: 'moisturePercent', header: 'Влажность, %' },
+  { id: 'frictionAngleDeg', header: 'Угол трения, град' },
+  { id: 'cohesionKpa', header: 'Сцепление, кПа' },
+  { id: 'deformationModulusMpa', header: 'Модуль деформации, МПа' },
+  { id: 'filtrationMDay', header: 'Коэффициент фильтрации, м/сут' },
+  { id: 'depthM', header: 'УГВ, м' },
+  { id: 'aggressivenessSteel', header: 'Агрессивность к стали' },
+  { id: 'aggressivenessConcrete', header: 'Агрессивность к бетону' },
+  { id: 'aggressivenessPe', header: 'Агрессивность к ПЭ' },
+]
+
+const HEADER_BY_FIELD = new Map(GEOLOGY_FIELDS.map((f) => [f.id, f.header]))
+
+/** Guess the model field a column header refers to, or null if unclear. */
+export function guessGeologyField(header: string): GeologyFieldId | null {
+  const normalized = normalizeHeader(header)
+  if (normalized === '') return null
+  const exact = HEADER_FIELDS.find((f) => f.aliases.includes(normalized))
+  if (exact) return exact.field
+  // Loose contains match as a fallback (e.g. "угол внутр. трения, град").
+  const loose = HEADER_FIELDS.find((f) => f.aliases.some((a) => a.length >= 3 && normalized.includes(a)))
+  return loose ? loose.field : null
+}
+
+/**
+ * Turn an extracted grid plus a column → field mapping into parser rows (keyed
+ * by canonical header). Unmapped columns (null) are dropped; the header row is
+ * skipped when hasHeaderRow is true.
+ */
+export function gridToGeologyRows(
+  grid: string[][],
+  mapping: Array<GeologyFieldId | null>,
+  hasHeaderRow: boolean,
+): Array<Record<string, string>> {
+  const dataRows = hasHeaderRow ? grid.slice(1) : grid
+  return dataRows.map((cells) => {
+    const record: Record<string, string> = {}
+    mapping.forEach((field, col) => {
+      if (!field) return
+      const header = HEADER_BY_FIELD.get(field)
+      if (header) record[header] = (cells[col] ?? '').trim()
+    })
+    return record
+  })
+}
+
 const AGGRESSIVENESS_ALIASES: Record<string, Aggressiveness> = {
   low: 'low', низкая: 'low', неагрессивная: 'low', слабая: 'low', слабоагрессивная: 'low',
   medium: 'medium', средняя: 'medium', среднеагрессивная: 'medium',

@@ -3,16 +3,20 @@ import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   DEFAULT_FREEZING_DEPTH_M,
+  extractTable,
   GEOLOGY_TEMPLATE_EXAMPLE,
   GEOLOGY_TEMPLATE_HEADERS,
+  hasTextLayer,
   parseGeologyRows,
   summarizeGeology,
 } from '@aquascheme/engine'
-import type { Aggressiveness, Borehole, GeologyIssue } from '@aquascheme/engine'
+import type { Aggressiveness, Borehole, GeologyIssue, TextItem } from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
 import { replaceGeology } from '../../shared/geology'
+import { loadPdfTextByPage } from '../../shared/pdfText'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
+import { GeologyPdfImport } from './GeologyPdfImport'
 import { Panel } from './Panel'
 
 type SoilType = 'sand' | 'loam' | 'clay' | 'rock'
@@ -47,8 +51,9 @@ export function GeologySection({
 
   const [busy, setBusy] = useState(false)
   const [issues, setIssues] = useState<GeologyIssue[]>([])
-  const [notice, setNotice] = useState<'imported' | 'empty' | 'saved' | 'error' | 'migrationNeeded' | null>(null)
+  const [notice, setNotice] = useState<'imported' | 'empty' | 'saved' | 'error' | 'migrationNeeded' | 'scan' | 'pdfError' | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  const [pdfTable, setPdfTable] = useState<{ grid: string[][]; columnCount: number } | null>(null)
 
   // Summary form (GeologyInput + project attributes) persisted to the dataset.
   const [soilType, setSoilType] = useState<SoilType>(content?.soilType ?? 'loam')
@@ -120,6 +125,40 @@ export function GeologySection({
     }
   }
 
+  const onPdf = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setBusy(true)
+    setNotice(null)
+    setUploadMessage(null)
+    setIssues([])
+    setPdfTable(null)
+    try {
+      const routed = await routeUpload(file, ['pdf'])
+      const pages = await loadPdfTextByPage(routed.file)
+      // Offset each page vertically so rows never merge across page breaks;
+      // columns (x) stay consistent for a table repeated across pages.
+      const items: TextItem[] = pages.flatMap((p, i) => p.items.map((it) => ({ ...it, y: it.y - i * 100000 })))
+      if (!hasTextLayer(items)) {
+        setNotice('scan')
+        return
+      }
+      const table = extractTable(items)
+      if (table.rows.length === 0 || table.columnCount === 0) {
+        setNotice('scan')
+        return
+      }
+      setPdfTable({ grid: table.rows, columnCount: table.columnCount })
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('pdfError')
+    } finally {
+      setBusy(false)
+      event.target.value = ''
+    }
+  }
+
   const saveSummary = async () => {
     const gw = Number(groundwater.replace(',', '.'))
     const fz = Number(freezing.replace(',', '.'))
@@ -158,12 +197,32 @@ export function GeologySection({
         </button>
         <input className="file-input" type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={(e) => void onFile(e)} />
       </div>
+      <div className="section-actions">
+        <label className="stat-line" style={{ marginTop: 0 }}>{t('project.geology.pdf.label')}</label>
+        <input className="file-input" type="file" accept=".pdf" disabled={busy || pdfTable !== null} onChange={(e) => void onPdf(e)} />
+      </div>
 
       {uploadMessage && <p className="notice error">{uploadMessage}</p>}
       {notice === 'imported' && <span className="stat-line ok">{t('project.geology.imported')}</span>}
       {notice === 'empty' && <p className="notice error">{t('project.geology.empty')}</p>}
       {notice === 'migrationNeeded' && <p className="notice error">{t('project.geology.migrationNeeded')}</p>}
+      {notice === 'scan' && <p className="notice error">{t('project.geology.pdf.scan')}</p>}
+      {notice === 'pdfError' && <p className="notice error">{t('project.geology.pdf.error')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
+
+      {pdfTable && (
+        <GeologyPdfImport
+          projectId={projectId}
+          grid={pdfTable.grid}
+          columnCount={pdfTable.columnCount}
+          onCancel={() => setPdfTable(null)}
+          onDone={async () => {
+            setPdfTable(null)
+            setNotice('imported')
+            await onChanged()
+          }}
+        />
+      )}
 
       {issues.length > 0 && (
         <div style={{ marginTop: 12 }}>

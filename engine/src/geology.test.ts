@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { parseGeologyRows, summarizeGeology } from './geology'
+import {
+  gridToGeologyRows,
+  guessGeologyField,
+  parseGeologyRows,
+  summarizeGeology,
+} from './geology'
 
 const TEMPLATE_ROWS = [
   {
@@ -62,6 +67,37 @@ describe('parseGeologyRows', () => {
     const { boreholes, issues } = parseGeologyRows([{ 'Скважина': '', 'Грунт': '' }])
     expect(boreholes).toHaveLength(0)
     expect(issues).toHaveLength(0)
+  })
+})
+
+describe('guessGeologyField', () => {
+  it('matches canonical headers and loose variants', () => {
+    expect(guessGeologyField('Скважина')).toBe('label')
+    expect(guessGeologyField('ИГЭ')).toBe('igeCode')
+    expect(guessGeologyField('Угол внутреннего трения, град')).toBe('frictionAngleDeg')
+    expect(guessGeologyField('УГВ, м')).toBe('depthM')
+  })
+  it('returns null for unclear headers', () => {
+    expect(guessGeologyField('примечание')).toBeNull()
+    expect(guessGeologyField('')).toBeNull()
+  })
+})
+
+describe('gridToGeologyRows', () => {
+  it('maps columns to fields, skips the header row and unmapped columns', () => {
+    const grid = [
+      ['Скв', 'ИГЭ', 'от', 'до', 'прим'],
+      ['С-1', '1', '0', '2.5', 'x'],
+      ['С-1', '2', '2.5', '6', 'y'],
+    ]
+    const mapping = ['label', 'igeCode', 'topDepthM', 'bottomDepthM', null] as const
+    const rows = gridToGeologyRows(grid, [...mapping], true)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toEqual({ 'Скважина': 'С-1', 'ИГЭ': '1', 'Кровля слоя, м': '0', 'Подошва слоя, м': '2.5' })
+    // The mapped rows feed straight back into the parser.
+    const parsed = parseGeologyRows(rows)
+    expect(parsed.boreholes).toHaveLength(1)
+    expect(parsed.boreholes[0].layers).toHaveLength(2)
   })
 })
 
