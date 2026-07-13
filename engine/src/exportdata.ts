@@ -1,5 +1,6 @@
 import type { NetworkDemand } from './demand'
 import type { FittingsPlan, GeologyInput, MaterialSelection, SeismicInput } from './equipment'
+import type { Borehole, GeologyAttributes } from './geology'
 import type { NormativeParams } from './norms'
 import type { TracedNetwork } from './trace'
 import type { SizingResult } from './sizing'
@@ -23,6 +24,10 @@ export interface ExportInput {
   surveyPoints?: SurveyPoint[]
   /** Selected region (requirements update 3, change 3), if any. */
   region?: { name: string; source: 'manual' | 'auto' } | null
+  /** Boreholes for the geology cross-section on the profile (G3), if any. */
+  boreholes?: Borehole[]
+  /** Project level geology attributes (subsidence, heaving, swelling). */
+  geologyAttributes?: Partial<GeologyAttributes>
 }
 
 export const MATERIAL_LABELS: Record<string, string> = {

@@ -60,6 +60,22 @@ async function demoExportInput(): Promise<ExportInput> {
     seismicity: demo.seismicity,
     surveyPoints: demo.surveyPoints,
     region: { name: 'г. Астана', source: 'auto' },
+    boreholes: [
+      {
+        label: 'С-1', x: demo.source.x, y: demo.source.y, mouthElevationM: 100,
+        layers: [
+          { igeCode: '1', soilName: 'суглинок', topDepthM: 0, bottomDepthM: 2.5 },
+          { igeCode: '2', soilName: 'песок', topDepthM: 2.5, bottomDepthM: 6 },
+        ],
+        water: { depthM: 1.5, aggressivenessSteel: 'high' as const },
+      },
+      {
+        label: 'С-2', x: demo.source.x + 100, y: demo.source.y + 100, mouthElevationM: 101,
+        layers: [{ igeCode: '1', soilName: 'глина', topDepthM: 0, bottomDepthM: 5 }],
+        water: { depthM: 4 },
+      },
+    ],
+    geologyAttributes: { subsidenceType: 'I' as const, heaving: true },
   }
 }
 
@@ -78,6 +94,10 @@ describe('DXF export', () => {
     expect(dxf).toContain('CIRCLE') // wells
     expect(dxf).toContain('ВОС')
     expect(dxf).toContain('Продольный профиль магистрали В1')
+    // Requirements update 3 (G3): geology cross-section on the profile.
+    expect(dxf).toContain('В1-геология')
+    expect(dxf).toContain('УГВ')
+    expect(dxf).toContain('С-1')
   }, 60000)
 })
 
@@ -124,6 +144,9 @@ describe('explanatory note', () => {
     expect(json).toContain('8. Учёт региональных рисков и ЧС')
     expect(json).toContain('Регион: г. Астана (определён по координатам площадки)')
     expect(json).toContain('9. Перечень использованных нормативных документов')
+    // Requirements update 3 (G3): geology along the route.
+    expect(json).toContain('Геологический разрез по трассе')
+    expect(json).toContain('Влияние геологии вдоль трассы')
     expect(Array.isArray((doc as { content: unknown[] }).content)).toBe(true)
   }, 60000)
 

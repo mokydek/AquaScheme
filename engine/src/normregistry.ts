@@ -282,6 +282,40 @@ export const NORM_REGISTRY: NormClause[] = [
     appliesWork: BOTH_WORK,
     status: 'unverified',
   },
+  {
+    id: 'geology.corrosion',
+    documentCode: 'СП РК 4.01-101-2012',
+    clause: null,
+    requirement:
+      'Защита труб от коррозии по степени агрессивности грунтов и подземных вод вдоль трассы',
+    valueText: 'по агрессивности',
+    units: '—',
+    appliesSystem: WATER,
+    appliesWork: BOTH_WORK,
+    status: 'unverified',
+  },
+  {
+    id: 'geology.bedding',
+    documentCode: 'СП РК 4.01-101-2012',
+    clause: null,
+    requirement: 'Тип основания и постели (обсыпки) труб принимается по виду грунта вдоль трассы',
+    valueText: 'по грунту',
+    units: '—',
+    appliesSystem: WATER,
+    appliesWork: BOTH_WORK,
+    status: 'unverified',
+  },
+  {
+    id: 'geology.dewatering',
+    documentCode: 'СНиП 2.04.02-84*',
+    clause: null,
+    requirement: 'При уровне грунтовых вод выше дна траншеи предусматривается водопонижение',
+    valueText: 'УГВ выше дна',
+    units: '—',
+    appliesSystem: WATER,
+    appliesWork: BOTH_WORK,
+    status: 'unverified',
+  },
 ]
 
 const CLAUSE_BY_ID = new Map(NORM_REGISTRY.map((c) => [c.id, c]))

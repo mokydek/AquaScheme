@@ -5,8 +5,10 @@ import {
   NORMATIVE_DEFAULTS,
 } from '@aquascheme/engine'
 import type {
+  Borehole,
   ExportInput,
   FittingsPlan,
+  GeologyAttributes,
   GeologyInput,
   MaterialSelection,
   NormativeParams,
@@ -56,6 +58,7 @@ export function ExportSection({
   nodes,
   pipes,
   datasets,
+  boreholes,
   lastRun,
 }: {
   projectId: string
@@ -64,6 +67,7 @@ export function ExportSection({
   nodes: NodeRow[]
   pipes: PipeRow[]
   datasets: Partial<Record<DatasetKind, DatasetRow>>
+  boreholes: Borehole[]
   lastRun: SizingResult | null
 }) {
   const { t } = useTranslation()
@@ -127,6 +131,8 @@ export function ExportSection({
       seismicity: datasets.seismic!.content as SeismicInput,
       surveyPoints: topo?.points,
       region: region ? { name: region.name, source: region.source } : null,
+      boreholes,
+      geologyAttributes: (datasets.geology?.content ?? {}) as Partial<GeologyAttributes>,
     }
   }
 

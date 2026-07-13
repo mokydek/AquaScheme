@@ -2,6 +2,9 @@ import type { ExportInput } from './exportdata'
 import { materialLabel } from './exportdata'
 import { assessHazards } from './equipment'
 import type { HazardMeasureCode, MaterialReasonCode } from './equipment'
+import { assessGeologyInfluences, sampleGeoAlong } from './geoprofile'
+import type { GeoInfluenceCode } from './geoprofile'
+import { summarizeGeology } from './geology'
 import type { HazardKind } from './regions'
 import { getClause, NORM_DOCUMENTS } from './normregistry'
 
@@ -46,6 +49,16 @@ const HAZARD_LABELS: Record<HazardKind, string> = {
   subsidence: 'просадочные грунты',
   karst: 'карст',
   high_groundwater: 'высокий уровень грунтовых вод',
+}
+
+const AGGRESSIVENESS_LABELS: Record<string, string> = { low: 'низкая', medium: 'средняя', high: 'высокая' }
+
+const GEO_INFLUENCE_TEXT: Record<GeoInfluenceCode, string> = {
+  corrosion: 'Защита от коррозии: по агрессивности среды вдоль трассы принят неметаллический материал или защитное покрытие.',
+  bedding: 'Основание и постель труб приняты по виду грунта вдоль трассы.',
+  dewatering: 'На участках с высоким уровнем грунтовых вод предусмотрено водопонижение при производстве работ.',
+  subsidence: 'Просадочные грунты: приняты мероприятия по подготовке основания и контролю осадок.',
+  heaving: 'Пучинистые грунты: приняты противопучинистые мероприятия основания.',
 }
 
 const HAZARD_MEASURE_TEXT: Record<HazardMeasureCode, string> = {
@@ -178,6 +191,7 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       ['Глубина промерзания, м', g.freezingDepthM.toFixed(2)],
       ['Сейсмичность площадки, баллов', String(s.siteIntensityPoints)],
     ]),
+    ...geologyProfileSection(input),
 
     heading('2. Методика и нормативная база'),
     {
@@ -226,6 +240,7 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       ['Компенсационные вставки', m.needsCompensators ? 'требуются' : 'не требуются'],
     ]),
     { ul: m.reasons.map((r) => REASON_TEXT[r]).filter(Boolean), margin: [0, 4, 0, 0] },
+    ...geologyInfluenceSection(input),
     basisLine(
       ['burial.depth', 'seismic.joints'],
       'выбор марки материала — проектное решение по критерию минимальной стоимости; норматив выбор не регламентирует',
@@ -279,6 +294,68 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       margin: [0, 8, 0, 0],
     }),
   }
+}
+
+/** Ring main path (node order R1..Rn closed) for geology sampling. */
+function ringPath(input: ExportInput): Array<{ x: number; y: number }> {
+  const ring = input.network.nodes
+    .filter((n) => n.kind === 'ring')
+    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
+  return ring.length >= 2 ? [...ring, ring[0]].map((n) => ({ x: n.x, y: n.y })) : []
+}
+
+/**
+ * Geology cross-section along the route (G3): boreholes interpolated per
+ * station. Appears in section 1 only when boreholes are provided; old projects
+ * without boreholes keep the summary-only geology inputs above.
+ */
+function geologyProfileSection(input: ExportInput): unknown[] {
+  const boreholes = input.boreholes ?? []
+  if (boreholes.length === 0) return []
+  const path = ringPath(input)
+  if (path.length === 0) return []
+  const stations = sampleGeoAlong(boreholes, path, input.material.burialDepthM)
+
+  const body: unknown[] = [
+    ['Пикет, м', 'Грунт', 'УГВ, м', 'Агрессивность'].map((tt) => ({ text: tt, bold: true })),
+  ]
+  for (const st of stations) {
+    body.push([
+      st.stationM.toFixed(0),
+      st.geo.soilName ?? '—',
+      st.geo.waterDepthM !== null ? st.geo.waterDepthM.toFixed(1) : '—',
+      st.geo.aggressiveness ? AGGRESSIVENESS_LABELS[st.geo.aggressiveness] : '—',
+    ])
+  }
+  return [
+    { text: 'Геологический разрез по трассе (интерполяция между скважинами):', margin: [0, 6, 0, 2] },
+    {
+      table: { headerRows: 1, widths: ['auto', '*', 'auto', 'auto'], body },
+      layout: 'lightHorizontalLines',
+      fontSize: 8,
+    },
+  ]
+}
+
+/** Geology-driven design influences appended to section 6 (materials). */
+function geologyInfluenceSection(input: ExportInput): unknown[] {
+  const boreholes = input.boreholes ?? []
+  if (boreholes.length === 0) return []
+  const summary = summarizeGeology({ boreholes })
+  const influences = assessGeologyInfluences({
+    maxAggressiveness: summary.maxAggressiveness,
+    minWaterDepthM: summary.minWaterDepthM,
+    burialDepthM: input.material.burialDepthM,
+    dominantSoil: boreholes[0]?.layers[0]?.soilName ?? null,
+    attributes: input.geologyAttributes,
+  })
+  if (influences.length === 0) return []
+  const refs = [...new Set(influences.flatMap((i) => i.refs))]
+  return [
+    { text: 'Влияние геологии вдоль трассы:', margin: [0, 6, 0, 2] },
+    { ul: influences.map((i) => GEO_INFLUENCE_TEXT[i.code]), margin: [0, 0, 0, 2] },
+    basisLine(refs),
+  ]
 }
 
 /** Section 8 content: region, declared hazards, measures and warnings. */

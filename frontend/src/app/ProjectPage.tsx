@@ -707,6 +707,7 @@ export function ProjectPage() {
                 nodes={nodes}
                 pipes={pipes}
                 datasets={datasets}
+                boreholes={boreholes}
                 lastRun={lastRun}
               />
               <EquipmentSection

@@ -25,6 +25,7 @@ const LAYERS = {
   fittings: 'В1-арматура',
   annotation: 'В1-аннотации',
   profile: 'В1-профиль',
+  geology: 'В1-геология',
 } as const
 
 function p3(x: number, y: number) {
@@ -48,6 +49,7 @@ export function buildNetworkDxf(input: ExportInput): string {
   dxf.addLayer(LAYERS.fittings, Colors.Blue, LineTypes.Continuous)
   dxf.addLayer(LAYERS.annotation, Colors.Black, LineTypes.Continuous)
   dxf.addLayer(LAYERS.profile, Colors.Black, LineTypes.Continuous)
+  dxf.addLayer(LAYERS.geology, Colors.Green, LineTypes.Continuous)
 
   const nodeById = new Map(input.network.nodes.map((n) => [n.id, n]))
 
@@ -191,8 +193,85 @@ function drawProfile(dxf: DxfWriter, input: ExportInput): void {
     })
   }
 
+  drawBoreholeColumns(dxf, input, path, chain, originX, yFor)
+
   dxf.setCurrentLayerName(LAYERS.annotation)
   dxf.addText(p3(originX, yFor(Math.max(...elevations)) + 6), 2.4, 'Продольный профиль магистрали В1', {
     secondAlignmentPoint: p3(originX, yFor(Math.max(...elevations)) + 6),
   })
+}
+
+/** Chainage of the point on the route path nearest to (bx, by). */
+function chainageOfNearest(path: NetworkNode[], chain: number[], bx: number, by: number): number {
+  let best = 0
+  let bestDist = Number.POSITIVE_INFINITY
+  for (let i = 1; i < path.length; i++) {
+    const ax = path[i - 1].x
+    const ay = path[i - 1].y
+    const dx = path[i].x - ax
+    const dy = path[i].y - ay
+    const segLen2 = dx * dx + dy * dy
+    const t = segLen2 === 0 ? 0 : Math.max(0, Math.min(1, ((bx - ax) * dx + (by - ay) * dy) / segLen2))
+    const px = ax + t * dx
+    const py = ay + t * dy
+    const d = Math.hypot(bx - px, by - py)
+    if (d < bestDist) {
+      bestDist = d
+      best = chain[i - 1] + t * Math.hypot(dx, dy)
+    }
+  }
+  return best
+}
+
+/**
+ * Geology cross-section on the longitudinal profile (requirements update 3,
+ * change 1, G3): each borehole is drawn as a column at its chainage along the
+ * route, with layer boundaries and the water table, so the profile carries
+ * the geology it was designed against.
+ */
+function drawBoreholeColumns(
+  dxf: DxfWriter,
+  input: ExportInput,
+  path: NetworkNode[],
+  chain: number[],
+  originX: number,
+  yFor: (elev: number) => number,
+): void {
+  const boreholes = (input.boreholes ?? []).filter(
+    (b) => b.x !== undefined && b.y !== undefined && b.mouthElevationM !== undefined && b.layers.length > 0,
+  )
+  if (boreholes.length === 0) return
+
+  dxf.setCurrentLayerName(LAYERS.geology)
+  for (const b of boreholes) {
+    const x = originX + chainageOfNearest(path, chain, b.x as number, b.y as number)
+    const mouth = b.mouthElevationM as number
+    const deepest = Math.max(...b.layers.map((l) => l.bottomDepthM))
+    // Column from mouth down to the deepest layer bottom.
+    dxf.addLine(p3(x, yFor(mouth)), p3(x, yFor(mouth - deepest)))
+    // Layer boundary ticks.
+    for (const layer of b.layers) {
+      const yb = yFor(mouth - layer.bottomDepthM)
+      dxf.addLine(p3(x - 2, yb), p3(x + 2, yb))
+      if (layer.igeCode) {
+        dxf.addText(p3(x + 2.5, yFor(mouth - (layer.topDepthM + layer.bottomDepthM) / 2)), 1.4, `ИГЭ-${layer.igeCode}`, {
+          secondAlignmentPoint: p3(x + 2.5, yFor(mouth - (layer.topDepthM + layer.bottomDepthM) / 2)),
+        })
+      }
+    }
+    // Water table marker.
+    if (b.water.depthM !== undefined) {
+      const yw = yFor(mouth - b.water.depthM)
+      dxf.addLine(p3(x - 3, yw), p3(x + 3, yw))
+      dxf.addText(p3(x - 3.5, yw), 1.4, 'УГВ', {
+        horizontalAlignment: TextHorizontalAlignment.Right,
+        secondAlignmentPoint: p3(x - 3.5, yw),
+      })
+    }
+    // Borehole label above the column.
+    dxf.addText(p3(x, yFor(mouth) + 2), 1.6, b.label, {
+      horizontalAlignment: TextHorizontalAlignment.Center,
+      secondAlignmentPoint: p3(x, yFor(mouth) + 2),
+    })
+  }
 }
