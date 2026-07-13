@@ -27,6 +27,7 @@ import {
   generateSpecXlsx,
   zipBundle,
 } from '../../shared/exporters'
+import type { RegionDatasetContent } from '../../shared/regions'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
 
@@ -89,6 +90,7 @@ export function ExportSection({
       ...((datasets.normative?.content ?? {}) as Partial<NormativeParams>),
     }
     const topo = datasets.topography?.content as { points?: SurveyPoint[] } | undefined
+    const region = datasets.region?.content as RegionDatasetContent | undefined
     const network = networkFromRows(nodes, pipes)
     const demand = computeNetworkDemand(
       buildings.map((b) => ({
@@ -124,6 +126,7 @@ export function ExportSection({
       geology: datasets.geology!.content as GeologyInput,
       seismicity: datasets.seismic!.content as SeismicInput,
       surveyPoints: topo?.points,
+      region: region ? { name: region.name, source: region.source } : null,
     }
   }
 

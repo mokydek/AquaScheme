@@ -21,6 +21,8 @@ export interface ExportInput {
   geology: GeologyInput
   seismicity: SeismicInput
   surveyPoints?: SurveyPoint[]
+  /** Selected region (requirements update 3, change 3), if any. */
+  region?: { name: string; source: 'manual' | 'auto' } | null
 }
 
 export const MATERIAL_LABELS: Record<string, string> = {

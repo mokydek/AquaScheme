@@ -59,6 +59,7 @@ async function demoExportInput(): Promise<ExportInput> {
     geology: demo.geology,
     seismicity: demo.seismicity,
     surveyPoints: demo.surveyPoints,
+    region: { name: 'г. Астана', source: 'auto' },
   }
 }
 
@@ -119,6 +120,21 @@ describe('explanatory note', () => {
     expect(json).toContain('Перечень использованных нормативных документов')
     expect(json).toContain('требует проверки')
     expect(json).toContain('норматив выбор не регламентирует')
+    // Requirements update 3: regional risks section.
+    expect(json).toContain('8. Учёт региональных рисков и ЧС')
+    expect(json).toContain('Регион: г. Астана (определён по координатам площадки)')
+    expect(json).toContain('9. Перечень использованных нормативных документов')
     expect(Array.isArray((doc as { content: unknown[] }).content)).toBe(true)
+  }, 60000)
+
+  it('warns about slopes and lists flood measures when hazards are declared', async () => {
+    const input = await demoExportInput()
+    input.seismicity = { ...input.seismicity, floodProne: true, hazards: ['mudflow'] }
+    const json = JSON.stringify(buildNoteDoc(input))
+    expect(json).toContain('герметичными')
+    expect(json).toContain('обратные клапаны')
+    expect(json).toContain('выше расчётного горизонта воды')
+    expect(json).toContain('специальные инженерные мероприятия')
+    expect(json).toContain('сель')
   }, 60000)
 })

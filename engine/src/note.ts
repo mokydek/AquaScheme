@@ -1,6 +1,8 @@
 import type { ExportInput } from './exportdata'
 import { materialLabel } from './exportdata'
-import type { MaterialReasonCode } from './equipment'
+import { assessHazards } from './equipment'
+import type { HazardMeasureCode, MaterialReasonCode } from './equipment'
+import type { HazardKind } from './regions'
 import { getClause, NORM_DOCUMENTS } from './normregistry'
 
 /**
@@ -34,6 +36,28 @@ const REASON_TEXT: Record<MaterialReasonCode, string> = {
   flood: 'Подтопляемость территории: предусмотрена защита колодцев и оборудования от затопления.',
   pressureClass: 'Класс давления труб принят с запасом от расчётного рабочего давления сети.',
   freezingDepth: 'Низ трубы заглублён на 0.5 м ниже расчётной глубины промерзания.',
+}
+
+const HAZARD_LABELS: Record<HazardKind, string> = {
+  earthquake: 'землетрясение',
+  flood: 'паводок и подтопление',
+  mudflow: 'сель',
+  landslide: 'оползень',
+  subsidence: 'просадочные грунты',
+  karst: 'карст',
+  high_groundwater: 'высокий уровень грунтовых вод',
+}
+
+const HAZARD_MEASURE_TEXT: Record<HazardMeasureCode, string> = {
+  sealedManholes: 'Колодцы в зоне подтопления приняты герметичными.',
+  checkValves: 'На выпусках предусмотрены обратные клапаны.',
+  raisedCovers: 'Отметки люков колодцев приняты выше расчётного горизонта воды.',
+  slopeWarning:
+    'ПРЕДУПРЕЖДЕНИЕ. Территория подвержена селям или оползням: требуются специальные инженерные мероприятия по отдельному проекту инженерной защиты; автоматический расчёт их не заменяет.',
+  karstWarning:
+    'ПРЕДУПРЕЖДЕНИЕ. Территория подвержена карсту: требуется инженерная защита по отдельному проекту.',
+  dewateringWarning:
+    'Высокий уровень грунтовых вод: при производстве работ предусмотреть водопонижение (инженерное решение).',
 }
 
 const REFERENCES = [
@@ -217,7 +241,10 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
     ]),
     basisLine(['hydrant.spacing']),
 
-    heading('8. Перечень использованных нормативных документов'),
+    heading('8. Учёт региональных рисков и ЧС'),
+    ...hazardSection(input),
+
+    heading('9. Перечень использованных нормативных документов'),
     {
       ol: NORM_DOCUMENTS.map(
         (dd) =>
@@ -252,6 +279,42 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
       margin: [0, 8, 0, 0],
     }),
   }
+}
+
+/** Section 8 content: region, declared hazards, measures and warnings. */
+function hazardSection(input: ExportInput): unknown[] {
+  const s = input.seismicity
+  const hazards = [
+    ...new Set<HazardKind>([
+      ...(s.floodProne ? (['flood'] as HazardKind[]) : []),
+      ...(s.subsidenceProne ? (['subsidence'] as HazardKind[]) : []),
+      ...(s.hazards ?? []),
+    ]),
+  ]
+  const measures = assessHazards(s)
+
+  const regionLine = input.region
+    ? `Регион: ${input.region.name} (${input.region.source === 'auto' ? 'определён по координатам площадки' : 'выбран вручную'}).`
+    : 'Регион не выбран; региональные параметры приняты по данным площадки.'
+  const hazardsLine =
+    hazards.length > 0
+      ? `Учтённые риски: ${hazards.map((h) => HAZARD_LABELS[h]).join(', ')}.`
+      : 'Риски ЧС для площадки не заявлены.'
+
+  const out: unknown[] = [
+    { text: regionLine, margin: [0, 0, 0, 2] },
+    { text: `Сейсмичность площадки: ${s.siteIntensityPoints} баллов.`, margin: [0, 0, 0, 2] },
+    { text: hazardsLine, margin: [0, 0, 0, 4] },
+  ]
+  if (measures.length > 0) {
+    out.push({ ul: measures.map((m) => HAZARD_MEASURE_TEXT[m.code]), margin: [0, 0, 0, 4] })
+  }
+  const refs = [
+    ...(input.region ? ['region.seismicMap', 'region.freezing'] : []),
+    ...new Set(measures.flatMap((m) => m.refs)),
+  ]
+  if (refs.length > 0) out.push(basisLine(refs))
+  return out
 }
 
 function buildNodeLabeler(input: ExportInput): (engineId: string) => string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDemoDataset } from './demo'
-import { burialDepthM, placeFittings, selectMaterials } from './equipment'
+import { assessHazards, burialDepthM, placeFittings, selectMaterials } from './equipment'
 import { traceNetwork } from './trace'
 import type { NetworkNode, TracedNetwork } from './trace'
 
@@ -12,6 +12,40 @@ const GEOLOGY = {
 }
 
 const SEISMIC = { siteIntensityPoints: 7, subsidenceProne: false, floodProne: false }
+
+describe('assessHazards', () => {
+  it('returns nothing without hazards', () => {
+    expect(assessHazards(SEISMIC)).toHaveLength(0)
+  })
+
+  it('flood produces sealed manholes, check valves and raised covers', () => {
+    const fromFlag = assessHazards({ ...SEISMIC, floodProne: true })
+    const fromHazard = assessHazards({ ...SEISMIC, hazards: ['flood'] })
+    for (const measures of [fromFlag, fromHazard]) {
+      expect(measures.map((m) => m.code)).toEqual(['sealedManholes', 'checkValves', 'raisedCovers'])
+      expect(measures.every((m) => m.kind === 'measure' && m.refs.includes('hazard.flood'))).toBe(true)
+    }
+  })
+
+  it('mudflow or landslide produce a single slope warning, karst its own', () => {
+    const slopes = assessHazards({ ...SEISMIC, hazards: ['mudflow', 'landslide'] })
+    expect(slopes.map((m) => m.code)).toEqual(['slopeWarning'])
+    expect(slopes[0].kind).toBe('warning')
+    expect(slopes[0].refs).toContain('hazard.slopes')
+    const karst = assessHazards({ ...SEISMIC, hazards: ['karst'] })
+    expect(karst.map((m) => m.code)).toEqual(['karstWarning'])
+  })
+
+  it('high groundwater produces an engineering dewatering warning', () => {
+    const measures = assessHazards({ ...SEISMIC, hazards: ['high_groundwater'] })
+    expect(measures.map((m) => m.code)).toEqual(['dewateringWarning'])
+    expect(measures[0].basis).toBe('engineering')
+  })
+
+  it('earthquake and subsidence are handled by selectMaterials, not duplicated here', () => {
+    expect(assessHazards({ ...SEISMIC, hazards: ['earthquake', 'subsidence'] })).toHaveLength(0)
+  })
+})
 
 describe('selectMaterials', () => {
   it('selects PE100 SDR17 PN10 for normal pressure', () => {

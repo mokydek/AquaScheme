@@ -8,6 +8,7 @@ export type DatasetKind =
   | 'seismic'
   | 'normative'
   | 'equipment'
+  | 'region'
 
 export interface DatasetRow {
   id: string

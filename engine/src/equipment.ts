@@ -1,4 +1,6 @@
 import type { NetworkNode, TracedNetwork } from './trace'
+import type { Basis } from './normregistry'
+import type { HazardKind } from './regions'
 
 /**
  * Materials, burial depth and appurtenances.
@@ -27,6 +29,8 @@ export interface SeismicInput {
   siteIntensityPoints: number
   subsidenceProne: boolean
   floodProne: boolean
+  /** Additional site hazards (requirements update 3, change 3). */
+  hazards?: HazardKind[]
 }
 
 export type PipeMaterialCode =
@@ -98,6 +102,55 @@ export function selectMaterials(input: {
     burialDepthM: burialDepthM(geology.freezingDepthM),
     reasons,
   }
+}
+
+export type HazardMeasureCode =
+  | 'sealedManholes'
+  | 'checkValves'
+  | 'raisedCovers'
+  | 'slopeWarning'
+  | 'karstWarning'
+  | 'dewateringWarning'
+
+export interface HazardMeasure {
+  code: HazardMeasureCode
+  /** measure: a concrete design measure; warning: needs a separate project. */
+  kind: 'measure' | 'warning'
+  /** Norm registry clause ids that justify the measure. */
+  refs: string[]
+  basis: Basis
+}
+
+/**
+ * Design measures driven by the site hazards (requirements update 3,
+ * change 3). Different hazards influence decisions differently: flood and
+ * high groundwater translate into concrete measures on wells and outlets;
+ * mudflow, landslide and karst are outside the scope of automated network
+ * design and produce explicit warnings that special engineering protection
+ * needs its own project (fixed in the explanatory note). Earthquake acts
+ * through the seismic intensity (selectMaterials), subsidence through the
+ * subsidenceProne flag — neither is duplicated here.
+ */
+export function assessHazards(seismicity: SeismicInput): HazardMeasure[] {
+  const hazards = seismicity.hazards ?? []
+  const measures: HazardMeasure[] = []
+  if (seismicity.floodProne || hazards.includes('flood')) {
+    measures.push(
+      { code: 'sealedManholes', kind: 'measure', refs: ['hazard.flood'], basis: 'normative' },
+      { code: 'checkValves', kind: 'measure', refs: ['hazard.flood'], basis: 'normative' },
+      { code: 'raisedCovers', kind: 'measure', refs: ['hazard.flood'], basis: 'normative' },
+    )
+  }
+  if (hazards.includes('mudflow') || hazards.includes('landslide')) {
+    measures.push({ code: 'slopeWarning', kind: 'warning', refs: ['hazard.slopes'], basis: 'normative' })
+  }
+  if (hazards.includes('karst')) {
+    measures.push({ code: 'karstWarning', kind: 'warning', refs: ['hazard.slopes'], basis: 'normative' })
+  }
+  if (hazards.includes('high_groundwater')) {
+    measures.push({ code: 'dewateringWarning', kind: 'warning', refs: [], basis: 'engineering' })
+  }
+  return measures
 }
 
 export type FittingType = 'hydrant' | 'valve' | 'airValve' | 'washout'

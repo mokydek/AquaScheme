@@ -2,6 +2,7 @@ export const ENGINE_VERSION = '0.1.0'
 
 export * from './types'
 export * from './filekind'
+export * from './regions'
 export * from './systems'
 export * from './normregistry'
 export * from './decisions'

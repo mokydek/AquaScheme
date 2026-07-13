@@ -13,7 +13,7 @@ import { buildingPreset, sourcePreset } from '@aquascheme/engine'
 import type { GeologyInput, SeismicInput, SurveyPoint as EngineSurveyPoint } from '@aquascheme/engine'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
-import { GeologySection, NormsSection, SeismicSection, SourceSection } from './project/FormSections'
+import { GeologySection, NormsSection, RegionSection, SeismicSection, SourceSection } from './project/FormSections'
 import { DemandSection } from './project/DemandSection'
 import { ProjectMap } from './project/ProjectMap'
 import type { SourceData } from './project/ProjectMap'
@@ -33,6 +33,7 @@ import { ExistingNetworkSection } from './project/ExistingNetworkSection'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
 import { syncNormRegistry } from '../shared/norms'
+import { syncRegions } from '../shared/regions'
 import { NormRegistrySection } from './project/NormRegistrySection'
 import { Panel } from './project/Panel'
 import { analyzeParcelViolations } from '@aquascheme/engine'
@@ -143,6 +144,7 @@ export function ProjectPage() {
 
   useEffect(() => {
     void syncNormRegistry()
+    void syncRegions()
   }, [])
 
   const loadDemo = async (): Promise<boolean> => {
@@ -719,6 +721,14 @@ export function ProjectPage() {
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
           <BuildingsSection projectId={project.id} buildings={buildings} onChanged={load} />
           <SourceSection projectId={project.id} dataset={datasets.source} onSaved={load} />
+          <RegionSection
+            projectId={project.id}
+            dataset={datasets.region}
+            seismicDataset={datasets.seismic}
+            geologyDataset={datasets.geology}
+            source={sourceData}
+            onSaved={load}
+          />
           <GeologySection projectId={project.id} dataset={datasets.geology} onSaved={load} />
           <SeismicSection projectId={project.id} dataset={datasets.seismic} onSaved={load} />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />

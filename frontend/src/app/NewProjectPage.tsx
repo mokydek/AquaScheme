@@ -2,8 +2,11 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { getRegion, REGIONS_KZ } from '@aquascheme/engine'
 import type { SystemType, WorkType } from '@aquascheme/engine'
 import { supabase } from '../shared/supabase'
+import { saveDataset } from '../shared/datasets'
+import type { RegionDatasetContent } from '../shared/regions'
 import { useAuth } from '../shared/auth'
 
 const WORK_TYPES: WorkType[] = ['new', 'reconstruction']
@@ -22,6 +25,7 @@ export function NewProjectPage() {
   const [workType, setWorkType] = useState<WorkType | null>(null)
   const [systemType, setSystemType] = useState<SystemType | null>(null)
   const [name, setName] = useState('')
+  const [regionId, setRegionId] = useState('')
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
@@ -40,11 +44,27 @@ export function NewProjectPage() {
       })
       .select('id')
       .single()
-    setBusy(false)
     if (error || !data) {
+      setBusy(false)
       setFailed(true)
       return
     }
+    // Optional region pick (requirements update 3, change 3). Best effort:
+    // without migration 0006 the dataset kind is rejected, the project page
+    // lets the user pick the region later.
+    const region = getRegion(regionId)
+    if (region) {
+      const content: RegionDatasetContent = {
+        regionId: region.id,
+        name: region.name,
+        source: 'manual',
+        seismicPoints: region.seismicPoints,
+        freezingDepthM: region.freezingDepthM,
+        hazards: region.hazards,
+      }
+      await saveDataset(data.id, 'region', content).catch(() => {})
+    }
+    setBusy(false)
     navigate(`/app/projects/${data.id}`)
   }
 
@@ -131,6 +151,17 @@ export function NewProjectPage() {
                   required
                   autoFocus
                 />
+              </label>
+              <label className="field" style={{ marginTop: 12 }}>
+                <span className="field-label">{t('wizard.regionLabel')}</span>
+                <select className="input" value={regionId} onChange={(e) => setRegionId(e.target.value)}>
+                  <option value="">{t('wizard.regionNone')}</option>
+                  {REGIONS_KZ.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
             {failed && <p className="notice error">{t('wizard.error')}</p>}
