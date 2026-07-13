@@ -3,7 +3,6 @@ import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   assessHazards,
-  DEFAULT_FREEZING_DEPTH_M,
   getRegion,
   localToLonLat,
   nearestRegion,
@@ -162,78 +161,6 @@ export function SourceSection(props: {
         busy={form.busy}
         notice={form.notice}
         onSave={() => void form.save((v) => numbersOrNull(v, keys))}
-      />
-    </Panel>
-  )
-}
-
-export function GeologySection(props: {
-  projectId: string
-  dataset: DatasetRow | undefined
-  onSaved: () => Promise<void>
-}) {
-  const { t } = useTranslation()
-  const form = useDatasetForm(
-    props.projectId,
-    'geology',
-    props.dataset,
-    {
-      soilType: 'loam',
-      groundwaterDepthM: '',
-      corrosivity: 'medium',
-      freezingDepthM: DEFAULT_FREEZING_DEPTH_M,
-    },
-    props.onSaved,
-  )
-
-  return (
-    <Panel title={t('project.geology.title')} status={props.dataset ? 'filled' : 'empty'}>
-      <div className="form-grid">
-        <label className="field">
-          <span className="field-label">{t('project.geology.soil')}</span>
-          <select className="input" value={form.values.soilType} onChange={form.set('soilType')}>
-            {(['sand', 'loam', 'clay', 'rock'] as const).map((soil) => (
-              <option key={soil} value={soil}>
-                {t(`project.geology.soils.${soil}`)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <NumberField
-          label={t('project.geology.groundwater')}
-          value={form.values.groundwaterDepthM ?? ''}
-          onChange={form.set('groundwaterDepthM')}
-        />
-        <label className="field">
-          <span className="field-label">{t('project.geology.corrosivity')}</span>
-          <select
-            className="input"
-            value={form.values.corrosivity}
-            onChange={form.set('corrosivity')}
-          >
-            {(['low', 'medium', 'high'] as const).map((level) => (
-              <option key={level} value={level}>
-                {t(`project.geology.corrosivityLevels.${level}`)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <NumberField
-          label={t('project.geology.freezing')}
-          value={form.values.freezingDepthM ?? ''}
-          onChange={form.set('freezingDepthM')}
-        />
-      </div>
-      <SectionFooter
-        busy={form.busy}
-        notice={form.notice}
-        onSave={() =>
-          void form.save((v) => {
-            const numbers = numbersOrNull(v, ['groundwaterDepthM', 'freezingDepthM'])
-            if (!numbers) return null
-            return { ...numbers, soilType: v.soilType, corrosivity: v.corrosivity }
-          })
-        }
       />
     </Panel>
   )

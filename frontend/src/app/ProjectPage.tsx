@@ -13,7 +13,7 @@ import { buildingPreset, sourcePreset } from '@aquascheme/engine'
 import type { GeologyInput, SeismicInput, SurveyPoint as EngineSurveyPoint } from '@aquascheme/engine'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
-import { GeologySection, NormsSection, RegionSection, SeismicSection, SourceSection } from './project/FormSections'
+import { NormsSection, RegionSection, SeismicSection, SourceSection } from './project/FormSections'
 import { DemandSection } from './project/DemandSection'
 import { ProjectMap } from './project/ProjectMap'
 import type { SourceData } from './project/ProjectMap'
@@ -32,6 +32,9 @@ import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
+import { GeologySection } from './project/GeologySection'
+import { fetchGeology } from '../shared/geology'
+import type { Borehole } from '@aquascheme/engine'
 import { syncNormRegistry } from '../shared/norms'
 import { syncRegions } from '../shared/regions'
 import { NormRegistrySection } from './project/NormRegistrySection'
@@ -75,6 +78,7 @@ export function ProjectPage() {
   const [parcels, setParcels] = useState<ParcelRow[]>([])
   const [catalogs, setCatalogs] = useState<CatalogRow[]>([])
   const [existing, setExisting] = useState<ExistingPipeRow[]>([])
+  const [boreholes, setBoreholes] = useState<Borehole[]>([])
   const [parcelDraft, setParcelDraft] = useState<{ kind: ParcelKind; vertices: Vec2[] } | null>(null)
   const [violationPipeIds, setViolationPipeIds] = useState<string[] | null>(null)
 
@@ -134,6 +138,11 @@ export function ProjectPage() {
       setExisting(await fetchExisting(id))
     } catch {
       setExisting([])
+    }
+    try {
+      setBoreholes(await fetchGeology(id))
+    } catch {
+      setBoreholes([])
     }
     setState('ready')
   }, [id])
@@ -729,7 +738,12 @@ export function ProjectPage() {
             source={sourceData}
             onSaved={load}
           />
-          <GeologySection projectId={project.id} dataset={datasets.geology} onSaved={load} />
+          <GeologySection
+            projectId={project.id}
+            dataset={datasets.geology}
+            boreholes={boreholes}
+            onChanged={load}
+          />
           <SeismicSection projectId={project.id} dataset={datasets.seismic} onSaved={load} />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />
           {isWater && <DemandSection buildings={buildings} normsDataset={datasets.normative} />}
