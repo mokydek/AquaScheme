@@ -5,7 +5,7 @@ import { placeFittings, selectMaterials } from './equipment'
 import { NORMATIVE_DEFAULTS } from './norms'
 import { sizeNetwork } from './sizing'
 import { traceNetwork } from './trace'
-import { buildNetworkDxf } from './dxf'
+import { buildGeneralDataDxf, buildNetworkDxf, buildSpecSheetDxf } from './dxf'
 import { buildSpecification, specificationToCsv } from './specification'
 import { buildNoteDoc } from './note'
 import type { ExportInput } from './exportdata'
@@ -98,6 +98,30 @@ describe('DXF export', () => {
     expect(dxf).toContain('В1-геология')
     expect(dxf).toContain('УГВ')
     expect(dxf).toContain('С-1')
+  }, 60000)
+})
+
+describe('general data and specification sheets (update 3, O1)', () => {
+  it('builds the general data sheet with drawings list, documents, legend and notes', async () => {
+    const input = await demoExportInput()
+    const dxf = buildGeneralDataDxf(input)
+    expect(dxf).toContain('Общие данные')
+    expect(dxf).toContain('Ведомость рабочих чертежей')
+    expect(dxf).toContain('Условные обозначения')
+    expect(dxf).toContain('Общие указания')
+    expect(dxf).toContain('СП РК 4.01-101-2012') // referenced documents
+    expect(dxf).toContain('требует проверки') // unverified marked
+    expect(dxf).toContain('форма уточняется') // simplified title block
+    expect(dxf.trimEnd().endsWith('EOF')).toBe(true)
+  }, 60000)
+
+  it('builds the specification sheet per GOST 21.110 form', async () => {
+    const input = await demoExportInput()
+    const dxf = buildSpecSheetDxf(input)
+    expect(dxf).toContain('Спецификация оборудования, изделий и материалов')
+    expect(dxf).toContain('ГОСТ 21.110')
+    expect(dxf).toContain('Труба напорная')
+    expect(dxf.trimEnd().endsWith('EOF')).toBe(true)
   }, 60000)
 })
 

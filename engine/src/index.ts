@@ -27,6 +27,7 @@ export * from './equipment'
 export * from './recommendations'
 export * from './exportdata'
 export * from './specification'
+export * from './specsource'
 export * from './note'
 export * from './demo'
 // Note: ./dxf is a subpath export only (it pulls in @tarikjabiri/dxf), so the

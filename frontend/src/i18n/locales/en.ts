@@ -486,7 +486,7 @@ export const en = {
       },
       export: {
         title: 'Export documentation',
-        hint: 'AutoCAD drawing (plan and longitudinal profile): DWG by default when the conversion service is configured, DXF always. A PDF explanatory note and an XLSX bill of materials. The bundle button collects everything into one ZIP, including DWG versions of the sheets',
+        hint: 'AutoCAD drawing (plan and longitudinal profile): DWG by default when the conversion service is configured, DXF always. A PDF explanatory note and an XLSX bill of materials. The bundle button collects everything into one ZIP: the general data sheet (GOST 21.101), the plan and profile, the specification sheet (GOST 21.110), the note and the XLSX, including DWG versions of the sheets',
         needData: 'Run the hydraulic calculation and material selection first',
         drawing: 'Download drawing',
         pdf: 'Download PDF note',

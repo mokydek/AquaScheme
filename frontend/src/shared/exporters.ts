@@ -8,6 +8,18 @@ export async function generateDxf(input: ExportInput): Promise<string> {
   return buildNetworkDxf(input)
 }
 
+/** "Общие данные" sheet as DXF (requirements update 3, O1). */
+export async function generateGeneralDataDxf(input: ExportInput): Promise<string> {
+  const { buildGeneralDataDxf } = await import('@aquascheme/engine/dxf')
+  return buildGeneralDataDxf(input)
+}
+
+/** Specification sheet (GOST 21.110 form) as DXF. */
+export async function generateSpecSheetDxf(input: ExportInput): Promise<string> {
+  const { buildSpecSheetDxf } = await import('@aquascheme/engine/dxf')
+  return buildSpecSheetDxf(input)
+}
+
 /** Bill of materials as an XLSX byte array (SheetJS). */
 export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> {
   const XLSX = await import('xlsx')

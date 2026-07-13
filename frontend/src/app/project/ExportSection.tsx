@@ -25,7 +25,9 @@ import {
   CONVERTER_URL,
   convertToDwg,
   generateDxf,
+  generateGeneralDataDxf,
   generatePdf,
+  generateSpecSheetDxf,
   generateSpecXlsx,
   zipBundle,
 } from '../../shared/exporters'
@@ -229,20 +231,40 @@ export function ExportSection({
     setNotice(null)
     try {
       const input = assemble()
-      const [{ dxf, dwg, converterFailed }, pdf, xlsx] = await Promise.all([
+      const [{ dxf, dwg, converterFailed }, generalDxf, specDxf, pdf, xlsx] = await Promise.all([
         buildDrawings(input),
+        generateGeneralDataDxf(input),
+        generateSpecSheetDxf(input),
         generatePdf(input),
         generateSpecXlsx(input),
       ])
       const files: Record<string, Blob | Uint8Array | string> = {
+        [`${slug}_00_общие_данные.dxf`]: generalDxf,
         [`${slug}_В1.dxf`]: dxf,
+        [`${slug}_спецификация_лист.dxf`]: specDxf,
         [`${slug}_записка.pdf`]: pdf,
         [`${slug}_спецификация.xlsx`]: xlsx,
       }
+      // buildDrawings already produced the main В1 DWG; convert the two extra
+      // sheets when the converter is configured.
       if (dwg) files[`${slug}_В1.dwg`] = dwg
+      let sheetConvertFailed = false
+      if (withDwg && hasConverter) {
+        const extra: Array<[string, string]> = [
+          [`${slug}_00_общие_данные.dwg`, generalDxf],
+          [`${slug}_спецификация_лист.dwg`, specDxf],
+        ]
+        for (const [name, sheetDxf] of extra) {
+          try {
+            files[name] = await convertToDwg(sheetDxf)
+          } catch {
+            sheetConvertFailed = true
+          }
+        }
+      }
       const zip = await zipBundle(files)
       downloadBlob(`${slug}_комплект.zip`, zip)
-      setNotice(converterFailed ? 'converterError' : 'done')
+      setNotice(converterFailed || sheetConvertFailed ? 'converterError' : 'done')
     } catch {
       setNotice('error')
     } finally {

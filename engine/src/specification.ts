@@ -8,6 +8,8 @@ export interface SpecItem {
   spec: string
   unit: string
   quantity: number
+  /** External position code (from the active catalog or VGSK), if any. */
+  code?: string
 }
 
 /**
