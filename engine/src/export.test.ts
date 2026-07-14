@@ -172,9 +172,15 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
       freezingDepthM: 1.5,
     })
     const dxf = buildSewerProfileDxf({ projectName: 'Тест К1', profile: gravity.profile! })
+    // Full GOST 21.704 form 2 side table (aligned to professional practice).
     expect(dxf).toContain('Проектная отметка лотка, м')
-    expect(dxf).toContain('Проектная отметка земли, м')
-    expect(dxf).toContain('Номер колодца')
+    expect(dxf).toContain('Натурная отметка земли, м')
+    expect(dxf).toContain('Обозначение трубы')
+    expect(dxf).toContain('Основание и тип изоляции')
+    expect(dxf).toContain('Уклон, ‰; длина, м') // slope in permille
+    expect(dxf).toContain('безн.') // gravity (безнапорная) designation
+    expect(dxf).toContain('ПК') // picket notation
+    expect(dxf).toContain('Масштаб: гор. 1:500, верт. 1:100')
     expect(dxf).toContain('Вып.')
     expect(dxf).toContain('SECTION')
 

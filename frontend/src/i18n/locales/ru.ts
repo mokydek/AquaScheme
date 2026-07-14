@@ -215,7 +215,7 @@ export const ru = {
         thSegment: 'Участок',
         thFlow: 'Q, л/с',
         thDiameter: 'D, мм',
-        thSlope: 'Уклон',
+        thSlope: 'Уклон, ‰',
         thFill: 'h/D',
         thVelocity: 'V, м/с',
         thCheck: 'Проверка',

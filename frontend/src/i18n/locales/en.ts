@@ -215,7 +215,7 @@ export const en = {
         thSegment: 'Segment',
         thFlow: 'Q, L/s',
         thDiameter: 'D, mm',
-        thSlope: 'Slope',
+        thSlope: 'Slope, ‰',
         thFill: 'h/D',
         thVelocity: 'V, m/s',
         thCheck: 'Check',

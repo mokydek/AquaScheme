@@ -215,7 +215,7 @@ export const kk = {
         thSegment: 'Учаске',
         thFlow: 'Q, л/с',
         thDiameter: 'D, мм',
-        thSlope: 'Еңіс',
+        thSlope: 'Еңіс, ‰',
         thFill: 'h/D',
         thVelocity: 'V, м/с',
         thCheck: 'Тексеру',

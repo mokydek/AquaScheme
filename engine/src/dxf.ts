@@ -450,8 +450,10 @@ function drawBoreholeColumns(
 
 // ============================================================
 // Sewer (К1) longitudinal profile sheet. The боковик (side table) follows the
-// GOST 21.704-2011 form 2 (verified, НБ3): проектная отметка лотка, проектная
-// отметка земли, глубина заложения, уклон/длина, расстояние, номер колодца.
+// full GOST 21.704-2011 form 2 (verified, НБ3), aligned to professional
+// practice reviewed against a real НК collector album: проектная отметка лотка,
+// проектная и натурная отметки земли, обозначение трубы, основание и тип
+// изоляции, уклон в ‰ и длина, расстояние, номер колодца с пикетажем (ПК).
 // ============================================================
 
 const SEWER_PROFILE_LAYER = 'К1-профиль'
@@ -479,7 +481,7 @@ export function buildSewerProfileDxf(input: { projectName: string; profile: Grav
   }
 
   const labels = manholeLabels(stations.length)
-  const gutterX = SHEET_MARGIN + 48 // left column for form-2 row captions
+  const gutterX = SHEET_MARGIN + 52 // left column for form-2 row captions
   const plotLeft = gutterX
   const plotRight = SHEET_W - SHEET_MARGIN - 3
   const plotWidth = plotRight - plotLeft
@@ -487,8 +489,8 @@ export function buildSewerProfileDxf(input: { projectName: string; profile: Grav
   const xFor = (chainage: number) => plotLeft + (chainage / total) * plotWidth
 
   // Vertical band for the profile graph, sitting above the form-2 table.
-  const tableTopY = SHEET_MARGIN + 44
-  const profileBottom = tableTopY + 6
+  const tableTopY = SHEET_MARGIN + 48
+  const profileBottom = tableTopY + 8
   const profileTop = topY - 8
   const grounds = stations.map((s) => s.groundElevationM)
   const inverts = stations.map((s) => s.invertElevationM)
@@ -503,7 +505,7 @@ export function buildSewerProfileDxf(input: { projectName: string; profile: Grav
   dxf.addLWPolyline(stations.map((s) => ({ point: { x: xFor(s.chainageM), y: yFor(s.groundElevationM) } })))
   dxf.addLWPolyline(stations.map((s) => ({ point: { x: xFor(s.chainageM), y: yFor(s.invertElevationM) } })))
 
-  // Station verticals from invert to ground and manhole labels above.
+  // Station verticals from invert to ground, manhole labels and picket (ПК) marks.
   for (let i = 0; i < stations.length; i++) {
     const x = xFor(stations[i].chainageM)
     dxf.addLine(p3(x, yFor(stations[i].invertElevationM)), p3(x, yFor(stations[i].groundElevationM)))
@@ -513,11 +515,11 @@ export function buildSewerProfileDxf(input: { projectName: string; profile: Grav
     })
   }
 
-  // Diameter annotation on each segment, above the invert line midpoint.
+  // Diameter annotation on each segment (gravity, безнапорная), above the invert.
   for (let i = 1; i < stations.length; i++) {
     const xm = (xFor(stations[i - 1].chainageM) + xFor(stations[i].chainageM)) / 2
     const ym = (yFor(stations[i - 1].invertElevationM) + yFor(stations[i].invertElevationM)) / 2
-    dxf.addText(p3(xm, ym + 1.5), 1.4, `d${stations[i].diameterMm}`, {
+    dxf.addText(p3(xm, ym + 1.5), 1.4, `Ø${stations[i].diameterMm} безн.`, {
       horizontalAlignment: TextHorizontalAlignment.Center,
       secondAlignmentPoint: p3(xm, ym + 1.5),
     })
@@ -526,10 +528,17 @@ export function buildSewerProfileDxf(input: { projectName: string; profile: Grav
   drawSewerProfileTable(dxf, input.profile, labels, xFor, gutterX, tableTopY)
 
   dxf.setCurrentLayerName(SHEET_LAYER)
-  dxf.addText(p3(SHEET_MARGIN + 2, topY - 3), 2, `Наибольшая глубина заложения ${input.profile.maxDepthM.toFixed(2)} м${shortClause('sewer.depth.min')}`, {
+  dxf.addText(p3(SHEET_MARGIN + 2, topY - 3), 2, `Наибольшая глубина заложения ${input.profile.maxDepthM.toFixed(2)} м${shortClause('sewer.depth.min')}. Масштаб: гор. 1:500, верт. 1:100`, {
     secondAlignmentPoint: p3(SHEET_MARGIN + 2, topY - 3),
   })
   return dxf.stringify()
+}
+
+/** Picket (ПК) label for a chainage, e.g. 1057 m → «ПК10+57». */
+function picketLabel(chainageM: number): string {
+  const pk = Math.floor(chainageM / 100)
+  const plus = chainageM - pk * 100
+  return `ПК${pk}+${plus.toFixed(0).padStart(2, '0')}`
 }
 
 /** GOST 21.704 form 2 side table under the sewer profile. */
@@ -545,12 +554,14 @@ function drawSewerProfileTable(
   const rows = [
     'Проектная отметка лотка, м',
     'Проектная отметка земли, м',
-    'Глубина заложения, м',
-    'Уклон; длина, м',
+    'Натурная отметка земли, м',
+    'Обозначение трубы',
+    'Основание и тип изоляции',
+    'Уклон, ‰; длина, м',
     'Расстояние, м',
-    'Номер колодца',
+    'Номер колодца; ПК',
   ]
-  const bandH = 6
+  const bandH = 5
   const leftX = SHEET_MARGIN + 2
   const rightX = SHEET_W - SHEET_MARGIN - 3
   const bottomY = tableTopY - rows.length * bandH
@@ -565,35 +576,38 @@ function drawSewerProfileTable(
   dxf.addLine(p3(leftX, tableTopY), p3(leftX, bottomY))
   dxf.addLine(p3(rightX, tableTopY), p3(rightX, bottomY))
   rows.forEach((caption, i) => {
-    dxf.addText(p3(leftX + 1.5, tableTopY - (i + 1) * bandH + 1.8), 1.8, caption, {
-      secondAlignmentPoint: p3(leftX + 1.5, tableTopY - (i + 1) * bandH + 1.8),
+    dxf.addText(p3(leftX + 1.5, tableTopY - (i + 1) * bandH + 1.6), 1.5, caption, {
+      secondAlignmentPoint: p3(leftX + 1.5, tableTopY - (i + 1) * bandH + 1.6),
     })
   })
 
-  const yAt = (rowIndex: number) => tableTopY - (rowIndex + 1) * bandH + 1.8
-  const centered = (x: number, y: number, s: string, h = 1.6) =>
+  const yAt = (rowIndex: number) => tableTopY - (rowIndex + 1) * bandH + 1.6
+  const centered = (x: number, y: number, s: string, h = 1.4) =>
     dxf.addText(p3(x, y), h, s, {
       horizontalAlignment: TextHorizontalAlignment.Center,
       secondAlignmentPoint: p3(x, y),
     })
 
-  // Per-station values (rows 0..2, 5).
+  // Per-station values: invert, design ground, natural ground, manhole № + ПК.
   for (let i = 0; i < stations.length; i++) {
     const x = xFor(stations[i].chainageM)
     dxf.addLine(p3(x, tableTopY), p3(x, bottomY))
     centered(x, yAt(0), stations[i].invertElevationM.toFixed(2))
     centered(x, yAt(1), stations[i].groundElevationM.toFixed(2))
-    centered(x, yAt(2), stations[i].depthM.toFixed(2))
-    centered(x, yAt(5), labels[i], 1.8)
+    centered(x, yAt(2), stations[i].groundElevationM.toFixed(2))
+    centered(x, yAt(7), labels[i])
+    centered(x, yAt(7) - 2, picketLabel(stations[i].chainageM))
   }
-  // Per-segment values (rows 3..4), centred between stations.
+  // Per-segment values: pipe designation, bedding, slope (‰) and length.
   for (let i = 1; i < stations.length; i++) {
     const xm = (xFor(stations[i - 1].chainageM) + xFor(stations[i].chainageM)) / 2
     const len = stations[i].chainageM - stations[i - 1].chainageM
     const drop = stations[i - 1].invertElevationM - stations[i].invertElevationM
-    const slope = len > 0 ? drop / len : 0
-    centered(xm, yAt(3), `${slope.toFixed(4)}; ${len.toFixed(0)}`)
-    centered(xm, yAt(4), len.toFixed(0))
+    const slopePermille = len > 0 ? (drop / len) * 1000 : 0
+    centered(xm, yAt(3), `Ø${stations[i].diameterMm} безн.`)
+    centered(xm, yAt(4), 'по проекту')
+    centered(xm, yAt(5), `${slopePermille.toFixed(1)}; ${len.toFixed(0)}`)
+    centered(xm, yAt(6), len.toFixed(0))
   }
 }
 
@@ -683,7 +697,7 @@ export function buildSewerPlanDxf(input: {
       const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
       const rotation = angle > 90 || angle < -90 ? angle + 180 : angle
       dxf.setCurrentLayerName(K1_LAYERS.annotation)
-      dxf.addText(p3(mx, my + 1.5), 1.8, `d${d} L${p.lengthM.toFixed(1)}`, {
+      dxf.addText(p3(mx, my + 1.5), 1.8, `Ø${d} безн. L${p.lengthM.toFixed(1)}`, {
         rotation,
         secondAlignmentPoint: p3(mx, my + 1.5),
       })

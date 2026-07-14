@@ -179,7 +179,7 @@ export function GravitySection({
                     <td>{`${labelOfNode(p.fromNode)}–${labelOfNode(p.toNode)}`}</td>
                     <td className="num mono">{p.flowLps.toFixed(2)}</td>
                     <td className="num mono">{p.diameterMm}</td>
-                    <td className="num mono">{p.slope.toFixed(4)}</td>
+                    <td className="num mono">{(p.slope * 1000).toFixed(1)}</td>
                     <td className="num mono">{p.fillRatio.toFixed(2)}</td>
                     <td className="num mono">{p.velocityMs.toFixed(2)}</td>
                     <td>
