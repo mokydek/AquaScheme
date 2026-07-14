@@ -220,6 +220,13 @@ export const en = {
         thVelocity: 'V, m/s',
         thCheck: 'Check',
         ok: 'ok',
+        profileTitle: 'Longitudinal profile of the main collector',
+        maxDepth: 'Maximum burial depth: {{value}} m',
+        thNode: 'Manhole',
+        thChainage: 'Chainage, m',
+        thGround: 'Ground, m',
+        thInvert: 'Invert, m',
+        thDepth: 'Depth, m',
         stormPending:
           'The storm (K2) gravity hydraulics are implemented (Manning, filling, velocities), but the rain runoff calculation needs climate parameters (rain intensity q20 by region). Those are absent from the supplied norm set and have been requested from you. K2 turns on once they are provided',
       },

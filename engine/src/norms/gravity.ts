@@ -4,6 +4,7 @@ import {
   maxFilling,
   maxVelocityMps,
   minGravityDiameterMm,
+  minSewerDepthM,
   minSlopeForDiameter,
   minVelocityMps,
   sewerRoughnessN,
@@ -219,6 +220,8 @@ export interface GravityNetworkResult {
   pipes: GravityPipeResult[]
   /** Total design flow that reached the outlet, L/s. */
   outletFlowLps: number
+  /** Longitudinal profile of the main collector (null if no outlet). */
+  profile: GravityProfile | null
 }
 
 /**
@@ -291,6 +294,8 @@ export function solveGravityNetwork(input: {
   buildingFlowLps: Map<string, number>
   system: 'sewer' | 'storm'
   roughness?: number
+  /** Freezing depth for min burial (п. 7.2.4); default 1.5 m. */
+  freezingDepthM?: number
 }): GravityNetworkResult {
   const flows = accumulateGravityFlows(input.network, input.buildingFlowLps)
   const nodeById = new Map(input.network.nodes.map((n) => [n.id, n]))
@@ -316,10 +321,172 @@ export function solveGravityNetwork(input: {
         .reduce((s, p) => Math.max(s, flows.get(p.id) ?? 0), 0)
     : 0
 
-  return { kind: 'gravity', systemType: input.system, pipes, outletFlowLps }
+  const design = new Map(pipes.map((p) => [p.id, { diameterMm: p.diameterMm, slope: p.slope }]))
+  const profile = computeGravityProfile({
+    network: input.network,
+    design,
+    freezingDepthM: input.freezingDepthM ?? 1.5,
+  })
+
+  return { kind: 'gravity', systemType: input.system, pipes, outletFlowLps, profile }
 }
 
 /** The design filling cap used as a headline justified value for the UI. */
 export function designFillingCap(system: 'sewer' | 'storm'): Justified<number> {
   return justified(maxFilling(system).value, ['sewer.filling.max'])
+}
+
+export interface ProfileStation {
+  nodeId: string
+  buildingId?: string
+  /** Distance along the main collector from its head, m. */
+  chainageM: number
+  groundElevationM: number
+  /** Invert (лоток) elevation of the pipe at this node, m. */
+  invertElevationM: number
+  /** Excavation depth from ground to invert, m. */
+  depthM: number
+  /** Diameter of the governing pipe at this node, mm. */
+  diameterMm: number
+}
+
+export interface GravityProfile {
+  /** Stations from the collector head (chainage 0) down to the outlet. */
+  stations: ProfileStation[]
+  maxDepthM: number
+  outletInvertElevationM: number
+  totalLengthM: number
+}
+
+/**
+ * Longitudinal profile of the main gravity collector: invert (лоток) elevations
+ * and manhole excavation depths from the outlet up to the furthest head.
+ *
+ * Method (upstream-controlled, соединение по лоткам): every head starts at the
+ * minimum burial depth (п. 7.2.4: не менее глубины промерзания минус 0,3/0,5 м,
+ * но не менее 0,7 м до верха трубы, плюс диаметр до лотка). Going downstream the
+ * invert drops by slope × length; at each manhole the invert is the deeper of
+ * the hydraulic drop and the local minimum cover, so cover is never violated.
+ */
+export function computeGravityProfile(input: {
+  network: TracedNetwork
+  design: Map<string, { diameterMm: number; slope: number }>
+  freezingDepthM: number
+}): GravityProfile | null {
+  const { network, design, freezingDepthM } = input
+  const outlet = network.nodes.find((n) => n.kind === 'source')
+  if (!outlet || network.pipes.length === 0) return null
+  const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
+
+  // Adjacency and a BFS tree rooted at the outlet.
+  const adj = new Map<string, Array<{ to: string; pipeId: string }>>()
+  for (const p of network.pipes) {
+    if (!adj.has(p.fromNode)) adj.set(p.fromNode, [])
+    if (!adj.has(p.toNode)) adj.set(p.toNode, [])
+    adj.get(p.fromNode)!.push({ to: p.toNode, pipeId: p.id })
+    adj.get(p.toNode)!.push({ to: p.fromNode, pipeId: p.id })
+  }
+  const parentPipe = new Map<string, string>()
+  const parentNode = new Map<string, string>()
+  const distFromOutlet = new Map<string, number>([[outlet.id, 0]])
+  const visited = new Set<string>([outlet.id])
+  const queue = [outlet.id]
+  while (queue.length) {
+    const cur = queue.shift() as string
+    for (const edge of adj.get(cur) ?? []) {
+      if (visited.has(edge.to)) continue
+      visited.add(edge.to)
+      parentPipe.set(edge.to, edge.pipeId)
+      parentNode.set(edge.to, cur)
+      const len = network.pipes.find((p) => p.id === edge.pipeId)?.lengthM ?? 0
+      distFromOutlet.set(edge.to, (distFromOutlet.get(cur) ?? 0) + len)
+      queue.push(edge.to)
+    }
+  }
+
+  const pipeById = new Map(network.pipes.map((p) => [p.id, p]))
+  const diameterAt = (nodeId: string): number => {
+    let d = 0
+    for (const edge of adj.get(nodeId) ?? []) {
+      const dd = design.get(edge.pipeId)?.diameterMm ?? 0
+      if (dd > d) d = dd
+    }
+    return d || minGravityDiameterMm('sewer', 'street').value
+  }
+  const coverToInvert = (D: number): number => minSewerDepthM(D, freezingDepthM).value + D / 1000
+
+  // Children map (nodes whose parent is this node), for downstream-first order.
+  const children = new Map<string, string[]>()
+  for (const [child, parent] of parentNode) {
+    if (!children.has(parent)) children.set(parent, [])
+    children.get(parent)!.push(child)
+  }
+
+  // Process upstream nodes first (largest distance from outlet), so a child's
+  // invert is known before its parent's.
+  const order = [...distFromOutlet.keys()].sort(
+    (a, b) => (distFromOutlet.get(b) ?? 0) - (distFromOutlet.get(a) ?? 0),
+  )
+  const invert = new Map<string, number>()
+  for (const nodeId of order) {
+    const node = nodeById.get(nodeId)
+    if (!node) continue
+    const D = diameterAt(nodeId)
+    const byCover = node.groundElevation - coverToInvert(D)
+    let inv = byCover
+    for (const child of children.get(nodeId) ?? []) {
+      const pipeId = parentPipe.get(child)
+      const pipe = pipeId ? pipeById.get(pipeId) : undefined
+      const slope = pipeId ? design.get(pipeId)?.slope ?? 0 : 0
+      const childInv = invert.get(child)
+      if (pipe && childInv != null) {
+        inv = Math.min(inv, childInv - slope * pipe.lengthM)
+      }
+    }
+    invert.set(nodeId, inv)
+  }
+
+  // Main collector = path from the furthest node down to the outlet.
+  let head = outlet.id
+  let far = 0
+  for (const [nodeId, d] of distFromOutlet) {
+    if (d > far) {
+      far = d
+      head = nodeId
+    }
+  }
+  const pathHeadToOutlet: string[] = []
+  let cur = head
+  const guard = new Set<string>()
+  while (cur && !guard.has(cur)) {
+    guard.add(cur)
+    pathHeadToOutlet.push(cur)
+    if (cur === outlet.id) break
+    const next = parentNode.get(cur)
+    if (!next) break
+    cur = next
+  }
+
+  const headChainage = distFromOutlet.get(head) ?? 0
+  const stations: ProfileStation[] = pathHeadToOutlet.map((nodeId) => {
+    const node = nodeById.get(nodeId)!
+    const inv = invert.get(nodeId) ?? node.groundElevation
+    return {
+      nodeId,
+      buildingId: node.buildingId,
+      chainageM: Math.round((headChainage - (distFromOutlet.get(nodeId) ?? 0)) * 100) / 100,
+      groundElevationM: Math.round(node.groundElevation * 100) / 100,
+      invertElevationM: Math.round(inv * 100) / 100,
+      depthM: Math.round((node.groundElevation - inv) * 100) / 100,
+      diameterMm: diameterAt(nodeId),
+    }
+  })
+
+  const maxDepthM = stations.reduce((m, s) => Math.max(m, s.depthM), 0)
+  return {
+    stations,
+    maxDepthM: Math.round(maxDepthM * 100) / 100,
+    outletInvertElevationM: Math.round((invert.get(outlet.id) ?? outlet.groundElevation) * 100) / 100,
+    totalLengthM: Math.round(headChainage * 100) / 100,
+  }
 }

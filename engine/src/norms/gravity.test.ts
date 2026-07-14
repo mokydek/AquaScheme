@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   accumulateGravityFlows,
   circularSection,
+  computeGravityProfile,
   designGravitySegment,
   fillForFlow,
   gravityFlowM3s,
@@ -131,5 +132,60 @@ describe('network flow accumulation', () => {
     expect(result.outletFlowLps).toBeCloseTo(5, 6)
     const trunk = result.pipes.find((p) => p.id === 'p_sj')
     expect(trunk?.diameterMm).toBeGreaterThanOrEqual(200)
+    expect(result.profile).not.toBeNull()
+  })
+})
+
+describe('longitudinal profile (invert levels, depths — п. 7.2.4)', () => {
+  // Flat ground forces the invert to drop by the hydraulic slope, so the
+  // excavation depth grows from the head down to the outlet.
+  const flat: TracedNetwork = {
+    nodes: [
+      { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+      { id: 'J1', kind: 'junction', x: 100, y: 0, groundElevation: 100 },
+      { id: 'J2', kind: 'junction', x: 200, y: 0, groundElevation: 100 },
+      { id: 'H', kind: 'building', x: 300, y: 0, groundElevation: 100, buildingId: 'b1' },
+    ],
+    pipes: [
+      { id: 'p1', kind: 'main', fromNode: 'S', toNode: 'J1', lengthM: 100 },
+      { id: 'p2', kind: 'main', fromNode: 'J1', toNode: 'J2', lengthM: 100 },
+      { id: 'p3', kind: 'main', fromNode: 'J2', toNode: 'H', lengthM: 100 },
+    ],
+    totalLengthM: 300,
+  }
+
+  it('starts at min cover and deepens toward the outlet on flat ground', () => {
+    const result = solveGravityNetwork({
+      network: flat,
+      buildingFlowLps: new Map([['b1', 6]]),
+      system: 'sewer',
+      freezingDepthM: 1.5,
+    })
+    const profile = result.profile!
+    expect(profile.stations).toHaveLength(4)
+    // Head (chainage 0) starts near min cover; outlet is the deepest.
+    const head = profile.stations[0]
+    const outlet = profile.stations[profile.stations.length - 1]
+    expect(head.chainageM).toBe(0)
+    expect(outlet.nodeId).toBe('S')
+    expect(outlet.depthM).toBeGreaterThan(head.depthM)
+    expect(profile.maxDepthM).toBeGreaterThanOrEqual(outlet.depthM - 1e-9)
+    // Min cover to top: freezing 1.5 − 0.3 = 1.2, plus D; head depth ≈ 1.2 + D/1000.
+    expect(head.depthM).toBeGreaterThanOrEqual(1.2)
+    // Invert falls monotonically from head to outlet.
+    for (let i = 1; i < profile.stations.length; i++) {
+      expect(profile.stations[i].invertElevationM).toBeLessThanOrEqual(
+        profile.stations[i - 1].invertElevationM + 1e-6,
+      )
+    }
+  })
+
+  it('computeGravityProfile returns null without an outlet', () => {
+    const noOutlet: TracedNetwork = {
+      nodes: [{ id: 'A', kind: 'junction', x: 0, y: 0, groundElevation: 100 }],
+      pipes: [],
+      totalLengthM: 0,
+    }
+    expect(computeGravityProfile({ network: noOutlet, design: new Map(), freezingDepthM: 1.5 })).toBeNull()
   })
 })

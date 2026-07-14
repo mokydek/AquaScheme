@@ -21,12 +21,14 @@ export function GravitySection({
   nodes,
   pipes,
   normsDataset,
+  geologyDataset,
 }: {
   systemType: 'sewer' | 'storm'
   buildings: BuildingRow[]
   nodes: NodeRow[]
   pipes: PipeRow[]
   normsDataset?: DatasetRow
+  geologyDataset?: DatasetRow
 }) {
   const { t } = useTranslation()
 
@@ -56,8 +58,10 @@ export function GravitySection({
     const buildingFlowLps = new Map<string, number>()
     for (const b of demand.buildings) if (b.id) buildingFlowLps.set(b.id, b.designFlowLps)
     const network = networkFromRows(nodes, pipes)
-    return solveGravityNetwork({ network, buildingFlowLps, system: systemType })
-  }, [buildings, nodes, pipes, normsDataset, systemType])
+    const freezingDepthM =
+      ((geologyDataset?.content ?? {}) as { freezingDepthM?: number }).freezingDepthM ?? 1.5
+    return solveGravityNetwork({ network, buildingFlowLps, system: systemType, freezingDepthM })
+  }, [buildings, nodes, pipes, normsDataset, geologyDataset, systemType])
 
   const rows = useMemo(() => {
     if (!result) return []
@@ -108,6 +112,44 @@ export function GravitySection({
           <div style={{ marginTop: 8 }}>
             <NormBadge refs={['sewer.minDiameter', 'sewer.velocity.min', 'sewer.filling.max', 'sewer.slope.min']} />
           </div>
+
+          {result.profile && result.profile.stations.length > 0 && (
+            <>
+              <h4 className="subhead" style={{ marginTop: 20 }}>
+                {t('project.gravity.profileTitle')}
+              </h4>
+              <p className="stat-line">
+                {t('project.gravity.maxDepth', { value: result.profile.maxDepthM.toFixed(2) })}
+              </p>
+              <div className="table-wrap" style={{ marginTop: 8 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{t('project.gravity.thNode')}</th>
+                      <th className="num">{t('project.gravity.thChainage')}</th>
+                      <th className="num">{t('project.gravity.thGround')}</th>
+                      <th className="num">{t('project.gravity.thInvert')}</th>
+                      <th className="num">{t('project.gravity.thDepth')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.profile.stations.map((s) => (
+                      <tr key={s.nodeId}>
+                        <td>{labelOfNode(s.nodeId)}</td>
+                        <td className="num mono">{s.chainageM.toFixed(0)}</td>
+                        <td className="num mono">{s.groundElevationM.toFixed(2)}</td>
+                        <td className="num mono">{s.invertElevationM.toFixed(2)}</td>
+                        <td className="num mono">{s.depthM.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <NormBadge refs={['sewer.depth.min']} />
+              </div>
+            </>
+          )}
         </>
       )}
     </Panel>
