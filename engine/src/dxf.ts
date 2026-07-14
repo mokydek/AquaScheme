@@ -1,7 +1,7 @@
 import { Colors, DxfWriter, LineTypes, point3d, TextHorizontalAlignment } from '@tarikjabiri/dxf'
 import type { ExportInput } from './exportdata'
 import { materialLabel, MATERIAL_LABELS } from './exportdata'
-import type { NetworkNode } from './trace'
+import type { NetworkNode, TracedNetwork } from './trace'
 import { getClause, NORM_DOCUMENTS } from './normregistry'
 import { buildSpecification } from './specification'
 import type { SpecItem } from './specification'
@@ -595,4 +595,148 @@ function drawSewerProfileTable(
     centered(xm, yAt(3), `${slope.toFixed(4)}; ${len.toFixed(0)}`)
     centered(xm, yAt(4), len.toFixed(0))
   }
+}
+
+// ============================================================
+// Sewer (К1) network plan. Drawn in real local coordinates (meters); follows
+// GOST 21.704-2011 5.1 (verified, НБ3): manholes, diameters, structures and
+// flow toward the outlet.
+// ============================================================
+
+const K1_LAYERS = {
+  network: 'К1-сеть',
+  wells: 'К1-колодцы',
+  buildings: 'К1-здания',
+  outlet: 'К1-выпуск',
+  annotation: 'К1-аннотации',
+} as const
+
+/** Distance (m) of each node from the outlet along the BFS tree. */
+function distancesFromOutlet(network: TracedNetwork, outletId: string): Map<string, number> {
+  const adj = new Map<string, Array<{ to: string; len: number }>>()
+  for (const p of network.pipes) {
+    if (!adj.has(p.fromNode)) adj.set(p.fromNode, [])
+    if (!adj.has(p.toNode)) adj.set(p.toNode, [])
+    adj.get(p.fromNode)!.push({ to: p.toNode, len: p.lengthM })
+    adj.get(p.toNode)!.push({ to: p.fromNode, len: p.lengthM })
+  }
+  const dist = new Map<string, number>([[outletId, 0]])
+  const queue = [outletId]
+  while (queue.length) {
+    const cur = queue.shift() as string
+    for (const edge of adj.get(cur) ?? []) {
+      if (dist.has(edge.to)) continue
+      dist.set(edge.to, (dist.get(cur) ?? 0) + edge.len)
+      queue.push(edge.to)
+    }
+  }
+  return dist
+}
+
+/**
+ * Sewer (К1) network plan as an A0-free real-scale drawing: buildings, gravity
+ * mains with diameter labels and flow arrows toward the outlet, manholes ВК-n
+ * and the outlet «Вып.».
+ */
+export function buildSewerPlanDxf(input: {
+  projectName: string
+  network: TracedNetwork
+  pipeDiameterMm: Map<string, number>
+  buildingLabels?: Map<string, string>
+}): string {
+  const dxf = new DxfWriter()
+  dxf.addLayer(K1_LAYERS.network, Colors.Blue, LineTypes.Continuous)
+  dxf.addLayer(K1_LAYERS.wells, Colors.Blue, LineTypes.Continuous)
+  dxf.addLayer(K1_LAYERS.buildings, Colors.Black, LineTypes.Continuous)
+  dxf.addLayer(K1_LAYERS.outlet, Colors.Blue, LineTypes.Continuous)
+  dxf.addLayer(K1_LAYERS.annotation, Colors.Black, LineTypes.Continuous)
+
+  const nodeById = new Map(input.network.nodes.map((n) => [n.id, n]))
+  const outlet = input.network.nodes.find((n) => n.kind === 'source')
+  const dist = outlet ? distancesFromOutlet(input.network, outlet.id) : new Map<string, number>()
+
+  // Buildings.
+  dxf.setCurrentLayerName(K1_LAYERS.buildings)
+  for (const n of input.network.nodes) {
+    if (n.kind !== 'building') continue
+    dxf.addRectangle({ x: n.x - 7, y: n.y - 5 }, { x: n.x + 7, y: n.y + 5 })
+    const label = n.buildingId ? input.buildingLabels?.get(n.buildingId) : undefined
+    if (label) {
+      dxf.addText(p3(n.x, n.y + 7), 2.2, label, {
+        horizontalAlignment: TextHorizontalAlignment.Center,
+        secondAlignmentPoint: p3(n.x, n.y + 7),
+      })
+    }
+  }
+
+  // Pipes with diameter labels and a flow arrow toward the outlet.
+  for (const p of input.network.pipes) {
+    const a = nodeById.get(p.fromNode)
+    const b = nodeById.get(p.toNode)
+    if (!a || !b) continue
+    dxf.setCurrentLayerName(K1_LAYERS.network)
+    dxf.addLine(p3(a.x, a.y), p3(b.x, b.y))
+    const mx = (a.x + b.x) / 2
+    const my = (a.y + b.y) / 2
+    const d = input.pipeDiameterMm.get(p.id)
+    if (d) {
+      const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
+      const rotation = angle > 90 || angle < -90 ? angle + 180 : angle
+      dxf.setCurrentLayerName(K1_LAYERS.annotation)
+      dxf.addText(p3(mx, my + 1.5), 1.8, `d${d} L${p.lengthM.toFixed(1)}`, {
+        rotation,
+        secondAlignmentPoint: p3(mx, my + 1.5),
+      })
+    }
+    // Arrowhead at the midpoint pointing to the downstream (lower-dist) node.
+    const downstream = (dist.get(a.id) ?? Infinity) < (dist.get(b.id) ?? Infinity) ? a : b
+    drawFlowArrow(dxf, mx, my, downstream.x - mx, downstream.y - my)
+  }
+
+  // Manholes: junctions ВК-n, outlet «Вып.».
+  let wk = 0
+  const junctions = input.network.nodes
+    .filter((n) => n.kind !== 'building' && n.kind !== 'source')
+    .sort((x, y) => (dist.get(y.id) ?? 0) - (dist.get(x.id) ?? 0)) // head first
+  dxf.setCurrentLayerName(K1_LAYERS.wells)
+  for (const n of junctions) {
+    dxf.addCircle(p3(n.x, n.y), 1.6)
+    dxf.addText(p3(n.x + 2.5, n.y + 2.5), 1.8, `ВК-${++wk}`, {
+      secondAlignmentPoint: p3(n.x + 2.5, n.y + 2.5),
+    })
+  }
+  if (outlet) {
+    dxf.setCurrentLayerName(K1_LAYERS.outlet)
+    dxf.addRectangle({ x: outlet.x - 5, y: outlet.y - 5 }, { x: outlet.x + 5, y: outlet.y + 5 })
+    dxf.addText(p3(outlet.x, outlet.y + 7), 2.4, 'Вып.', {
+      horizontalAlignment: TextHorizontalAlignment.Center,
+      secondAlignmentPoint: p3(outlet.x, outlet.y + 7),
+    })
+  }
+
+  const xs = input.network.nodes.map((n) => n.x)
+  const ys = input.network.nodes.map((n) => n.y)
+  dxf.setCurrentLayerName(K1_LAYERS.annotation)
+  dxf.addText(p3(Math.min(...xs), Math.max(...ys) + 12), 4, `AquaScheme. Сеть К1. План. ${input.projectName}`, {
+    secondAlignmentPoint: p3(Math.min(...xs), Math.max(...ys) + 12),
+  })
+  return dxf.stringify()
+}
+
+/** A small arrowhead at (x, y) pointing along the (dx, dy) direction. */
+function drawFlowArrow(dxf: DxfWriter, x: number, y: number, dx: number, dy: number): void {
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-6) return
+  const ux = dx / len
+  const uy = dy / len
+  const size = 2.2
+  // Two barbs behind the tip.
+  const tipX = x + ux * size
+  const tipY = y + uy * size
+  const leftX = tipX - ux * size - uy * (size * 0.5)
+  const leftY = tipY - uy * size + ux * (size * 0.5)
+  const rightX = tipX - ux * size + uy * (size * 0.5)
+  const rightY = tipY - uy * size - ux * (size * 0.5)
+  dxf.addLine(p3(tipX, tipY), p3(leftX, leftY))
+  dxf.addLine(p3(tipX, tipY), p3(rightX, rightY))
 }

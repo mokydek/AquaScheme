@@ -29,6 +29,17 @@ export async function generateSewerProfileDxf(input: {
   return buildSewerProfileDxf(input)
 }
 
+/** Sewer (К1) network plan as DXF (GOST 21.704 5.1). */
+export async function generateSewerPlanDxf(input: {
+  projectName: string
+  network: import('@aquascheme/engine').TracedNetwork
+  pipeDiameterMm: Map<string, number>
+  buildingLabels?: Map<string, string>
+}): Promise<string> {
+  const { buildSewerPlanDxf } = await import('@aquascheme/engine/dxf')
+  return buildSewerPlanDxf(input)
+}
+
 /** Bill of materials as an XLSX byte array (SheetJS), ГОСТ 21.110 form 1. */
 export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> {
   const XLSX = await import('xlsx')

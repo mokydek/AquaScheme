@@ -5,7 +5,7 @@ import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
-import { generateSewerProfileDxf } from '../../shared/exporters'
+import { generateSewerPlanDxf, generateSewerProfileDxf } from '../../shared/exporters'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
 
@@ -84,13 +84,28 @@ export function GravitySection({
     return [...result.pipes].sort((a, b) => b.flowLps - a.flowLps)
   }, [result])
 
+  const slug = projectName.trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 40) || 'project'
+
   const exportProfile = async () => {
     if (!result?.profile) return
     setExporting(true)
     try {
       const dxf = await generateSewerProfileDxf({ projectName, profile: result.profile })
-      const slug = projectName.trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 40) || 'project'
       downloadText(`${slug}_профиль_К1.dxf`, dxf, 'application/dxf')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const exportPlan = async () => {
+    if (!result) return
+    setExporting(true)
+    try {
+      const network = networkFromRows(nodes, pipes)
+      const pipeDiameterMm = new Map(result.pipes.map((p) => [p.id, p.diameterMm]))
+      const buildingLabels = new Map(buildings.map((b) => [b.id, b.label ?? '']))
+      const dxf = await generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels })
+      downloadText(`${slug}_план_К1.dxf`, dxf, 'application/dxf')
     } finally {
       setExporting(false)
     }
@@ -139,6 +154,11 @@ export function GravitySection({
           </div>
           <div style={{ marginTop: 8 }}>
             <NormBadge refs={['sewer.minDiameter', 'sewer.velocity.min', 'sewer.filling.max', 'sewer.slope.min']} />
+          </div>
+          <div className="section-actions" style={{ marginTop: 12 }}>
+            <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportPlan()}>
+              {exporting ? t('project.gravity.exporting') : t('project.gravity.exportPlan')}
+            </button>
           </div>
 
           {result.profile && result.profile.stations.length > 0 && (

@@ -5,7 +5,7 @@ import { placeFittings, selectMaterials } from './equipment'
 import { NORMATIVE_DEFAULTS } from './norms'
 import { sizeNetwork } from './sizing'
 import { traceNetwork } from './trace'
-import { buildGeneralDataDxf, buildNetworkDxf, buildSewerProfileDxf, buildSpecSheetDxf } from './dxf'
+import { buildGeneralDataDxf, buildNetworkDxf, buildSewerPlanDxf, buildSewerProfileDxf, buildSpecSheetDxf } from './dxf'
 import { solveGravityNetwork } from './norms/gravity'
 import type { TracedNetwork } from './trace'
 import { buildSpecification, specificationToCsv } from './specification'
@@ -177,6 +177,17 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
     expect(dxf).toContain('Номер колодца')
     expect(dxf).toContain('Вып.')
     expect(dxf).toContain('SECTION')
+
+    const plan = buildSewerPlanDxf({
+      projectName: 'Тест К1',
+      network,
+      pipeDiameterMm: new Map(gravity.pipes.map((p) => [p.id, p.diameterMm])),
+      buildingLabels: new Map([['b1', 'Д1']]),
+    })
+    expect(plan).toContain('Сеть К1. План')
+    expect(plan).toContain('ВК-1')
+    expect(plan).toContain('Вып.')
+    expect(plan).toContain('SECTION')
   })
 })
 
