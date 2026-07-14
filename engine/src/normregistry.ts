@@ -65,6 +65,7 @@ const WATER: SystemType[] = ['water']
 const SEWER: SystemType[] = ['sewer']
 const STORM: SystemType[] = ['storm']
 const SEWER_STORM: SystemType[] = ['sewer', 'storm']
+const ALL_SYSTEMS: SystemType[] = ['water', 'sewer', 'storm']
 const BOTH_WORK: WorkType[] = ['new', 'reconstruction']
 
 const SN_VODOOTVEDENIE_PDF = 'docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf'
@@ -736,6 +737,100 @@ export const NORM_REGISTRY: NormClause[] = [
     status: 'verified',
     sourceFile: SN_VODOOTVEDENIE_PDF,
     sourcePage: 54,
+  },
+
+  // ============================================================
+  // СП РК 4.01-103-2013 — обязательные формы актов испытаний и приемки.
+  // Сверено с docs/norms/sp-rk-4-01-103-2013-naruzhnye-seti-vik.pdf.
+  // ============================================================
+  {
+    id: 'act.pressureTest',
+    documentCode: 'СП РК 4.01-103-2013',
+    clause: 'Приложения А, В, Г',
+    requirement:
+      'Испытание трубопроводов: приемочное гидравлическое испытание напорного трубопровода на прочность и герметичность (прил. А), пневматическое испытание напорного трубопровода (прил. В), приемочное гидравлическое испытание безнапорного трубопровода на герметичность (прил. Г)',
+    valueText: 'формы актов А/В/Г',
+    units: '—',
+    appliesSystem: ALL_SYSTEMS,
+    appliesWork: BOTH_WORK,
+    status: 'verified',
+    sourceFile: 'docs/norms/sp-rk-4-01-103-2013-naruzhnye-seti-vik.pdf',
+    sourcePage: 111,
+  },
+  {
+    id: 'act.disinfection',
+    documentCode: 'СП РК 4.01-103-2013',
+    clause: 'Приложение Е',
+    requirement:
+      'Форма акта о проведении промывки и дезинфекции трубопроводов (сооружений) хозяйственно-питьевого водоснабжения хлорированием с заключением СЭС',
+    valueText: 'форма акта Е',
+    units: '—',
+    appliesSystem: WATER,
+    appliesWork: BOTH_WORK,
+    status: 'verified',
+    sourceFile: 'docs/norms/sp-rk-4-01-103-2013-naruzhnye-seti-vik.pdf',
+    sourcePage: 122,
+  },
+  {
+    id: 'act.inputControl',
+    documentCode: 'СП РК 4.01-103-2013',
+    clause: 'Приложение Ж',
+    requirement:
+      'Форма акта о проведении входного контроля партии труб (соединительных деталей) на соответствие стандартам РК и сопроводительным сертификатам',
+    valueText: 'форма акта Ж',
+    units: '—',
+    appliesSystem: ALL_SYSTEMS,
+    appliesWork: BOTH_WORK,
+    status: 'verified',
+    sourceFile: 'docs/norms/sp-rk-4-01-103-2013-naruzhnye-seti-vik.pdf',
+    sourcePage: 124,
+  },
+
+  // ============================================================
+  // СН РК 1.02-03-2022 — состав ПСД: задание, ТЭП, паспорт проекта.
+  // Сверено с docs/norms/sn-rk-1-02-03-2022-sostav-psd.pdf.
+  // ============================================================
+  {
+    id: 'psd.designTask',
+    documentCode: 'СН РК 1.02-03-2022',
+    clause: 'раздел 5; Приложения Б, В',
+    requirement:
+      'Задание на проектирование составляется заказчиком (раздел 5). Перечень основных данных и требований для объектов производственного назначения (прил. Б) и жилищно-гражданского назначения (прил. В)',
+    valueText: 'перечень данных задания',
+    units: '—',
+    appliesSystem: ALL_SYSTEMS,
+    appliesWork: BOTH_WORK,
+    status: 'verified',
+    sourceFile: 'docs/norms/sn-rk-1-02-03-2022-sostav-psd.pdf',
+    sourcePage: 107,
+  },
+  {
+    id: 'psd.tep',
+    documentCode: 'СН РК 1.02-03-2022',
+    clause: 'Приложение Г',
+    requirement:
+      'Примерный перечень технико-экономических показателей (ТЭП). Для инженерных сооружений включаются производительность (суточная, годовая), протяженность трассы и общая длина трубопроводов (примечание 2)',
+    valueText: 'перечень ТЭП',
+    units: '—',
+    appliesSystem: ALL_SYSTEMS,
+    appliesWork: BOTH_WORK,
+    status: 'verified',
+    sourceFile: 'docs/norms/sn-rk-1-02-03-2022-sostav-psd.pdf',
+    sourcePage: 111,
+  },
+  {
+    id: 'psd.passport',
+    documentCode: 'СН РК 1.02-03-2022',
+    clause: 'Приложение Д, форма Ф-2',
+    requirement:
+      'Паспорт проекта (рабочего проекта) на строительство инженерных сетей и систем (форма Ф-2); обязательная часть проекта, объем не более 2 страниц А4',
+    valueText: 'форма Ф-2',
+    units: '—',
+    appliesSystem: ALL_SYSTEMS,
+    appliesWork: BOTH_WORK,
+    status: 'verified',
+    sourceFile: 'docs/norms/sn-rk-1-02-03-2022-sostav-psd.pdf',
+    sourcePage: 119,
   },
 ]
 

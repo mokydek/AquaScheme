@@ -14,6 +14,8 @@ import type {
   NormativeParams,
   SeismicInput,
   SurveyPoint,
+  SystemType,
+  WorkType,
 } from '@aquascheme/engine'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 import { supabase } from '../../shared/supabase'
@@ -24,9 +26,11 @@ import type { BuildingRow, DatasetKind, DatasetRow } from '../../shared/datasets
 import {
   CONVERTER_URL,
   convertToDwg,
+  generateActFormsPdf,
   generateDxf,
   generateGeneralDataDxf,
   generatePdf,
+  generateProjectDocsPdf,
   generateSpecSheetDxf,
   generateSpecXlsx,
   zipBundle,
@@ -35,7 +39,7 @@ import type { RegionDatasetContent } from '../../shared/regions'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
 
-type Job = 'drawing' | 'pdf' | 'spec' | 'bundle'
+type Job = 'drawing' | 'pdf' | 'spec' | 'acts' | 'docs' | 'bundle'
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 function downloadBlob(filename: string, blob: Blob): void {
@@ -56,6 +60,8 @@ function slugify(name: string): string {
 export function ExportSection({
   projectId,
   projectName,
+  workType,
+  systemType,
   buildings,
   nodes,
   pipes,
@@ -65,6 +71,8 @@ export function ExportSection({
 }: {
   projectId: string
   projectName: string
+  workType: WorkType
+  systemType: SystemType
   buildings: BuildingRow[]
   nodes: NodeRow[]
   pipes: PipeRow[]
@@ -135,6 +143,8 @@ export function ExportSection({
       region: region ? { name: region.name, source: region.source } : null,
       boreholes,
       geologyAttributes: (datasets.geology?.content ?? {}) as Partial<GeologyAttributes>,
+      workType,
+      systemType,
     }
   }
 
@@ -226,17 +236,47 @@ export function ExportSection({
     }
   }
 
+  const exportActs = async () => {
+    setBusy('acts')
+    setNotice(null)
+    try {
+      const blob = await generateActFormsPdf(assemble())
+      downloadBlob(`${slug}_формы_актов.pdf`, blob)
+      setNotice('done')
+    } catch {
+      setNotice('error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const exportDocs = async () => {
+    setBusy('docs')
+    setNotice(null)
+    try {
+      const blob = await generateProjectDocsPdf(assemble())
+      downloadBlob(`${slug}_проектные_документы.pdf`, blob)
+      setNotice('done')
+    } catch {
+      setNotice('error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const exportBundle = async () => {
     setBusy('bundle')
     setNotice(null)
     try {
       const input = assemble()
-      const [{ dxf, dwg, converterFailed }, generalDxf, specDxf, pdf, xlsx] = await Promise.all([
+      const [{ dxf, dwg, converterFailed }, generalDxf, specDxf, pdf, xlsx, actsPdf, docsPdf] = await Promise.all([
         buildDrawings(input),
         generateGeneralDataDxf(input),
         generateSpecSheetDxf(input),
         generatePdf(input),
         generateSpecXlsx(input),
+        generateActFormsPdf(input),
+        generateProjectDocsPdf(input),
       ])
       const files: Record<string, Blob | Uint8Array | string> = {
         [`${slug}_00_общие_данные.dxf`]: generalDxf,
@@ -244,6 +284,8 @@ export function ExportSection({
         [`${slug}_спецификация_лист.dxf`]: specDxf,
         [`${slug}_записка.pdf`]: pdf,
         [`${slug}_спецификация.xlsx`]: xlsx,
+        [`${slug}_формы_актов.pdf`]: actsPdf,
+        [`${slug}_проектные_документы.pdf`]: docsPdf,
       }
       // buildDrawings already produced the main В1 DWG; convert the two extra
       // sheets when the converter is configured.
@@ -306,6 +348,12 @@ export function ExportSection({
         </button>
         <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportSpec()}>
           {label('spec', 'project.export.spec')}
+        </button>
+        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportDocs()}>
+          {label('docs', 'project.export.docs')}
+        </button>
+        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportActs()}>
+          {label('acts', 'project.export.acts')}
         </button>
         <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportBundle()}>
           {label('bundle', 'project.export.bundle')}

@@ -716,6 +716,8 @@ export function ProjectPage() {
               <ExportSection
                 projectId={project.id}
                 projectName={project.name}
+                workType={workType as 'new' | 'reconstruction'}
+                systemType={systemType as 'water' | 'sewer' | 'storm'}
                 buildings={buildings}
                 nodes={nodes}
                 pipes={pipes}

@@ -36,10 +36,9 @@ export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> 
   return XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array
 }
 
-/** Explanatory note as a PDF blob (pdfmake, lazy loaded). */
-export async function generatePdf(input: ExportInput): Promise<Blob> {
-  const [{ buildNoteDoc }, pdfMakeMod, pdfFontsMod] = await Promise.all([
-    import('@aquascheme/engine'),
+/** Render a pdfmake document definition to a Blob (pdfmake, lazy loaded). */
+async function renderPdfDoc(doc: unknown): Promise<Blob> {
+  const [pdfMakeMod, pdfFontsMod] = await Promise.all([
     import('pdfmake/build/pdfmake'),
     import('pdfmake/build/vfs_fonts'),
   ])
@@ -56,8 +55,26 @@ export async function generatePdf(input: ExportInput): Promise<Blob> {
   }
   maker.vfs = vfs
   return new Promise((resolve) => {
-    maker.createPdf(buildNoteDoc(input)).getBlob(resolve)
+    maker.createPdf(doc).getBlob(resolve)
   })
+}
+
+/** Explanatory note as a PDF blob (pdfmake, lazy loaded). */
+export async function generatePdf(input: ExportInput): Promise<Blob> {
+  const { buildNoteDoc } = await import('@aquascheme/engine')
+  return renderPdfDoc(buildNoteDoc(input))
+}
+
+/** Test / acceptance / disinfection / input-control act forms as a PDF (НБ2). */
+export async function generateActFormsPdf(input: ExportInput): Promise<Blob> {
+  const { buildActFormsDoc } = await import('@aquascheme/engine')
+  return renderPdfDoc(buildActFormsDoc(input))
+}
+
+/** Design task, TEP list and project passport form Ф-2 as a PDF (НБ2). */
+export async function generateProjectDocsPdf(input: ExportInput): Promise<Blob> {
+  const { buildProjectDocsDoc } = await import('@aquascheme/engine')
+  return renderPdfDoc(buildProjectDocsDoc(input))
 }
 
 /** Convert a DXF drawing to DWG via the converter microservice. */

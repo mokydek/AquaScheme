@@ -492,6 +492,8 @@ export const en = {
         drawing: 'Download drawing',
         pdf: 'Download PDF note',
         spec: 'Download bill of materials',
+        docs: 'Project documents',
+        acts: 'Act forms',
         bundle: 'Download bundle',
         dwgUnavailable: 'DWG unavailable: the conversion service is not configured (VITE_CONVERTER_URL)',
         converterError: 'DWG was not produced: the conversion service is unavailable. The drawing was downloaded as DXF',

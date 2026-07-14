@@ -4,7 +4,7 @@ import type { Borehole, GeologyAttributes } from './geology'
 import type { NormativeParams } from './norms'
 import type { TracedNetwork } from './trace'
 import type { SizingResult } from './sizing'
-import type { SurveyPoint } from './types'
+import type { SurveyPoint, SystemType, WorkType } from './types'
 
 /** Everything the export generators (DXF, PDF note, specification) need. */
 export interface ExportInput {
@@ -28,6 +28,10 @@ export interface ExportInput {
   boreholes?: Borehole[]
   /** Project level geology attributes (subsidence, heaving, swelling). */
   geologyAttributes?: Partial<GeologyAttributes>
+  /** New build or reconstruction; fills the project documents (НБ2). */
+  workType?: WorkType
+  /** Water, sewer or storm; picks the wording in the project documents. */
+  systemType?: SystemType
 }
 
 export const MATERIAL_LABELS: Record<string, string> = {
