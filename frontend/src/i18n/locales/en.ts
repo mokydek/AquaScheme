@@ -227,6 +227,8 @@ export const en = {
         thGround: 'Ground, m',
         thInvert: 'Invert, m',
         thDepth: 'Depth, m',
+        exportProfile: 'Download profile DXF',
+        exporting: 'Generating',
         stormPending:
           'The storm (K2) gravity hydraulics are implemented (Manning, filling, velocities), but the rain runoff calculation needs climate parameters (rain intensity q20 by region). Those are absent from the supplied norm set and have been requested from you. K2 turns on once they are provided',
       },

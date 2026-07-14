@@ -5,7 +5,9 @@ import { placeFittings, selectMaterials } from './equipment'
 import { NORMATIVE_DEFAULTS } from './norms'
 import { sizeNetwork } from './sizing'
 import { traceNetwork } from './trace'
-import { buildGeneralDataDxf, buildNetworkDxf, buildSpecSheetDxf } from './dxf'
+import { buildGeneralDataDxf, buildNetworkDxf, buildSewerProfileDxf, buildSpecSheetDxf } from './dxf'
+import { solveGravityNetwork } from './norms/gravity'
+import type { TracedNetwork } from './trace'
 import { buildSpecification, specificationToCsv } from './specification'
 import { buildNoteDoc } from './note'
 import type { ExportInput } from './exportdata'
@@ -147,6 +149,35 @@ describe('specification', () => {
     expect(csv).toContain('Код продукции')
     expect(csv.split('\r\n').length).toBeGreaterThan(items.length)
   }, 60000)
+})
+
+describe('sewer K1 longitudinal profile DXF (form 2)', () => {
+  it('draws the GOST 21.704 form 2 side table from the computed profile', () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'J1', kind: 'junction', x: 100, y: 0, groundElevation: 100 },
+        { id: 'H', kind: 'building', x: 200, y: 0, groundElevation: 100, buildingId: 'b1' },
+      ],
+      pipes: [
+        { id: 'p1', kind: 'main', fromNode: 'S', toNode: 'J1', lengthM: 100 },
+        { id: 'p2', kind: 'main', fromNode: 'J1', toNode: 'H', lengthM: 100 },
+      ],
+      totalLengthM: 200,
+    }
+    const gravity = solveGravityNetwork({
+      network,
+      buildingFlowLps: new Map([['b1', 6]]),
+      system: 'sewer',
+      freezingDepthM: 1.5,
+    })
+    const dxf = buildSewerProfileDxf({ projectName: 'Тест К1', profile: gravity.profile! })
+    expect(dxf).toContain('Проектная отметка лотка, м')
+    expect(dxf).toContain('Проектная отметка земли, м')
+    expect(dxf).toContain('Номер колодца')
+    expect(dxf).toContain('Вып.')
+    expect(dxf).toContain('SECTION')
+  })
 })
 
 describe('explanatory note', () => {

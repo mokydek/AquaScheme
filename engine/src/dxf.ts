@@ -5,6 +5,7 @@ import type { NetworkNode } from './trace'
 import { getClause, NORM_DOCUMENTS } from './normregistry'
 import { buildSpecification } from './specification'
 import type { SpecItem } from './specification'
+import type { GravityProfile } from './norms/gravity'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -444,5 +445,154 @@ function drawBoreholeColumns(
       horizontalAlignment: TextHorizontalAlignment.Center,
       secondAlignmentPoint: p3(x, yFor(mouth) + 2),
     })
+  }
+}
+
+// ============================================================
+// Sewer (К1) longitudinal profile sheet. The боковик (side table) follows the
+// GOST 21.704-2011 form 2 (verified, НБ3): проектная отметка лотка, проектная
+// отметка земли, глубина заложения, уклон/длина, расстояние, номер колодца.
+// ============================================================
+
+const SEWER_PROFILE_LAYER = 'К1-профиль'
+
+/** Manhole label along the collector: ВК-1..n from the head, «Вып.» at the outlet. */
+function manholeLabels(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => (i === count - 1 ? 'Вып.' : `ВК-${i + 1}`))
+}
+
+/**
+ * Longitudinal profile of the main gravity collector (К1) as a standalone A4
+ * sheet: the ground and invert lines with a GOST 21.704 form 2 side table.
+ * Everything is taken from the computed profile — no invented values.
+ */
+export function buildSewerProfileDxf(input: { projectName: string; profile: GravityProfile }): string {
+  const dxf = new DxfWriter()
+  dxf.addLayer(SEWER_PROFILE_LAYER, Colors.Black, LineTypes.Continuous)
+  const topY = drawSheetFrame(dxf, 'Продольный профиль сети К1', input.projectName)
+  const stations = input.profile.stations
+  if (stations.length < 2) {
+    dxf.addText(p3(SHEET_MARGIN + 4, topY - 8), 3, 'Недостаточно данных для профиля', {
+      secondAlignmentPoint: p3(SHEET_MARGIN + 4, topY - 8),
+    })
+    return dxf.stringify()
+  }
+
+  const labels = manholeLabels(stations.length)
+  const gutterX = SHEET_MARGIN + 48 // left column for form-2 row captions
+  const plotLeft = gutterX
+  const plotRight = SHEET_W - SHEET_MARGIN - 3
+  const plotWidth = plotRight - plotLeft
+  const total = input.profile.totalLengthM || 1
+  const xFor = (chainage: number) => plotLeft + (chainage / total) * plotWidth
+
+  // Vertical band for the profile graph, sitting above the form-2 table.
+  const tableTopY = SHEET_MARGIN + 44
+  const profileBottom = tableTopY + 6
+  const profileTop = topY - 8
+  const grounds = stations.map((s) => s.groundElevationM)
+  const inverts = stations.map((s) => s.invertElevationM)
+  const datum = Math.floor(Math.min(...inverts) - 0.5)
+  const maxElev = Math.max(...grounds)
+  const span = Math.max(maxElev - datum, 0.5)
+  const vScale = (profileTop - profileBottom) / span
+  const yFor = (elev: number) => profileBottom + (elev - datum) * vScale
+
+  dxf.setCurrentLayerName(SEWER_PROFILE_LAYER)
+  // Ground line (natural surface) and invert line (лоток).
+  dxf.addLWPolyline(stations.map((s) => ({ point: { x: xFor(s.chainageM), y: yFor(s.groundElevationM) } })))
+  dxf.addLWPolyline(stations.map((s) => ({ point: { x: xFor(s.chainageM), y: yFor(s.invertElevationM) } })))
+
+  // Station verticals from invert to ground and manhole labels above.
+  for (let i = 0; i < stations.length; i++) {
+    const x = xFor(stations[i].chainageM)
+    dxf.addLine(p3(x, yFor(stations[i].invertElevationM)), p3(x, yFor(stations[i].groundElevationM)))
+    dxf.addText(p3(x, yFor(stations[i].groundElevationM) + 2), 1.8, labels[i], {
+      horizontalAlignment: TextHorizontalAlignment.Center,
+      secondAlignmentPoint: p3(x, yFor(stations[i].groundElevationM) + 2),
+    })
+  }
+
+  // Diameter annotation on each segment, above the invert line midpoint.
+  for (let i = 1; i < stations.length; i++) {
+    const xm = (xFor(stations[i - 1].chainageM) + xFor(stations[i].chainageM)) / 2
+    const ym = (yFor(stations[i - 1].invertElevationM) + yFor(stations[i].invertElevationM)) / 2
+    dxf.addText(p3(xm, ym + 1.5), 1.4, `d${stations[i].diameterMm}`, {
+      horizontalAlignment: TextHorizontalAlignment.Center,
+      secondAlignmentPoint: p3(xm, ym + 1.5),
+    })
+  }
+
+  drawSewerProfileTable(dxf, input.profile, labels, xFor, gutterX, tableTopY)
+
+  dxf.setCurrentLayerName(SHEET_LAYER)
+  dxf.addText(p3(SHEET_MARGIN + 2, topY - 3), 2, `Наибольшая глубина заложения ${input.profile.maxDepthM.toFixed(2)} м${shortClause('sewer.depth.min')}`, {
+    secondAlignmentPoint: p3(SHEET_MARGIN + 2, topY - 3),
+  })
+  return dxf.stringify()
+}
+
+/** GOST 21.704 form 2 side table under the sewer profile. */
+function drawSewerProfileTable(
+  dxf: DxfWriter,
+  profile: GravityProfile,
+  labels: string[],
+  xFor: (chainage: number) => number,
+  gutterX: number,
+  tableTopY: number,
+): void {
+  const stations = profile.stations
+  const rows = [
+    'Проектная отметка лотка, м',
+    'Проектная отметка земли, м',
+    'Глубина заложения, м',
+    'Уклон; длина, м',
+    'Расстояние, м',
+    'Номер колодца',
+  ]
+  const bandH = 6
+  const leftX = SHEET_MARGIN + 2
+  const rightX = SHEET_W - SHEET_MARGIN - 3
+  const bottomY = tableTopY - rows.length * bandH
+
+  dxf.setCurrentLayerName(SHEET_LAYER)
+  // Horizontal band lines and the caption gutter separator.
+  for (let i = 0; i <= rows.length; i++) {
+    const y = tableTopY - i * bandH
+    dxf.addLine(p3(leftX, y), p3(rightX, y))
+  }
+  dxf.addLine(p3(gutterX, tableTopY), p3(gutterX, bottomY))
+  dxf.addLine(p3(leftX, tableTopY), p3(leftX, bottomY))
+  dxf.addLine(p3(rightX, tableTopY), p3(rightX, bottomY))
+  rows.forEach((caption, i) => {
+    dxf.addText(p3(leftX + 1.5, tableTopY - (i + 1) * bandH + 1.8), 1.8, caption, {
+      secondAlignmentPoint: p3(leftX + 1.5, tableTopY - (i + 1) * bandH + 1.8),
+    })
+  })
+
+  const yAt = (rowIndex: number) => tableTopY - (rowIndex + 1) * bandH + 1.8
+  const centered = (x: number, y: number, s: string, h = 1.6) =>
+    dxf.addText(p3(x, y), h, s, {
+      horizontalAlignment: TextHorizontalAlignment.Center,
+      secondAlignmentPoint: p3(x, y),
+    })
+
+  // Per-station values (rows 0..2, 5).
+  for (let i = 0; i < stations.length; i++) {
+    const x = xFor(stations[i].chainageM)
+    dxf.addLine(p3(x, tableTopY), p3(x, bottomY))
+    centered(x, yAt(0), stations[i].invertElevationM.toFixed(2))
+    centered(x, yAt(1), stations[i].groundElevationM.toFixed(2))
+    centered(x, yAt(2), stations[i].depthM.toFixed(2))
+    centered(x, yAt(5), labels[i], 1.8)
+  }
+  // Per-segment values (rows 3..4), centred between stations.
+  for (let i = 1; i < stations.length; i++) {
+    const xm = (xFor(stations[i - 1].chainageM) + xFor(stations[i].chainageM)) / 2
+    const len = stations[i].chainageM - stations[i - 1].chainageM
+    const drop = stations[i - 1].invertElevationM - stations[i].invertElevationM
+    const slope = len > 0 ? drop / len : 0
+    centered(xm, yAt(3), `${slope.toFixed(4)}; ${len.toFixed(0)}`)
+    centered(xm, yAt(4), len.toFixed(0))
   }
 }

@@ -1,12 +1,25 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { computeNetworkDemand, NORMATIVE_DEFAULTS, solveGravityNetwork } from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
+import { generateSewerProfileDxf } from '../../shared/exporters'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
+
+function downloadText(filename: string, text: string, type: string): void {
+  const blob = new Blob([text], { type })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.append(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 /**
  * Gravity (free-surface) calculation for sewer (К1) and storm (К2), NB4. Runs
@@ -17,6 +30,7 @@ import { Panel } from './Panel'
  */
 export function GravitySection({
   systemType,
+  projectName,
   buildings,
   nodes,
   pipes,
@@ -24,6 +38,7 @@ export function GravitySection({
   geologyDataset,
 }: {
   systemType: 'sewer' | 'storm'
+  projectName: string
   buildings: BuildingRow[]
   nodes: NodeRow[]
   pipes: PipeRow[]
@@ -31,6 +46,7 @@ export function GravitySection({
   geologyDataset?: DatasetRow
 }) {
   const { t } = useTranslation()
+  const [exporting, setExporting] = useState(false)
 
   const labelOfNode = useMemo(() => {
     const buildingLabelById = new Map(buildings.map((b) => [b.id, b.label ?? '']))
@@ -67,6 +83,18 @@ export function GravitySection({
     if (!result) return []
     return [...result.pipes].sort((a, b) => b.flowLps - a.flowLps)
   }, [result])
+
+  const exportProfile = async () => {
+    if (!result?.profile) return
+    setExporting(true)
+    try {
+      const dxf = await generateSewerProfileDxf({ projectName, profile: result.profile })
+      const slug = projectName.trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 40) || 'project'
+      downloadText(`${slug}_профиль_К1.dxf`, dxf, 'application/dxf')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
@@ -147,6 +175,11 @@ export function GravitySection({
               </div>
               <div style={{ marginTop: 8 }}>
                 <NormBadge refs={['sewer.depth.min']} />
+              </div>
+              <div className="section-actions" style={{ marginTop: 12 }}>
+                <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportProfile()}>
+                  {exporting ? t('project.gravity.exporting') : t('project.gravity.exportProfile')}
+                </button>
               </div>
             </>
           )}

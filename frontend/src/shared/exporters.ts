@@ -20,6 +20,15 @@ export async function generateSpecSheetDxf(input: ExportInput): Promise<string> 
   return buildSpecSheetDxf(input)
 }
 
+/** Sewer (К1) longitudinal profile sheet as DXF (GOST 21.704 form 2). */
+export async function generateSewerProfileDxf(input: {
+  projectName: string
+  profile: import('@aquascheme/engine').GravityProfile
+}): Promise<string> {
+  const { buildSewerProfileDxf } = await import('@aquascheme/engine/dxf')
+  return buildSewerProfileDxf(input)
+}
+
 /** Bill of materials as an XLSX byte array (SheetJS), ГОСТ 21.110 form 1. */
 export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> {
   const XLSX = await import('xlsx')

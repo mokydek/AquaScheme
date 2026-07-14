@@ -702,6 +702,7 @@ export function ProjectPage() {
               />
               <GravitySection
                 systemType="sewer"
+                projectName={project.name}
                 buildings={buildings}
                 nodes={nodes}
                 pipes={pipes}
