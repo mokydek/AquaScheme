@@ -230,6 +230,9 @@ export const en = {
         exportProfile: 'Download profile DXF',
         exportPlan: 'Download plan DXF',
         exporting: 'Generating',
+        save: 'Save calculation',
+        saving: 'Saving',
+        savedAt: 'Saved: {{value}}',
         stormPending:
           'The storm (K2) gravity hydraulics are implemented (Manning, filling, velocities), but the rain runoff calculation needs climate parameters (rain intensity q20 by region). Those are absent from the supplied norm set and have been requested from you. K2 turns on once they are provided',
       },

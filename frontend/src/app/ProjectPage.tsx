@@ -126,7 +126,10 @@ export function ProjectPage() {
     setBuildings(buildingsRes.data ?? [])
     setNodes((nodesRes.data ?? []) as NodeRow[])
     setPipes((pipesRes.data ?? []) as PipeRow[])
-    setLastRun((runRes.data?.summary ?? null) as SizingResult | null)
+    // Gravity (К1/К2) runs share calc_runs; keep lastRun for the water pressure
+    // result only, so the water panels never receive a gravity summary.
+    const summary = runRes.data?.summary as (SizingResult & { kind?: string }) | null
+    setLastRun(summary && summary.kind !== 'gravity' ? summary : null)
     try {
       setParcels(await fetchParcels(id))
     } catch {
@@ -701,6 +704,7 @@ export function ProjectPage() {
                 onChanged={load}
               />
               <GravitySection
+                projectId={project.id}
                 systemType="sewer"
                 projectName={project.name}
                 buildings={buildings}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { computeNetworkDemand, NORMATIVE_DEFAULTS, solveGravityNetwork } from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
@@ -6,6 +6,7 @@ import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import { generateSewerPlanDxf, generateSewerProfileDxf } from '../../shared/exporters'
+import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
 
@@ -25,10 +26,11 @@ function downloadText(filename: string, text: string, type: string): void {
  * Gravity (free-surface) calculation for sewer (К1) and storm (К2), NB4. Runs
  * the Chezy-Manning design over the traced/imported network with the drainage
  * flow accumulated per pipe; every column cites its verified СН РК 4.01-03-2013*
- * clause. Computed on the client from the current network — an honest
- * calculator, not persisted, so it always reflects the latest geometry.
+ * clause. The table always reflects the current geometry; "Сохранить расчёт"
+ * writes the result to calc_runs (kind: gravity) for the project history.
  */
 export function GravitySection({
+  projectId,
   systemType,
   projectName,
   buildings,
@@ -37,6 +39,7 @@ export function GravitySection({
   normsDataset,
   geologyDataset,
 }: {
+  projectId: string
   systemType: 'sewer' | 'storm'
   projectName: string
   buildings: BuildingRow[]
@@ -47,6 +50,20 @@ export function GravitySection({
 }) {
   const { t } = useTranslation()
   const [exporting, setExporting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    fetchLastGravityRun(projectId)
+      .then((run) => {
+        if (active) setSavedAt(run?.finishedAt ?? null)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [projectId])
 
   const labelOfNode = useMemo(() => {
     const buildingLabelById = new Map(buildings.map((b) => [b.id, b.label ?? '']))
@@ -86,6 +103,19 @@ export function GravitySection({
 
   const slug = projectName.trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 40) || 'project'
 
+  const saveRun = async () => {
+    if (!result) return
+    setSaving(true)
+    try {
+      await persistGravity(projectId, result)
+      setSavedAt(new Date().toISOString())
+    } catch {
+      // Best effort: a missing migration or offline state must not break the UI.
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const exportProfile = async () => {
     if (!result?.profile) return
     setExporting(true)
@@ -120,6 +150,16 @@ export function GravitySection({
           <p className="stat-line ok">
             {t('project.gravity.outletFlow', { value: result.outletFlowLps.toFixed(2) })}
           </p>
+          <div className="section-actions" style={{ marginTop: 4 }}>
+            <button type="button" className="btn btn-sm" disabled={saving} onClick={() => void saveRun()}>
+              {saving ? t('project.gravity.saving') : t('project.gravity.save')}
+            </button>
+            {savedAt && (
+              <span className="stat-line" style={{ marginTop: 0 }}>
+                {t('project.gravity.savedAt', { value: savedAt.slice(0, 16).replace('T', ' ') })}
+              </span>
+            )}
+          </div>
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="data-table">
               <thead>
