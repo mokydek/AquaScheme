@@ -34,6 +34,18 @@ describe('norm registry', () => {
     expect(getClause('drainage.equalsWater')?.clause).toBe('5.5.1')
   })
 
+  it('НБ3: GOST drawing/spec clauses and RK code clauses are verified with pages', () => {
+    for (const id of ['spec.form', 'drawing.generalData', 'drawing.plan', 'drawing.profile', 'drawing.stamp']) {
+      expect(getClause(id)?.status, id).toBe('verified')
+      expect(getClause(id)?.sourceFile, id).toMatch(/gost/)
+    }
+    expect(getClause('spec.form')?.documentCode).toBe('ГОСТ 21.110-2013')
+    expect(getClause('water.protectionZone')?.documentCode).toBe('Водный кодекс РК')
+    expect(getClause('water.sanitaryZone')?.appliesSystem).toEqual(['water'])
+    expect(getClause('eco.wastewaterDischarge')?.appliesSystem).toEqual(['sewer', 'storm'])
+    expect(getClause('construction.responsibility')?.sourcePage).toBe(176)
+  })
+
   it('clause ids are unique and resolvable', () => {
     const ids = NORM_REGISTRY.map((c) => c.id)
     expect(new Set(ids).size).toBe(ids.length)

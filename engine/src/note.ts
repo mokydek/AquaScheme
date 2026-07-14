@@ -259,7 +259,10 @@ export function buildNoteDoc(input: ExportInput): NoteDoc {
     heading('8. Учёт региональных рисков и ЧС'),
     ...hazardSection(input),
 
-    heading('9. Перечень использованных нормативных документов'),
+    heading('9. Водоохранные, санитарные и экологические требования'),
+    ...waterProtectionSection(input),
+
+    heading('10. Перечень использованных нормативных документов'),
     {
       ol: NORM_DOCUMENTS.map(
         (dd) =>
@@ -356,6 +359,35 @@ function geologyInfluenceSection(input: ExportInput): unknown[] {
     { ul: influences.map((i) => GEO_INFLUENCE_TEXT[i.code]), margin: [0, 0, 0, 2] },
     basisLine(refs),
   ]
+}
+
+/**
+ * Section 9 content: water-protection zones, sanitary protection zones and
+ * wastewater discharge requirements from the RK codes (НБ3). The items depend
+ * on the system type; each cites the verified code article.
+ */
+function waterProtectionSection(input: ExportInput): unknown[] {
+  const system = input.systemType ?? 'water'
+  const items: string[] = [
+    'Водоохранные зоны и полосы поверхностных водных объектов имеют особый режим пользования; работы в них, связанные со строительной деятельностью, согласовываются с бассейновой водной инспекцией.',
+  ]
+  const refs = ['water.protectionZone']
+  if (system === 'water') {
+    items.push(
+      'Для источников питьевого водоснабжения устанавливаются зоны санитарной охраны; ввод водозаборных сооружений в эксплуатацию без установленных зон санитарной охраны не допускается.',
+    )
+    refs.push('water.sanitaryZone')
+  } else {
+    items.push(
+      'Сброс сточных вод в водные объекты допускается только при наличии экологического разрешения; сброс в зонах санитарной охраны источников централизованного питьевого водоснабжения не допускается.',
+    )
+    refs.push('eco.wastewaterDischarge')
+  }
+  items.push(
+    'Термины приняты по глоссарию Водного кодекса РК (статья 1). Отвод земель под трассу возможен на праве сервитута (Земельный кодекс РК, глава 7).',
+  )
+  refs.push('land.servitude')
+  return [{ ul: items, margin: [0, 0, 0, 4] }, basisLine(refs)]
 }
 
 /** Section 8 content: region, declared hazards, measures and warnings. */

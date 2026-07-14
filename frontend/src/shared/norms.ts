@@ -37,6 +37,7 @@ export async function syncNormRegistry(): Promise<void> {
         source_file: c.sourceFile ?? null,
         source_page: c.sourcePage ?? null,
         verify_page: c.verifyPage ?? false,
+        note: c.note ?? null,
       })),
     )
   } catch {

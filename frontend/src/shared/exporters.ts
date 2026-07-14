@@ -20,15 +20,16 @@ export async function generateSpecSheetDxf(input: ExportInput): Promise<string> 
   return buildSpecSheetDxf(input)
 }
 
-/** Bill of materials as an XLSX byte array (SheetJS). */
+/** Bill of materials as an XLSX byte array (SheetJS), ГОСТ 21.110 form 1. */
 export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> {
   const XLSX = await import('xlsx')
   const rows = buildSpecification(input).map((i) => ({
     'Поз.': i.pos,
-    'Наименование': i.name,
-    'Тип, марка': i.spec,
-    'Ед. изм.': i.unit,
-    'Кол-во': i.quantity,
+    'Наименование и техническая характеристика': i.name,
+    'Тип, марка, обозначение документа, опросного листа': i.spec,
+    'Код продукции': i.code ?? '',
+    'Ед. измерения': i.unit,
+    'Кол.': i.quantity,
   }))
   const sheet = XLSX.utils.json_to_sheet(rows)
   const book = XLSX.utils.book_new()

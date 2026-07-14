@@ -273,6 +273,7 @@ export function buildGeneralDataDxf(input: ExportInput): string {
 
   y = sub('Общие указания')
   const notes: string[] = [
+    `Состав листа и общих указаний принят по ГОСТ 21.704${shortClause('drawing.generalData')}.`,
     `Сеть В1 запроектирована кольцевой${shortClause('main.looped')}.`,
     `Материал труб ${materialLabel(input)}; глубина заложения до низа трубы ${input.material.burialDepthM.toFixed(2)} м${shortClause('burial.depth')}.`,
     `Свободные напоры у зданий приняты по норме${shortClause('freeHead.base')}.`,
@@ -281,6 +282,7 @@ export function buildGeneralDataDxf(input: ExportInput): string {
     notes.push(`Сейсмичность площадки ${input.seismicity.siteIntensityPoints} баллов: сварные стыки и компенсаторы${shortClause('seismic.joints')}.`)
   }
   if (input.region) notes.push(`Регион: ${input.region.name}; региональные параметры приняты со ссылкой на источник${shortClause('region.seismicMap')}.`)
+  notes.push(`Основная надпись листов — по форме 3${shortClause('drawing.stamp')}.`)
   notes.push('Проект подлежит экспертизе. Часть ссылок на пункты нормативов требует проверки по официальному изданию.')
   for (const n of notes) y = line(n)
 
@@ -288,21 +290,25 @@ export function buildGeneralDataDxf(input: ExportInput): string {
 }
 
 /**
- * Specification sheet per the GOST 21.110 form, filled from a specification
- * source (built-in by default). Simplified frame until the official form is
- * supplied.
+ * Specification sheet per the GOST 21.110 form 1 (columns transcribed from the
+ * official standard, НБ3), filled from a specification source (built-in by
+ * default).
  */
 export function buildSpecSheetDxf(input: ExportInput, items?: SpecItem[]): string {
   const dxf = new DxfWriter()
   const spec = items ?? buildSpecification(input)
-  let y = drawSheetFrame(dxf, 'Спецификация оборудования, изделий и материалов', input.projectName)
+  let y = drawSheetFrame(
+    dxf,
+    'Спецификация оборудования, изделий и материалов наружных сетей водоснабжения и канализации',
+    input.projectName,
+  )
   const x0 = SHEET_MARGIN + 4
   const rightX = SHEET_W - SHEET_MARGIN - 4
-  dxf.addText(p3(x0, y), 2.4, 'Форма по ГОСТ 21.110 (форма уточняется)', { secondAlignmentPoint: p3(x0, y) })
+  dxf.addText(p3(x0, y), 2.4, `Форма 1${shortClause('spec.form')}`, { secondAlignmentPoint: p3(x0, y) })
   y -= 8
   drawTextTable(
     dxf, x0, y, [0, 15, 120, 175, 205], rightX,
-    ['Поз.', 'Наименование', 'Тип, марка', 'Код', 'Ед.', 'Кол-во'],
+    ['Поз.', 'Наименование и техническая характеристика', 'Тип, марка, обозн. документа', 'Код продукции', 'Ед. изм.', 'Кол.'],
     spec.map((i) => [String(i.pos), i.name, i.spec, i.code ?? '', i.unit, String(i.quantity)]),
   )
   return dxf.stringify()

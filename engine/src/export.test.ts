@@ -142,7 +142,9 @@ describe('specification', () => {
 
     const csv = specificationToCsv(items)
     expect(csv.charCodeAt(0)).toBe(0xfeff) // BOM
-    expect(csv).toContain('Наименование')
+    // НБ3: header columns per ГОСТ 21.110 form 1.
+    expect(csv).toContain('Наименование и техническая характеристика')
+    expect(csv).toContain('Код продукции')
     expect(csv.split('\r\n').length).toBeGreaterThan(items.length)
   }, 60000)
 })
@@ -167,7 +169,10 @@ describe('explanatory note', () => {
     // Requirements update 3: regional risks section.
     expect(json).toContain('8. Учёт региональных рисков и ЧС')
     expect(json).toContain('Регион: г. Астана (определён по координатам площадки)')
-    expect(json).toContain('9. Перечень использованных нормативных документов')
+    // НБ3: water-protection / sanitary / ecology section from the RK codes.
+    expect(json).toContain('9. Водоохранные, санитарные и экологические требования')
+    expect(json).toContain('Водоохранные зоны')
+    expect(json).toContain('10. Перечень использованных нормативных документов')
     // Requirements update 3 (G3): geology along the route.
     expect(json).toContain('Геологический разрез по трассе')
     expect(json).toContain('Влияние геологии вдоль трассы')

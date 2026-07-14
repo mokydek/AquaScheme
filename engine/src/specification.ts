@@ -69,14 +69,28 @@ export function buildSpecification(input: ExportInput): SpecItem[] {
   return items
 }
 
+/**
+ * Column titles of the specification per ГОСТ 21.110-2013, форма 1 (НБ3,
+ * verified against docs/norms/gost-21-110-2013-specifikaciya.pdf).
+ */
+export const SPEC_COLUMNS = [
+  'Поз.',
+  'Наименование и техническая характеристика',
+  'Тип, марка, обозначение документа, опросного листа',
+  'Код продукции',
+  'Ед. измерения',
+  'Кол.',
+] as const
+
 /** Serialize the specification to a semicolon CSV with a UTF-8 BOM (Excel). */
 export function specificationToCsv(items: SpecItem[]): string {
   const escape = (value: string | number): string => {
     const s = String(value)
     return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
-  const header = ['Поз.', 'Наименование', 'Тип, марка', 'Ед. изм.', 'Кол-во']
-  const rows = items.map((i) => [i.pos, i.name, i.spec, i.unit, i.quantity])
-  const body = [header, ...rows].map((row) => row.map(escape).join(';')).join('\r\n')
+  const rows = items.map((i) => [i.pos, i.name, i.spec, i.code ?? '', i.unit, i.quantity])
+  const body = [SPEC_COLUMNS as unknown as string[], ...rows]
+    .map((row) => row.map(escape).join(';'))
+    .join('\r\n')
   return `﻿${body}\r\n`
 }
