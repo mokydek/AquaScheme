@@ -230,6 +230,7 @@ export const ru = {
         exportProfile: 'Скачать профиль DXF',
         exportPlan: 'Скачать план DXF',
         exportSituation: 'Ситуационная схема',
+        exportBundle: 'Скачать комплект К1',
         exporting: 'Формирование',
         save: 'Сохранить расчёт',
         saving: 'Сохранение',

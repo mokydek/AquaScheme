@@ -1,38 +1,25 @@
 import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ParcelKind, Vec2 } from '@aquascheme/engine'
+import type { Vec2 } from '@aquascheme/engine'
 import type { BuildingRow } from '../../shared/datasets'
 import { deleteParcel, insertParcel } from '../../shared/parcels'
 import type { ParcelRow } from '../../shared/parcels'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
 
-interface DraftState {
-  kind: ParcelKind
-  vertices: Vec2[]
-}
-
 export function ParcelsSection({
   projectId,
   parcels,
   buildings,
-  draft,
   violationCount,
-  onStartDraw,
-  onCancelDraw,
-  onFinishDraw,
   onChanged,
   onCheck,
 }: {
   projectId: string
   parcels: ParcelRow[]
   buildings: BuildingRow[]
-  draft: DraftState | null
   violationCount: number | null
-  onStartDraw: (kind: ParcelKind) => void
-  onCancelDraw: () => void
-  onFinishDraw: () => Promise<void>
   onChanged: () => Promise<void>
   onCheck: () => void
 }) {
@@ -96,34 +83,8 @@ export function ParcelsSection({
       <p className="hint">{t('project.parcels.hint')}</p>
 
       <div className="section-actions">
-        <input className="file-input" type="file" accept=".geojson,.json,.dxf,.dwg" disabled={busy || draft !== null} onChange={(e) => void onFile(e)} />
+        <input className="file-input" type="file" accept=".geojson,.json,.dxf,.dwg" disabled={busy} onChange={(e) => void onFile(e)} />
       </div>
-
-      {draft ? (
-        <div className="section-actions">
-          <span className="stat-line" style={{ marginTop: 0 }}>
-            {t('project.parcels.drawing', {
-              kind: t(`project.parcels.kind.${draft.kind}`),
-              count: draft.vertices.length,
-            })}
-          </span>
-          <button type="button" className="btn btn-sm" disabled={draft.vertices.length < 3} onClick={() => void onFinishDraw()}>
-            {t('project.parcels.finish')}
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onCancelDraw}>
-            {t('project.parcels.cancel')}
-          </button>
-        </div>
-      ) : (
-        <div className="section-actions">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onStartDraw('parcel')}>
-            {t('project.parcels.drawParcel')}
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onStartDraw('right_of_way')}>
-            {t('project.parcels.drawRow')}
-          </button>
-        </div>
-      )}
 
       {uploadMessage && <p className="notice error">{uploadMessage}</p>}
       {notice === 'imported' && <span className="stat-line ok">{t('project.parcels.imported')}</span>}

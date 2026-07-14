@@ -37,7 +37,7 @@ import {
   zipBundle,
 } from '../../shared/exporters'
 import type { RegionDatasetContent } from '../../shared/regions'
-import type { SourceData } from './ProjectMap'
+import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 
 type Job = 'drawing' | 'pdf' | 'spec' | 'acts' | 'docs' | 'situation' | 'bundle'

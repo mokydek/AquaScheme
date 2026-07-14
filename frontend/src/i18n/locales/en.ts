@@ -230,6 +230,7 @@ export const en = {
         exportProfile: 'Download profile DXF',
         exportPlan: 'Download plan DXF',
         exportSituation: 'Situational scheme',
+        exportBundle: 'Download K1 set',
         exporting: 'Generating',
         save: 'Save calculation',
         saving: 'Saving',

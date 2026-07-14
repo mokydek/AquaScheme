@@ -31,6 +31,14 @@ export interface BuildingRow {
   specific_demand_lpd?: number | null
 }
 
+/** The 'source' dataset content (water source or sewer outlet point). */
+export interface SourceData {
+  x: number
+  y: number
+  groundElevation?: number
+  availableHead?: number
+}
+
 /** Insert or update the single dataset row of the given kind for a project. */
 export async function saveDataset(
   projectId: string,

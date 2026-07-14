@@ -40,6 +40,17 @@ export async function generateSewerPlanDxf(input: {
   return buildSewerPlanDxf(input)
 }
 
+/** Sewer (К1) general data sheet as DXF (ведомости, показатели, акты). */
+export async function generateSewerGeneralDataDxf(input: {
+  projectName: string
+  schedule: import('@aquascheme/engine').SewerSchedule
+  outletFlowLps: number
+  maxDepthM: number
+}): Promise<string> {
+  const { buildSewerGeneralDataDxf } = await import('@aquascheme/engine/dxf')
+  return buildSewerGeneralDataDxf(input)
+}
+
 /** Situational scheme (ситуационная схема, без масштаба) as DXF. */
 export async function generateSituationDxf(
   input: import('@aquascheme/engine').SituationInput,

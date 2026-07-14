@@ -7,6 +7,7 @@ import { buildSpecification } from './specification'
 import type { SpecItem } from './specification'
 import type { GravityProfile } from './norms/gravity'
 import { manholeLabels, picketLabel } from './norms/gravity'
+import type { SewerSchedule } from './norms/gravity'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -870,5 +871,104 @@ export function buildSituationDxf(input: SituationInput): string {
   dxf.addText(p3(SHEET_MARGIN + 2, topY - 3), 2, `Без масштаба${shortClause('drawing.generalData')}. Проектируемый участок выделен толстой линией`, {
     secondAlignmentPoint: p3(SHEET_MARGIN + 2, topY - 3),
   })
+  return dxf.stringify()
+}
+
+// ============================================================
+// Sewer (К1) general data sheet. Mirrors the professional НК album's sheet 2:
+// the working-drawing list, referenced documents, general notes and the
+// «Перечень видов работ, для которых необходимо составление актов
+// освидетельствования работ (согласно СП РК 4.01-103-2013)» — transcribed
+// verbatim from the album (the norm regulates the acts; the list names them).
+// ============================================================
+
+const SEWER_SUPERVISION_ACTS: string[] = [
+  'Подготовка оснований под трубопроводы.',
+  'Величина зазоров и выполнение уплотнений стыковых соединений.',
+  'Герметизация мест проходки труб через стенки колодцев и камер.',
+  'Испытание колодцев безнапорной канализации на герметичность.',
+  'Проверка прямолинейности безнапорных труб, а также инструментальная проверка лотков в колодцах.',
+  'Проведение предварительного (до засыпки) гидравлического испытания безнапорного трубопровода на герметичность.',
+  'Проведение приемочного гидравлического испытания безнапорного трубопровода на герметичность.',
+  'Обратная засыпка трубопроводов с уплотнением.',
+  'Обследование телевизионной инспекцией при помощи телеинспекционного комплекса.',
+]
+
+export interface SewerGeneralDataInput {
+  projectName: string
+  schedule: SewerSchedule
+  outletFlowLps: number
+  maxDepthM: number
+}
+
+/** «Общие данные» sheet for the К1 set: ведомости, показатели, указания, акты. */
+export function buildSewerGeneralDataDxf(input: SewerGeneralDataInput): string {
+  const dxf = new DxfWriter()
+  let y = drawSheetFrame(dxf, 'Общие данные (К1)', input.projectName)
+  const x0 = SHEET_MARGIN + 4
+  const rightX = SHEET_W - SHEET_MARGIN - 4
+  const midX = SHEET_MARGIN + 150
+  const sub = (s: string, x = x0): number => {
+    dxf.addText(p3(x, y), 3, s, { secondAlignmentPoint: p3(x, y) })
+    return y - 6
+  }
+  const line = (s: string, x = x0, h = 2): number => {
+    dxf.addText(p3(x + 2, y), h, s, { secondAlignmentPoint: p3(x + 2, y) })
+    return y - 4.6
+  }
+
+  y = sub('Ведомость рабочих чертежей основного комплекта')
+  y = drawTextTable(
+    dxf, x0, y, [0, 20], midX - 8,
+    ['Лист', 'Наименование'],
+    [
+      ['1', 'Общие данные'],
+      ['2', 'Ситуационная схема'],
+      ['3', 'План сети К1'],
+      ['4', 'Продольный профиль сети К1'],
+      ['5', 'Ведомость колодцев и труб'],
+    ],
+  ) - 6
+
+  y = sub('Основные показатели сети К1')
+  y = drawTextTable(
+    dxf, x0, y, [0, 90], midX - 8,
+    ['Показатель', 'Значение'],
+    [
+      ['Расчетный расход на выпуске, л/с', input.outletFlowLps.toFixed(2)],
+      ['Протяженность сети, м', String(input.schedule.totalPipeLengthM)],
+      ['Колодцев на главном коллекторе, шт', String(input.schedule.manholes.length)],
+      ['Наибольшая глубина заложения, м', input.maxDepthM.toFixed(2)],
+    ],
+  ) - 6
+
+  y = sub('Общие указания')
+  for (const s of [
+    `Гидравлический расчет выполнен по СН РК 4.01-03-2013${shortClause('sewer.velocity.min')}.`,
+    `Наполнение не более 0,8; скорости самоочищающие${shortClause('sewer.filling.max')}.`,
+    `Глубина заложения от промерзания${shortClause('sewer.depth.min')}.`,
+    'Материал труб, основание и поэлементный расход колодцев принимаются по проекту',
+    '(типовой проект ТПР 902-09-22.84). Код продукции — по каталогу АГСК-3.',
+  ]) y = line(s)
+
+  // Right column: referenced documents and the supervision acts list.
+  let yr = SHEET_H - SHEET_MARGIN - 16
+  const subR = (s: string): void => {
+    dxf.addText(p3(midX, yr), 3, s, { secondAlignmentPoint: p3(midX, yr) })
+    yr -= 6
+  }
+  const lineR = (s: string, h = 1.8): void => {
+    dxf.addText(p3(midX + 2, yr), h, s, { secondAlignmentPoint: p3(midX + 2, yr) })
+    yr -= 4.2
+  }
+  subR('Перечень видов работ, для которых необходимо составление')
+  subR('актов освидетельствования работ (СП РК 4.01-103-2013)')
+  SEWER_SUPERVISION_ACTS.forEach((act, i) => lineR(`${i + 1}. ${act}`))
+  yr -= 3
+  subR('Ссылочные и прилагаемые документы')
+  for (const d of NORM_DOCUMENTS.filter((dd) => dd.status === 'verified').slice(0, 12)) {
+    lineR(`${d.code} — ${d.title.slice(0, 70)}`)
+  }
+  void rightX
   return dxf.stringify()
 }

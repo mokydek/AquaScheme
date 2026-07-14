@@ -8,12 +8,13 @@ import { traceNetwork } from './trace'
 import {
   buildGeneralDataDxf,
   buildNetworkDxf,
+  buildSewerGeneralDataDxf,
   buildSewerPlanDxf,
   buildSewerProfileDxf,
   buildSituationDxf,
   buildSpecSheetDxf,
 } from './dxf'
-import { solveGravityNetwork } from './norms/gravity'
+import { buildSewerSchedule, solveGravityNetwork } from './norms/gravity'
 import type { TracedNetwork } from './trace'
 import { buildSpecification, specificationToCsv } from './specification'
 import { buildNoteDoc } from './note'
@@ -216,6 +217,21 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
     expect(situation).toContain('Без масштаба')
     expect(situation).toContain('Выпуск')
     expect(situation).toContain('SECTION')
+
+    // The К1 general data sheet mirrors the album's sheet 2: drawing list,
+    // network indicators and the supervision acts list per СП РК 4.01-103.
+    const general = buildSewerGeneralDataDxf({
+      projectName: 'Тест К1',
+      schedule: buildSewerSchedule(gravity),
+      outletFlowLps: gravity.outletFlowLps,
+      maxDepthM: gravity.profile!.maxDepthM,
+    })
+    expect(general).toContain('Общие данные (К1)')
+    expect(general).toContain('Ведомость рабочих чертежей')
+    expect(general).toContain('Основные показатели сети К1')
+    expect(general).toContain('актов освидетельствования')
+    expect(general).toContain('гидравлического испытания безнапорного трубопровода')
+    expect(general).toContain('СН РК 4.01-03-2013')
   })
 })
 

@@ -7,7 +7,7 @@ import type { DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { replaceNetwork } from '../../shared/network'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import type { BuildingRow } from '../../shared/datasets'
-import type { SourceData } from './ProjectMap'
+import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 
 type Parsed =

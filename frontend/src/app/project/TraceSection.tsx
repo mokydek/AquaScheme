@@ -5,7 +5,7 @@ import type { SurveyPoint } from '@aquascheme/engine'
 import { replaceNetwork } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow } from '../../shared/datasets'
-import type { SourceData } from './ProjectMap'
+import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 
 export function TraceSection({

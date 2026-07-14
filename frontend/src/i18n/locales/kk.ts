@@ -230,6 +230,7 @@ export const kk = {
         exportProfile: 'Профильді DXF жүктеу',
         exportPlan: 'Жоспарды DXF жүктеу',
         exportSituation: 'Ситуациялық сызба',
+        exportBundle: 'К1 жинағын жүктеу',
         exporting: 'Қалыптастыру',
         save: 'Есепті сақтау',
         saving: 'Сақталуда',

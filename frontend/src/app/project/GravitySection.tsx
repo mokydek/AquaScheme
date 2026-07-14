@@ -6,10 +6,12 @@ import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
+  generateSewerGeneralDataDxf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
   generateSewerScheduleXlsx,
   generateSituationDxf,
+  zipBundle,
 } from '../../shared/exporters'
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
@@ -109,6 +111,53 @@ export function GravitySection({
   }, [result])
 
   const schedule = useMemo(() => (result ? buildSewerSchedule(result) : null), [result])
+
+  // The full К1 sheet set, mirroring the professional НК album: общие данные,
+  // ситуационная схема, план, продольный профиль, ведомость колодцев и труб.
+  const exportBundle = async () => {
+    if (!result?.profile || !schedule) return
+    setExporting(true)
+    try {
+      const network = networkFromRows(nodes, pipes)
+      const pipeDiameterMm = new Map(result.pipes.map((p) => [p.id, p.diameterMm]))
+      const buildingLabels = new Map(buildings.map((b) => [b.id, b.label ?? '']))
+      const [general, situation, plan, profile, xlsx] = await Promise.all([
+        generateSewerGeneralDataDxf({
+          projectName,
+          schedule,
+          outletFlowLps: result.outletFlowLps,
+          maxDepthM: result.profile.maxDepthM,
+        }),
+        generateSituationDxf({
+          projectName,
+          systemType,
+          network,
+          buildings: buildings.map((b) => ({ x: b.x, y: b.y, label: b.label ?? undefined })),
+          pipeDiameterMm,
+        }),
+        generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels }),
+        generateSewerProfileDxf({ projectName, profile: result.profile }),
+        generateSewerScheduleXlsx(schedule),
+      ])
+      const zip = await zipBundle({
+        [`${slug}_01_общие_данные.dxf`]: general,
+        [`${slug}_02_ситуационная_схема.dxf`]: situation,
+        [`${slug}_03_план_К1.dxf`]: plan,
+        [`${slug}_04_профиль_К1.dxf`]: profile,
+        [`${slug}_05_ведомость_К1.xlsx`]: xlsx,
+      })
+      const url = URL.createObjectURL(zip)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slug}_комплект_К1.zip`
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const exportSchedule = async () => {
     if (!schedule) return
@@ -248,6 +297,9 @@ export function GravitySection({
             </button>
             <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSituation()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSituation')}
+            </button>
+            <button type="button" className="btn btn-sm" disabled={exporting || !result.profile} onClick={() => void exportBundle()}>
+              {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
             </button>
           </div>
 

@@ -8,7 +8,7 @@ import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { persistSizing, runSizingInWorker } from '../../shared/pipeline'
 import { loadActiveCatalogSizes } from '../../shared/catalog'
-import type { SourceData } from './ProjectMap'
+import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 
 const ISSUE_LIMIT = 6

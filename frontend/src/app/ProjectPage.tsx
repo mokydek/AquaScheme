@@ -1,30 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { createDemoDataset, localToLonLat, NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import { createDemoDataset, NORMATIVE_DEFAULTS } from '@aquascheme/engine'
 import type { SurveyPoint } from '@aquascheme/engine'
-import type { Feature, FeatureCollection } from 'geojson'
 import { supabase } from '../shared/supabase'
 import { saveDataset } from '../shared/datasets'
-import type { BuildingRow, DatasetKind, DatasetRow } from '../shared/datasets'
+import type { BuildingRow, DatasetKind, DatasetRow, SourceData } from '../shared/datasets'
 import type { NodeRow, PipeRow } from '../shared/network'
 import { runFullPipeline } from '../shared/pipeline'
-import { buildingPreset, sourcePreset } from '@aquascheme/engine'
 import type { GeologyInput, SeismicInput, SurveyPoint as EngineSurveyPoint } from '@aquascheme/engine'
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
 import { NormsSection, RegionSection, SeismicSection, SourceSection } from './project/FormSections'
 import { DemandSection } from './project/DemandSection'
-import { ProjectMap } from './project/ProjectMap'
-import type { SourceData } from './project/ProjectMap'
 import { TraceSection } from './project/TraceSection'
 import { HydraulicsSection } from './project/HydraulicsSection'
 import { EquipmentSection } from './project/EquipmentSection'
 import { ResultsSection } from './project/ResultsSection'
 import { ExportSection } from './project/ExportSection'
 import { ImportSection } from './project/ImportSection'
-import { ObjectLibrary } from './project/ObjectLibrary'
-import type { Placement } from './project/ObjectLibrary'
 import { ParcelsSection } from './project/ParcelsSection'
 import { CatalogSection } from './project/CatalogSection'
 import { fetchCatalogs } from '../shared/catalog'
@@ -42,13 +36,8 @@ import { syncRegions } from '../shared/regions'
 import { NormRegistrySection } from './project/NormRegistrySection'
 import { Panel } from './project/Panel'
 import { analyzeParcelViolations } from '@aquascheme/engine'
-import type { ParcelKind, Vec2, ViolationPipe } from '@aquascheme/engine'
-import {
-  autoAssignParcels,
-  fetchParcels,
-  insertParcel,
-  parcelPolygons,
-} from '../shared/parcels'
+import type { ViolationPipe } from '@aquascheme/engine'
+import { autoAssignParcels, fetchParcels, parcelPolygons } from '../shared/parcels'
 import type { ParcelRow } from '../shared/parcels'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 
@@ -77,12 +66,10 @@ export function ProjectPage() {
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
   const [pipelineBusy, setPipelineBusy] = useState(false)
   const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
-  const [placement, setPlacement] = useState<Placement | null>(null)
   const [parcels, setParcels] = useState<ParcelRow[]>([])
   const [catalogs, setCatalogs] = useState<CatalogRow[]>([])
   const [existing, setExisting] = useState<ExistingPipeRow[]>([])
   const [boreholes, setBoreholes] = useState<Borehole[]>([])
-  const [parcelDraft, setParcelDraft] = useState<{ kind: ParcelKind; vertices: Vec2[] } | null>(null)
   const [violationPipeIds, setViolationPipeIds] = useState<string[] | null>(null)
 
   const load = useCallback(async () => {
@@ -273,110 +260,6 @@ export function ProjectPage() {
 
   const sourceData = (datasets.source?.content ?? null) as SourceData | null
 
-  const nearestZ = useCallback(
-    (x: number, y: number): number | undefined => {
-      let best: SurveyPoint | undefined
-      let bestDist = Number.POSITIVE_INFINITY
-      for (const p of topoPoints) {
-        const d = (p.x - x) ** 2 + (p.y - y) ** 2
-        if (d < bestDist) {
-          bestDist = d
-          best = p
-        }
-      }
-      return best?.z
-    },
-    [topoPoints],
-  )
-
-  const addBuildingAt = useCallback(
-    async (x: number, y: number) => {
-      if (!id) return
-      await supabase.from('buildings').insert({
-        project_id: id,
-        label: `Д${buildings.length + 1}`,
-        x,
-        y,
-        floors: 2,
-        residents: 32,
-      })
-      await load()
-    },
-    [id, buildings.length, load],
-  )
-
-  const moveSourceTo = useCallback(
-    async (x: number, y: number) => {
-      if (!id) return
-      const current = (datasets.source?.content ?? { availableHead: 45 }) as SourceData
-      const groundElevation = nearestZ(x, y) ?? current.groundElevation ?? 0
-      await saveDataset(id, 'source', { ...current, x, y, groundElevation })
-      await load()
-    },
-    [id, datasets.source, nearestZ, load],
-  )
-
-  const placeObject = useCallback(
-    (x: number, y: number) => {
-      if (!id || !placement) return
-      const groundElevation = nearestZ(x, y) ?? 0
-      if (placement.type === 'building') {
-        const preset = buildingPreset(placement.presetId)
-        if (!preset) return
-        const count = buildings.filter((b) => (b.label ?? '').startsWith(preset.labelPrefix)).length
-        void supabase
-          .from('buildings')
-          .insert({
-            project_id: id,
-            label: `${preset.labelPrefix}${count + 1}`,
-            x,
-            y,
-            floors: preset.defaultFloors,
-            residents: preset.defaultUnits,
-            ground_elevation: groundElevation,
-            specific_demand_lpd: preset.specificDemandLpd,
-          })
-          .then(() => load())
-      } else {
-        const preset = sourcePreset(placement.presetId)
-        if (!preset) return
-        void saveDataset(id, 'source', {
-          x,
-          y,
-          groundElevation,
-          availableHead: preset.defaultAvailableHeadM,
-        }).then(() => load())
-      }
-    },
-    [id, placement, buildings, nearestZ, load],
-  )
-
-  const deleteBuilding = useCallback(
-    async (buildingId: string) => {
-      await supabase.from('buildings').delete().eq('id', buildingId)
-      await load()
-    },
-    [load],
-  )
-
-  // Parcels: drawing and violation analysis.
-  const startDraw = useCallback((kind: ParcelKind) => {
-    setPlacement(null)
-    setParcelDraft({ kind, vertices: [] })
-  }, [])
-  const drawVertex = useCallback((x: number, y: number) => {
-    setParcelDraft((prev) => (prev ? { ...prev, vertices: [...prev.vertices, { x, y }] } : prev))
-  }, [])
-  const cancelDraw = useCallback(() => setParcelDraft(null), [])
-  const finishDraw = useCallback(async () => {
-    if (!id || !parcelDraft || parcelDraft.vertices.length < 3) return
-    await insertParcel(id, parcelDraft.kind, parcelDraft.vertices, null)
-    setParcelDraft(null)
-    const rows = await fetchParcels(id)
-    await autoAssignParcels(rows, buildings.map((b) => ({ id: b.id, x: b.x, y: b.y })))
-    await load()
-  }, [id, parcelDraft, buildings, load])
-
   const parcelsChanged = useCallback(async () => {
     if (!id) return
     const rows = await fetchParcels(id)
@@ -405,151 +288,11 @@ export function ProjectPage() {
     setViolationPipeIds([...new Set(violations.map((v) => v.pipeId))])
   }, [nodes, pipes, parcels])
 
-  const parcelsGeo = useMemo<FeatureCollection>(
-    () => ({
-      type: 'FeatureCollection',
-      features: parcels.flatMap((row) => {
-        const outer = row.geometry?.coordinates?.[0]
-        if (!Array.isArray(outer)) return []
-        return [
-          {
-            type: 'Feature' as const,
-            properties: { kind: row.kind, id: row.id },
-            geometry: {
-              type: 'Polygon' as const,
-              coordinates: [outer.map((c) => localToLonLat(c[0], c[1]))],
-            },
-          },
-        ]
-      }),
-    }),
-    [parcels],
-  )
-
   const violationCount = violationPipeIds?.length ?? null
 
-  const existingGeo = useMemo<FeatureCollection>(
-    () => ({
-      type: 'FeatureCollection',
-      features: existing.flatMap((row) => {
-        const m = row.meta
-        if (!m) return []
-        return [
-          {
-            type: 'Feature' as const,
-            properties: { decision: row.decision },
-            geometry: {
-              type: 'LineString' as const,
-              coordinates: [localToLonLat(m.ax, m.ay), localToLonLat(m.bx, m.by)],
-            },
-          },
-        ]
-      }),
-    }),
-    [existing],
-  )
   const designedLengthM = useMemo(
     () => pipes.reduce((sum, p) => sum + (p.length_m ?? 0), 0),
     [pipes],
-  )
-
-  const networkLines = useMemo<FeatureCollection>(() => {
-    const nodeById = new Map(nodes.map((n) => [n.id, n]))
-    const labelOf = (nid: string) => nodeById.get(nid)?.label ?? nid
-    const features: Feature[] = []
-    for (const pipe of pipes) {
-      const a = nodeById.get(pipe.from_node)
-      const b = nodeById.get(pipe.to_node)
-      if (!a || !b) continue
-      features.push({
-        type: 'Feature',
-        properties: {
-          kind: pipe.meta?.kind ?? 'ring',
-          engineId: pipe.meta?.engineId ?? pipe.id,
-          title: `${labelOf(pipe.from_node)}–${labelOf(pipe.to_node)}`,
-          length: pipe.length_m ?? 0,
-          diameter: pipe.diameter_mm ?? null,
-          flow: pipe.meta?.flowLps != null ? Math.abs(pipe.meta.flowLps) : null,
-          velocity: pipe.meta?.velocityMs ?? null,
-          headloss: pipe.meta?.headlossM ?? null,
-        },
-        geometry: {
-          type: 'LineString',
-          coordinates: [localToLonLat(a.x, a.y), localToLonLat(b.x, b.y)],
-        },
-      })
-    }
-    return { type: 'FeatureCollection', features }
-  }, [nodes, pipes])
-
-  const networkJunctions = useMemo<FeatureCollection>(() => {
-    const FITTING_MARK: Record<string, string> = { hydrant: 'ПГ', valve: 'З', airValve: 'В', washout: 'ВП' }
-    return {
-      type: 'FeatureCollection',
-      features: nodes
-        .filter((n) => n.kind !== 'source' && !n.building_id)
-        .map((n) => ({
-          type: 'Feature',
-          properties: {
-            label: n.label ?? '',
-            elevation: n.ground_elevation ?? null,
-            head: n.meta?.headM ?? null,
-            pressure: n.meta?.pressureM ?? null,
-            well: n.meta?.wellLabel ?? '',
-            marks: (n.meta?.fittings ?? []).map((f) => FITTING_MARK[f] ?? f).join(' '),
-          },
-          geometry: { type: 'Point', coordinates: localToLonLat(n.x, n.y) },
-        })),
-    }
-  }, [nodes])
-
-  const pressureByBuilding = useMemo(() => {
-    const map: Record<string, { pressureM: number; ok: boolean; requiredPressureM: number | null }> = {}
-    for (const n of nodes) {
-      if (!n.building_id || n.meta?.pressureM == null) continue
-      map[n.building_id] = {
-        pressureM: n.meta.pressureM,
-        ok: n.meta.ok ?? true,
-        requiredPressureM: n.meta.requiredPressureM ?? null,
-      }
-    }
-    return map
-  }, [nodes])
-
-  const problemsGeo = useMemo<FeatureCollection>(
-    () => ({
-      type: 'FeatureCollection',
-      features: nodes
-        .filter((n) => n.meta?.ok === false)
-        .map((n) => ({
-          type: 'Feature',
-          properties: { label: n.label ?? '' },
-          geometry: { type: 'Point', coordinates: localToLonLat(n.x, n.y) },
-        })),
-    }),
-    [nodes],
-  )
-
-  const hasResults = pipes.some((p) => p.meta?.velocityMs != null)
-
-  const FITTING_MARKS: Record<string, string> = { hydrant: 'ПГ', valve: 'З', airValve: 'В', washout: 'ВП' }
-  const fittingsGeo = useMemo<FeatureCollection>(
-    () => ({
-      type: 'FeatureCollection',
-      features: nodes
-        .filter((n) => (n.meta?.fittings?.length ?? 0) > 0 || n.meta?.wellLabel)
-        .map((n) => {
-          const marks = (n.meta?.fittings ?? []).map((f) => FITTING_MARKS[f] ?? f).join(' ')
-          const well = n.meta?.wellLabel ?? ''
-          return {
-            type: 'Feature',
-            properties: { marks: well ? `${well}${marks ? ' · ' + marks : ''}` : marks },
-            geometry: { type: 'Point', coordinates: localToLonLat(n.x, n.y) },
-          }
-        }),
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [nodes],
   )
 
   const systemType = project?.system_type ?? 'water'
@@ -629,38 +372,11 @@ export function ProjectPage() {
           </p>
         )}
         <div className="panels">
-          <ObjectLibrary active={placement} onSelect={setPlacement} />
-          <ProjectMap
-            points={topoPoints}
-            buildings={buildings}
-            source={sourceData}
-            networkLines={networkLines}
-            networkJunctions={networkJunctions}
-            fittings={fittingsGeo}
-            problems={problemsGeo}
-            parcels={parcelsGeo}
-            existingLines={existingGeo}
-            draftPolygon={parcelDraft?.vertices}
-            violationPipeIds={violationPipeIds ?? undefined}
-            pressureByBuilding={pressureByBuilding}
-            hasResults={hasResults}
-            placementActive={placement !== null}
-            drawingActive={parcelDraft !== null}
-            onAddBuilding={addBuildingAt}
-            onMoveSource={moveSourceTo}
-            onDeleteBuilding={deleteBuilding}
-            onPlaceObject={placeObject}
-            onDrawVertex={drawVertex}
-          />
           <ParcelsSection
             projectId={project.id}
             parcels={parcels}
             buildings={buildings}
-            draft={parcelDraft}
             violationCount={violationCount}
-            onStartDraw={startDraw}
-            onCancelDraw={cancelDraw}
-            onFinishDraw={finishDraw}
             onChanged={parcelsChanged}
             onCheck={checkViolations}
           />
