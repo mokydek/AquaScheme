@@ -26,3 +26,7 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+
+# Official norm editions must not be redistributed
+docs/norms/*.pdf
+docs/norms/txt/

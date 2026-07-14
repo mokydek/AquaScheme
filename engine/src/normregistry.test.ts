@@ -15,9 +15,23 @@ describe('norm registry', () => {
     }
   })
 
-  it('every entry starts unverified until confirmed against the official text', () => {
-    expect(unverifiedClauses()).toHaveLength(NORM_REGISTRY.length)
-    expect(NORM_REGISTRY.every((c) => c.status === 'unverified')).toBe(true)
+  it('an entry is verified only with a transcription source (file + PDF page)', () => {
+    for (const clause of NORM_REGISTRY) {
+      if (clause.status === 'verified') {
+        expect(clause.sourceFile, clause.id).toMatch(/^docs\/norms\/.+\.pdf$/)
+        expect(clause.sourcePage, clause.id).toBeGreaterThan(0)
+        expect(clause.clause, clause.id).not.toBeNull()
+      }
+    }
+    expect(unverifiedClauses().length).toBeLessThan(NORM_REGISTRY.length)
+  })
+
+  it('verified sewer clauses carry the values transcribed from СН РК 4.01-03-2013*', () => {
+    expect(getClause('sewer.minDiameter')?.status).toBe('verified')
+    expect(getClause('sewer.minDiameter')?.sourcePage).toBe(39)
+    expect(getClause('sewer.slope.min')?.valueText).toContain('0.008')
+    expect(getClause('drainage.equalsWater')?.status).toBe('verified')
+    expect(getClause('drainage.equalsWater')?.clause).toBe('5.5.1')
   })
 
   it('clause ids are unique and resolvable', () => {

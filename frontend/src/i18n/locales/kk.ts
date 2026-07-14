@@ -278,6 +278,7 @@ export const kk = {
           thClause: 'Тармақ',
           thRequirement: 'Талап',
           thValue: 'Мән',
+          thPage: 'PDF беті',
           thStatus: 'Мәртебе',
           verified: 'тексерілді',
           unverified: 'тексеруді қажет етеді',

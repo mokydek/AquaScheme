@@ -27,6 +27,7 @@ export function NormRegistrySection() {
               <th>{t('project.norm.registry.thClause')}</th>
               <th>{t('project.norm.registry.thRequirement')}</th>
               <th className="num">{t('project.norm.registry.thValue')}</th>
+              <th className="num">{t('project.norm.registry.thPage')}</th>
               <th>{t('project.norm.registry.thStatus')}</th>
             </tr>
           </thead>
@@ -37,6 +38,7 @@ export function NormRegistrySection() {
                 <td className="mono">{c.clause ?? 'TODO'}</td>
                 <td>{c.requirement}</td>
                 <td className="num mono">{c.valueText}</td>
+                <td className="num mono">{c.sourcePage ?? ''}</td>
                 <td>
                   {c.status === 'verified'
                     ? t('project.norm.registry.verified')

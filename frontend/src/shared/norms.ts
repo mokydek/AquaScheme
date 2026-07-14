@@ -14,7 +14,14 @@ export async function syncNormRegistry(): Promise<void> {
   synced = true
   try {
     await supabase.from('norm_documents').upsert(
-      NORM_DOCUMENTS.map((d) => ({ code: d.code, title: d.title, edition: d.edition, status: d.status })),
+      NORM_DOCUMENTS.map((d) => ({
+        code: d.code,
+        title: d.title,
+        edition: d.edition,
+        status: d.status,
+        source_file: d.sourceFile ?? null,
+        note: d.note ?? null,
+      })),
     )
     await supabase.from('norm_clauses').upsert(
       NORM_REGISTRY.map((c) => ({
@@ -27,6 +34,9 @@ export async function syncNormRegistry(): Promise<void> {
         applies_system: c.appliesSystem,
         applies_work: c.appliesWork,
         status: c.status,
+        source_file: c.sourceFile ?? null,
+        source_page: c.sourcePage ?? null,
+        verify_page: c.verifyPage ?? false,
       })),
     )
   } catch {

@@ -1,0 +1,22 @@
+{
+  "document": "СН РК 4.01-03-2013*",
+  "table": "Таблица 5.19",
+  "clause": "5.10.1",
+  "title": "Значение наименьших скоростей в зависимости от наибольшего расчетного наполнения труб в сети бытовой и дождевой систем водоотведения",
+  "sourceFile": "docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf",
+  "pdfPage": 40,
+  "rows": [
+    { "dMinMm": 150, "dMaxMm": 250, "filling": 0.6, "vMinMps": 0.7 },
+    { "dMinMm": 300, "dMaxMm": 400, "filling": 0.7, "vMinMps": 0.8 },
+    { "dMinMm": 450, "dMaxMm": 500, "filling": 0.75, "vMinMps": 0.9 },
+    { "dMinMm": 600, "dMaxMm": 800, "filling": 0.75, "vMinMps": 1.0 },
+    { "dMinMm": 900, "dMaxMm": 900, "filling": 0.75, "vMinMps": 1.15 },
+    { "dMinMm": 1000, "dMaxMm": 1200, "filling": 0.8, "vMinMps": 1.15 },
+    { "dMinMm": 1500, "dMaxMm": 1500, "filling": 0.8, "vMinMps": 1.3 },
+    { "dMinMm": 1501, "dMaxMm": null, "filling": 0.8, "vMinMps": 1.5 }
+  ],
+  "notes": [
+    "ПРИМЕЧАНИЕ 3: для дождевой сети водоотведения при P = 0,33 года наименьшую скорость следует принимать 0,6 м/сек",
+    "5.10.2: минимальная скорость осветленных или биологически очищенных сточных вод 0,4 м/сек (стр. PDF 40)"
+  ]
+}

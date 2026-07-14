@@ -278,6 +278,7 @@ export const ru = {
           thClause: 'Пункт',
           thRequirement: 'Требование',
           thValue: 'Значение',
+          thPage: 'Стр. PDF',
           thStatus: 'Статус',
           verified: 'проверено',
           unverified: 'требует проверки',

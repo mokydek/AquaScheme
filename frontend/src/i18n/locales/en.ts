@@ -278,6 +278,7 @@ export const en = {
           thClause: 'Clause',
           thRequirement: 'Requirement',
           thValue: 'Value',
+          thPage: 'PDF page',
           thStatus: 'Status',
           verified: 'verified',
           unverified: 'to verify',
