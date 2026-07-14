@@ -1,17 +1,34 @@
 import { describe, expect, it } from 'vitest'
 import { createGravitySolver, SOLVER_AVAILABILITY } from './systems'
 import { waterPressureSolver } from './hydraulics'
+import type { TracedNetwork } from './trace'
 
 describe('solver architecture (requirements update 1)', () => {
   it('declares availability per system', () => {
     expect(SOLVER_AVAILABILITY.water).toBe('ready')
-    expect(SOLVER_AVAILABILITY.sewer).toBe('planned')
-    expect(SOLVER_AVAILABILITY.storm).toBe('planned')
+    // К1/К2 gravity solvers implemented in phase НБ4.
+    expect(SOLVER_AVAILABILITY.sewer).toBe('ready')
+    expect(SOLVER_AVAILABILITY.storm).toBe('ready')
   })
 
-  it('gravity solvers are declared but not implemented yet', async () => {
-    await expect(createGravitySolver('sewer').solve(undefined as never)).rejects.toThrow(/notImplemented.*K1/)
-    await expect(createGravitySolver('storm').solve(undefined as never)).rejects.toThrow(/notImplemented.*K2/)
+  it('the gravity solver designs the network by Chezy-Manning (НБ4)', async () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'B1', kind: 'building', x: 30, y: 0, groundElevation: 101, buildingId: 'b1' },
+      ],
+      pipes: [{ id: 'p1', kind: 'main', fromNode: 'S', toNode: 'B1', lengthM: 30 }],
+      totalLengthM: 30,
+    }
+    const result = await createGravitySolver('sewer').solve({
+      network,
+      buildingFlowLps: new Map([['b1', 8]]),
+    })
+    expect(result.kind).toBe('gravity')
+    expect(result.systemType).toBe('sewer')
+    expect(result.pipes[0].diameterMm).toBeGreaterThanOrEqual(200)
+    expect(result.pipes[0].fillRatio).toBeLessThanOrEqual(0.8)
+    expect(result.outletFlowLps).toBeCloseTo(8, 6)
   })
 
   it('the water solver wraps EPANET and returns a pressure result', async () => {

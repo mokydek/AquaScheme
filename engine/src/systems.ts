@@ -1,4 +1,6 @@
 import type { SystemType } from './types'
+import type { TracedNetwork } from './trace'
+import { solveGravityNetwork } from './norms/gravity'
 
 /**
  * Solver architecture for the three engineering systems (requirements
@@ -36,6 +38,7 @@ export interface PressureSolveResult {
 export interface GravityPipeState {
   id: string
   flowLps: number
+  diameterMm: number
   /** Fill ratio h/d, 0..1. */
   fillRatio: number
   velocityMs: number
@@ -48,6 +51,13 @@ export interface GravitySolveResult {
   kind: 'gravity'
   systemType: SystemType
   pipes: GravityPipeState[]
+  outletFlowLps: number
+}
+
+export interface GravitySolveInput {
+  network: TracedNetwork
+  buildingFlowLps: Map<string, number>
+  roughness?: number
 }
 
 export type SolveResult = PressureSolveResult | GravitySolveResult
@@ -61,21 +71,39 @@ export interface NetworkSolver<TInput, TResult extends SolveResult> {
 /** Which system solvers are implemented today. */
 export const SOLVER_AVAILABILITY: Record<SystemType, 'ready' | 'planned'> = {
   water: 'ready',
-  sewer: 'planned',
-  storm: 'planned',
+  sewer: 'ready',
+  storm: 'ready',
 }
 
 /**
- * Gravity solver stub: declared so the architecture is in place from the
- * start; the Manning based implementation lands in phases K1/K2.
+ * Gravity solver (К1 sewer, К2 storm): free-surface Chezy-Manning design per
+ * СН РК 4.01-03-2013*, implemented in ./norms/gravity.
  */
-export function createGravitySolver(systemType: 'sewer' | 'storm'): NetworkSolver<never, GravitySolveResult> {
+export function createGravitySolver(
+  systemType: 'sewer' | 'storm',
+): NetworkSolver<GravitySolveInput, GravitySolveResult> {
   return {
     systemType,
-    solve(): Promise<GravitySolveResult> {
-      return Promise.reject(
-        new Error(`notImplemented: the ${systemType} gravity solver arrives in phase ${systemType === 'sewer' ? 'K1' : 'K2'}`),
-      )
+    solve(input: GravitySolveInput): Promise<GravitySolveResult> {
+      const result = solveGravityNetwork({
+        network: input.network,
+        buildingFlowLps: input.buildingFlowLps,
+        system: systemType,
+        roughness: input.roughness,
+      })
+      return Promise.resolve({
+        kind: 'gravity',
+        systemType,
+        pipes: result.pipes.map((p) => ({
+          id: p.id,
+          flowLps: p.flowLps,
+          diameterMm: p.diameterMm,
+          fillRatio: p.fillRatio,
+          velocityMs: p.velocityMs,
+          slope: p.slope,
+        })),
+        outletFlowLps: result.outletFlowLps,
+      })
     },
   }
 }

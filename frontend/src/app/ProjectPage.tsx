@@ -36,6 +36,7 @@ import { GeologySection } from './project/GeologySection'
 import { fetchGeology } from '../shared/geology'
 import type { Borehole } from '@aquascheme/engine'
 import { DrainageSection } from './project/DrainageSection'
+import { GravitySection } from './project/GravitySection'
 import { syncNormRegistry } from '../shared/norms'
 import { syncRegions } from '../shared/regions'
 import { NormRegistrySection } from './project/NormRegistrySection'
@@ -552,6 +553,7 @@ export function ProjectPage() {
   const workType = project?.work_type ?? 'new'
   const isWater = systemType === 'water'
   const isSewer = systemType === 'sewer'
+  const isStorm = systemType === 'storm'
   const isReconstruction = workType === 'reconstruction'
 
   if (state === 'loading') return null
@@ -668,19 +670,48 @@ export function ProjectPage() {
               onChanged={load}
             />
           )}
-          {isSewer && (
-            <DrainageSection
-              projectId={project.id}
-              buildings={buildings}
-              normsDataset={datasets.normative}
-              drainageDataset={datasets.drainage}
-              waterSourceProjectId={project.water_source_project_id ?? null}
-              onChanged={load}
-            />
+          {(isSewer || isStorm) && (
+            <>
+              <ImportSection
+                projectId={project.id}
+                buildings={buildings}
+                source={sourceData}
+                points={topoPoints}
+                onChanged={load}
+              />
+              <TraceSection
+                projectId={project.id}
+                buildings={buildings}
+                source={sourceData}
+                points={topoPoints}
+                nodes={nodes}
+                pipes={pipes}
+                onChanged={load}
+              />
+            </>
           )}
-          {!isWater && !isSewer && (
-            <Panel title={t('project.moduleSoonTitle')} status="default">
-              <p className="hint">{t(`project.moduleSoon.${systemType}`)}</p>
+          {isSewer && (
+            <>
+              <DrainageSection
+                projectId={project.id}
+                buildings={buildings}
+                normsDataset={datasets.normative}
+                drainageDataset={datasets.drainage}
+                waterSourceProjectId={project.water_source_project_id ?? null}
+                onChanged={load}
+              />
+              <GravitySection
+                systemType="sewer"
+                buildings={buildings}
+                nodes={nodes}
+                pipes={pipes}
+                normsDataset={datasets.normative}
+              />
+            </>
+          )}
+          {isStorm && (
+            <Panel title={t('project.gravity.title')} status="default">
+              <p className="hint">{t('project.gravity.stormPending')}</p>
             </Panel>
           )}
           {isWater && (

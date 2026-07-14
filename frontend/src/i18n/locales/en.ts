@@ -207,6 +207,22 @@ export const en = {
         title: 'Existing network and survey act',
         hint: 'Existing network import, the technical survey act and per segment decisions arrive in Phase 17',
       },
+      gravity: {
+        title: 'Gravity calculation (K1)',
+        hint: 'Per-segment hydraulics: diameter, slope, fill ratio h/D and self-cleaning velocity per СН РК 4.01-03-2013. The sewer flow comes from the consumption calculation. Build or import the network above first',
+        needNetwork: 'Build or import the network first to run the calculation',
+        outletFlow: 'Design flow at the outlet: {{value}} L/s',
+        thSegment: 'Segment',
+        thFlow: 'Q, L/s',
+        thDiameter: 'D, mm',
+        thSlope: 'Slope',
+        thFill: 'h/D',
+        thVelocity: 'V, m/s',
+        thCheck: 'Check',
+        ok: 'ok',
+        stormPending:
+          'The storm (K2) gravity hydraulics are implemented (Manning, filling, velocities), but the rain runoff calculation needs climate parameters (rain intensity q20 by region). Those are absent from the supplied norm set and have been requested from you. K2 turns on once they are provided',
+      },
       pipeline: {
         demoRun: 'Demo and full run',
         run: 'Run everything',
