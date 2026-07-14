@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { computeNetworkDemand, NORMATIVE_DEFAULTS, solveGravityNetwork } from '@aquascheme/engine'
+import { buildSewerSchedule, computeNetworkDemand, NORMATIVE_DEFAULTS, solveGravityNetwork } from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
-import { generateSewerPlanDxf, generateSewerProfileDxf } from '../../shared/exporters'
+import { generateSewerPlanDxf, generateSewerProfileDxf, generateSewerScheduleXlsx } from '../../shared/exporters'
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
+
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 function downloadText(filename: string, text: string, type: string): void {
   const blob = new Blob([text], { type })
@@ -100,6 +102,27 @@ export function GravitySection({
     if (!result) return []
     return [...result.pipes].sort((a, b) => b.flowLps - a.flowLps)
   }, [result])
+
+  const schedule = useMemo(() => (result ? buildSewerSchedule(result) : null), [result])
+
+  const exportSchedule = async () => {
+    if (!schedule) return
+    setExporting(true)
+    try {
+      const bytes = await generateSewerScheduleXlsx(schedule)
+      const blob = new Blob([bytes], { type: XLSX_TYPE })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slug}_ведомость_К1.xlsx`
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const slug = projectName.trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 40) || 'project'
 
@@ -239,6 +262,66 @@ export function GravitySection({
               <div className="section-actions" style={{ marginTop: 12 }}>
                 <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportProfile()}>
                   {exporting ? t('project.gravity.exporting') : t('project.gravity.exportProfile')}
+                </button>
+              </div>
+            </>
+          )}
+
+          {schedule && schedule.manholes.length > 0 && (
+            <>
+              <h4 className="subhead" style={{ marginTop: 20 }}>
+                {t('project.gravity.scheduleTitle')}
+              </h4>
+              <div className="table-wrap" style={{ marginTop: 8 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{t('project.gravity.thNode')}</th>
+                      <th>{t('project.gravity.thPicket')}</th>
+                      <th className="num">{t('project.gravity.thWellDepth')}</th>
+                      <th className="num">{t('project.gravity.thWellDiameter')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedule.manholes.map((m) => (
+                      <tr key={m.label}>
+                        <td>{m.label}</td>
+                        <td className="mono">{m.picket}</td>
+                        <td className="num mono">{m.depthMm}</td>
+                        <td className="num mono">{m.pipeDiameterMm}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <h4 className="subhead" style={{ marginTop: 16 }}>
+                {t('project.gravity.pipeScheduleTitle')}
+              </h4>
+              <div className="table-wrap" style={{ marginTop: 8 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{t('project.gravity.thDesignation')}</th>
+                      <th className="num">{t('project.gravity.thWellDiameter')}</th>
+                      <th className="num">{t('project.gravity.thPipeLength')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedule.pipes.map((p) => (
+                      <tr key={p.diameterMm}>
+                        <td>{p.designation}</td>
+                        <td className="num mono">{p.diameterMm}</td>
+                        <td className="num mono">{p.lengthM}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="stat-line">{t('project.gravity.pipeTotal', { value: schedule.totalPipeLengthM })}</p>
+              <p className="hint">{t('project.gravity.scheduleNote')}</p>
+              <div className="section-actions" style={{ marginTop: 12 }}>
+                <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSchedule()}>
+                  {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSchedule')}
                 </button>
               </div>
             </>

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   accumulateGravityFlows,
+  buildSewerSchedule,
   circularSection,
   computeGravityProfile,
   designGravitySegment,
   fillForFlow,
   gravityFlowM3s,
   manningVelocity,
+  picketLabel,
   solveGravityNetwork,
 } from './gravity'
 import type { TracedNetwork } from '../trace'
@@ -187,5 +189,42 @@ describe('longitudinal profile (invert levels, depths — п. 7.2.4)', () => {
       totalLengthM: 0,
     }
     expect(computeGravityProfile({ network: noOutlet, design: new Map(), freezingDepthM: 1.5 })).toBeNull()
+  })
+})
+
+describe('materials schedule (ведомость колодцев и труб)', () => {
+  it('picketLabel formats chainage as ПК N+dd', () => {
+    expect(picketLabel(0)).toBe('ПК0+00')
+    expect(picketLabel(1057)).toBe('ПК10+57')
+    expect(picketLabel(250)).toBe('ПК2+50')
+  })
+
+  it('buildSewerSchedule lists manholes and pipe totals by diameter', () => {
+    const flat: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'J1', kind: 'junction', x: 100, y: 0, groundElevation: 100 },
+        { id: 'H', kind: 'building', x: 200, y: 0, groundElevation: 100, buildingId: 'b1' },
+      ],
+      pipes: [
+        { id: 'p1', kind: 'main', fromNode: 'S', toNode: 'J1', lengthM: 100 },
+        { id: 'p2', kind: 'main', fromNode: 'J1', toNode: 'H', lengthM: 100 },
+      ],
+      totalLengthM: 200,
+    }
+    const result = solveGravityNetwork({
+      network: flat,
+      buildingFlowLps: new Map([['b1', 6]]),
+      system: 'sewer',
+      freezingDepthM: 1.5,
+    })
+    const schedule = buildSewerSchedule(result)
+    expect(schedule.manholes).toHaveLength(3)
+    expect(schedule.manholes[0].label).toBe('ВК-1')
+    expect(schedule.manholes[schedule.manholes.length - 1].label).toBe('Вып.')
+    expect(schedule.manholes[0].depthMm).toBeGreaterThanOrEqual(1200)
+    expect(schedule.manholes[0].picket).toMatch(/^ПК/)
+    expect(schedule.pipes.every((p) => p.designation.includes('безнапорная'))).toBe(true)
+    expect(schedule.totalPipeLengthM).toBe(200)
   })
 })

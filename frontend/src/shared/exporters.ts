@@ -40,6 +40,28 @@ export async function generateSewerPlanDxf(input: {
   return buildSewerPlanDxf(input)
 }
 
+/** Sewer (К1) manhole and pipe schedule as an XLSX byte array (two sheets). */
+export async function generateSewerScheduleXlsx(
+  schedule: import('@aquascheme/engine').SewerSchedule,
+): Promise<Uint8Array> {
+  const XLSX = await import('xlsx')
+  const book = XLSX.utils.book_new()
+  const wells = schedule.manholes.map((m) => ({
+    'Колодец': m.label,
+    'ПК': m.picket,
+    'Глубина, мм': m.depthMm,
+    'Ø трубы, мм': m.pipeDiameterMm,
+  }))
+  XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(wells), 'Колодцы')
+  const pipes = schedule.pipes.map((p) => ({
+    'Обозначение': p.designation,
+    'Ø, мм': p.diameterMm,
+    'Длина, м': p.lengthM,
+  }))
+  XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(pipes), 'Трубы')
+  return XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+}
+
 /** Bill of materials as an XLSX byte array (SheetJS), ГОСТ 21.110 form 1. */
 export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> {
   const XLSX = await import('xlsx')

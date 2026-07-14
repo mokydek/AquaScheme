@@ -490,3 +490,71 @@ export function computeGravityProfile(input: {
     totalLengthM: Math.round(headChainage * 100) / 100,
   }
 }
+
+/** Picket (ПК) label for a chainage, e.g. 1057 m → «ПК10+57». */
+export function picketLabel(chainageM: number): string {
+  const pk = Math.floor(chainageM / 100)
+  const plus = chainageM - pk * 100
+  return `ПК${pk}+${plus.toFixed(0).padStart(2, '0')}`
+}
+
+/** Manhole label along the collector: ВК-1..n, «Вып.» at the outlet. */
+export function manholeLabels(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => (i === count - 1 ? 'Вып.' : `ВК-${i + 1}`))
+}
+
+export interface SewerScheduleManhole {
+  label: string
+  picket: string
+  /** Full depth to the invert, mm. */
+  depthMm: number
+  pipeDiameterMm: number
+}
+
+export interface SewerSchedulePipe {
+  designation: string
+  diameterMm: number
+  /** Total length of this diameter, m. */
+  lengthM: number
+}
+
+export interface SewerSchedule {
+  /** Manholes along the main collector (from the profile). */
+  manholes: SewerScheduleManhole[]
+  /** Pipe totals by diameter across the whole network. */
+  pipes: SewerSchedulePipe[]
+  totalPipeLengthM: number
+}
+
+/**
+ * Materials schedule (ведомость колодцев и труб) for К1, at the level the model
+ * knows: manhole number, picket, full depth and pipe diameter along the main
+ * collector, plus pipe totals by diameter. The per-element consumption
+ * (КС/ПД/КО rings, скобы, гидроизоляция) comes from a типовой проект such as
+ * ТПР 902-09-22.84 by manhole depth and diameter, which is NOT invented here.
+ */
+export function buildSewerSchedule(result: GravityNetworkResult): SewerSchedule {
+  const stations = result.profile?.stations ?? []
+  const labels = manholeLabels(stations.length)
+  const manholes: SewerScheduleManhole[] = stations.map((s, i) => ({
+    label: labels[i],
+    picket: picketLabel(s.chainageM),
+    depthMm: Math.round(s.depthM * 1000),
+    pipeDiameterMm: s.diameterMm,
+  }))
+
+  const lengthByDiameter = new Map<number, number>()
+  for (const p of result.pipes) {
+    lengthByDiameter.set(p.diameterMm, (lengthByDiameter.get(p.diameterMm) ?? 0) + p.lengthM)
+  }
+  const pipes: SewerSchedulePipe[] = [...lengthByDiameter.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([diameterMm, lengthM]) => ({
+      designation: `Труба безнапорная Ø${diameterMm}`,
+      diameterMm,
+      lengthM: Math.round(lengthM),
+    }))
+  const totalPipeLengthM = Math.round(result.pipes.reduce((s, p) => s + p.lengthM, 0))
+
+  return { manholes, pipes, totalPipeLengthM }
+}

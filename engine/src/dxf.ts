@@ -6,6 +6,7 @@ import { getClause, NORM_DOCUMENTS } from './normregistry'
 import { buildSpecification } from './specification'
 import type { SpecItem } from './specification'
 import type { GravityProfile } from './norms/gravity'
+import { manholeLabels, picketLabel } from './norms/gravity'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -458,11 +459,6 @@ function drawBoreholeColumns(
 
 const SEWER_PROFILE_LAYER = 'К1-профиль'
 
-/** Manhole label along the collector: ВК-1..n from the head, «Вып.» at the outlet. */
-function manholeLabels(count: number): string[] {
-  return Array.from({ length: count }, (_, i) => (i === count - 1 ? 'Вып.' : `ВК-${i + 1}`))
-}
-
 /**
  * Longitudinal profile of the main gravity collector (К1) as a standalone A4
  * sheet: the ground and invert lines with a GOST 21.704 form 2 side table.
@@ -532,13 +528,6 @@ export function buildSewerProfileDxf(input: { projectName: string; profile: Grav
     secondAlignmentPoint: p3(SHEET_MARGIN + 2, topY - 3),
   })
   return dxf.stringify()
-}
-
-/** Picket (ПК) label for a chainage, e.g. 1057 m → «ПК10+57». */
-function picketLabel(chainageM: number): string {
-  const pk = Math.floor(chainageM / 100)
-  const plus = chainageM - pk * 100
-  return `ПК${pk}+${plus.toFixed(0).padStart(2, '0')}`
 }
 
 /** GOST 21.704 form 2 side table under the sewer profile. */

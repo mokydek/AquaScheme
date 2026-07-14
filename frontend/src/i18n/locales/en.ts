@@ -233,6 +233,17 @@ export const en = {
         save: 'Save calculation',
         saving: 'Saving',
         savedAt: 'Saved: {{value}}',
+        scheduleTitle: 'Manhole schedule',
+        pipeScheduleTitle: 'Pipe schedule',
+        thPicket: 'Chainage',
+        thWellDepth: 'Depth, mm',
+        thWellDiameter: 'Ø, mm',
+        thDesignation: 'Designation',
+        thPipeLength: 'Length, m',
+        pipeTotal: 'Total pipe: {{value}} m',
+        scheduleNote:
+          'The per-element manhole material consumption (КС rings, ПД/ПП slabs, КО cone, steps, waterproofing, concrete) comes from a typical project such as ТПР 902-09-22.84 by manhole depth and diameter. That typical project is not in the supplied set; the app does not fill in element counts rather than invent them. Send ТПР 902-09 for the full schedule.',
+        exportSchedule: 'Download schedule XLSX',
         stormPending:
           'The storm (K2) gravity hydraulics are implemented (Manning, filling, velocities), but the rain runoff calculation needs climate parameters (rain intensity q20 by region). Those are absent from the supplied norm set and have been requested from you. K2 turns on once they are provided',
       },
