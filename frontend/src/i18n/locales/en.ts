@@ -240,7 +240,10 @@ export const en = {
         thWellDiameter: 'Ø, mm',
         thDesignation: 'Designation',
         thPipeLength: 'Length, m',
+        thAgsk: 'АГСК-3 section',
         pipeTotal: 'Total pipe: {{value}} m',
+        agskNote:
+          'The product code references the АГСК-3 catalogue section (RK list of construction materials). The exact position by size is selected in that catalogue section.',
         scheduleNote:
           'The per-element manhole material consumption (КС rings, ПД/ПП slabs, КО cone, steps, waterproofing, concrete) comes from a typical project such as ТПР 902-09-22.84 by manhole depth and diameter. That typical project is not in the supplied set; the app does not fill in element counts rather than invent them. Send ТПР 902-09 for the full schedule.',
         exportSchedule: 'Download schedule XLSX',

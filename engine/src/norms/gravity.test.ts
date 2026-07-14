@@ -225,6 +225,7 @@ describe('materials schedule (ведомость колодцев и труб)',
     expect(schedule.manholes[0].depthMm).toBeGreaterThanOrEqual(1200)
     expect(schedule.manholes[0].picket).toMatch(/^ПК/)
     expect(schedule.pipes.every((p) => p.designation.includes('безнапорная'))).toBe(true)
+    expect(schedule.pipes.every((p) => p.agskCode === '241-7')).toBe(true) // ЖБ раздел АГСК
     expect(schedule.totalPipeLengthM).toBe(200)
   })
 })

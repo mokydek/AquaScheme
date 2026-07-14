@@ -1,5 +1,6 @@
 import type { ExportInput } from './exportdata'
 import { MATERIAL_LABELS } from './exportdata'
+import { agskSectionForFitting, agskSectionForPipe } from './norms/agsk'
 
 /** A bill of materials line. */
 export interface SpecItem {
@@ -28,6 +29,11 @@ export function buildSpecification(input: ExportInput): SpecItem[] {
     )
   }
 
+  // «Код продукции» (ГОСТ 21.110) references the АГСК-3 catalogue section for
+  // the material category; the exact per-size position is selected from that
+  // section by the engineer (we do not invent 7-digit position codes).
+  const pipeAgsk = agskSectionForPipe(input.material.primary).code
+
   const items: SpecItem[] = []
   let pos = 0
   const diameters = [...lengthByDiameter.keys()].sort((a, b) => a - b)
@@ -39,20 +45,21 @@ export function buildSpecification(input: ExportInput): SpecItem[] {
       spec: `Ø${d} ${pn}`,
       unit: 'м',
       quantity: Math.ceil(lengthByDiameter.get(d) ?? 0),
+      code: pipeAgsk,
     })
   }
 
-  const counts: Array<[string, string, number]> = [
-    ['Гидрант пожарный подземный', 'ГОСТ 8220', input.fittings.counts.hydrants],
-    ['Задвижка запорная', 'фланцевая', input.fittings.counts.valves],
-    ['Вантуз автоматический', '', input.fittings.counts.airValves],
-    ['Выпуск (сброс)', '', input.fittings.counts.washouts],
-    ['Колодец водопроводный', 'сборный ж/б', input.fittings.counts.wells],
+  const counts: Array<[string, string, number, string]> = [
+    ['Гидрант пожарный подземный', 'ГОСТ 8220', input.fittings.counts.hydrants, agskSectionForFitting('hydrant').code],
+    ['Задвижка запорная', 'фланцевая', input.fittings.counts.valves, agskSectionForFitting('valve').code],
+    ['Вантуз автоматический', '', input.fittings.counts.airValves, agskSectionForFitting('airValve').code],
+    ['Выпуск (сброс)', '', input.fittings.counts.washouts, agskSectionForFitting('washout').code],
+    ['Колодец водопроводный', 'сборный ж/б', input.fittings.counts.wells, agskSectionForFitting('well').code],
   ]
-  for (const [name, spec, quantity] of counts) {
+  for (const [name, spec, quantity, code] of counts) {
     if (quantity <= 0) continue
     pos++
-    items.push({ pos, name, spec, unit: 'шт', quantity })
+    items.push({ pos, name, spec, unit: 'шт', quantity, code })
   }
 
   if (input.material.needsCompensators) {

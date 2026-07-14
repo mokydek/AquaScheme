@@ -135,6 +135,9 @@ describe('specification', () => {
     const pipeItems = items.filter((i) => i.name.includes('Труба'))
     expect(pipeItems.length).toBeGreaterThan(0)
     expect(pipeItems.every((i) => i.unit === 'м' && i.quantity > 0)).toBe(true)
+    // АГСК-3: «Код продукции» filled with the catalogue section (241-2 for ПЭ).
+    expect(pipeItems.every((i) => i.code === '241-2')).toBe(true)
+    expect(items.find((i) => i.name.includes('Гидрант'))?.code).toBe('244-4')
 
     const hydrant = items.find((i) => i.name.includes('Гидрант'))
     expect(hydrant?.quantity).toBe(input.fittings.counts.hydrants)

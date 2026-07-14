@@ -304,6 +304,7 @@ export function GravitySection({
                       <th>{t('project.gravity.thDesignation')}</th>
                       <th className="num">{t('project.gravity.thWellDiameter')}</th>
                       <th className="num">{t('project.gravity.thPipeLength')}</th>
+                      <th>{t('project.gravity.thAgsk')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -312,12 +313,14 @@ export function GravitySection({
                         <td>{p.designation}</td>
                         <td className="num mono">{p.diameterMm}</td>
                         <td className="num mono">{p.lengthM}</td>
+                        <td className="mono">{p.agskCode}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <p className="stat-line">{t('project.gravity.pipeTotal', { value: schedule.totalPipeLengthM })}</p>
+              <p className="hint">{t('project.gravity.agskNote')}</p>
               <p className="hint">{t('project.gravity.scheduleNote')}</p>
               <div className="section-actions" style={{ marginTop: 12 }}>
                 <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSchedule()}>

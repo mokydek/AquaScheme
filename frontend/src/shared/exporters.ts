@@ -57,6 +57,7 @@ export async function generateSewerScheduleXlsx(
     'Обозначение': p.designation,
     'Ø, мм': p.diameterMm,
     'Длина, м': p.lengthM,
+    'Код АГСК-3': p.agskCode,
   }))
   XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(pipes), 'Трубы')
   return XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array

@@ -11,6 +11,7 @@ import {
   type SewerNetworkLevel,
 } from './sewer'
 import type { TracedNetwork } from '../trace'
+import { agskSectionForGravityPipe } from './agsk'
 
 /**
  * Gravity (free-surface) hydraulics for sewer (К1) and storm (К2) networks
@@ -516,6 +517,8 @@ export interface SewerSchedulePipe {
   diameterMm: number
   /** Total length of this diameter, m. */
   lengthM: number
+  /** АГСК-3 catalogue section code for the pipe category. */
+  agskCode: string
 }
 
 export interface SewerSchedule {
@@ -547,12 +550,14 @@ export function buildSewerSchedule(result: GravityNetworkResult): SewerSchedule 
   for (const p of result.pipes) {
     lengthByDiameter.set(p.diameterMm, (lengthByDiameter.get(p.diameterMm) ?? 0) + p.lengthM)
   }
+  const gravityAgsk = agskSectionForGravityPipe('concrete').code
   const pipes: SewerSchedulePipe[] = [...lengthByDiameter.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([diameterMm, lengthM]) => ({
       designation: `Труба безнапорная Ø${diameterMm}`,
       diameterMm,
       lengthM: Math.round(lengthM),
+      agskCode: gravityAgsk,
     }))
   const totalPipeLengthM = Math.round(result.pipes.reduce((s, p) => s + p.lengthM, 0))
 
