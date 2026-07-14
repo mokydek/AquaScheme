@@ -34,6 +34,17 @@ export interface ExportInput {
   systemType?: SystemType
 }
 
+/** Input for the situational scheme sheet (ситуационная схема, без масштаба). */
+export interface SituationInput {
+  projectName: string
+  systemType?: SystemType
+  network: TracedNetwork
+  buildings?: Array<{ x: number; y: number; label?: string }>
+  surveyPoints?: Array<{ x: number; y: number }>
+  /** pipeId → diameter, mm, for labels along the route. */
+  pipeDiameterMm?: Map<string, number>
+}
+
 export const MATERIAL_LABELS: Record<string, string> = {
   PE100_SDR17: 'ПЭ100 SDR17',
   PE100_SDR11: 'ПЭ100 SDR11',

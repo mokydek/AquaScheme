@@ -31,6 +31,7 @@ import {
   generateGeneralDataDxf,
   generatePdf,
   generateProjectDocsPdf,
+  generateSituationDxf,
   generateSpecSheetDxf,
   generateSpecXlsx,
   zipBundle,
@@ -39,7 +40,7 @@ import type { RegionDatasetContent } from '../../shared/regions'
 import type { SourceData } from './ProjectMap'
 import { Panel } from './Panel'
 
-type Job = 'drawing' | 'pdf' | 'spec' | 'acts' | 'docs' | 'bundle'
+type Job = 'drawing' | 'pdf' | 'spec' | 'acts' | 'docs' | 'situation' | 'bundle'
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 function downloadBlob(filename: string, blob: Blob): void {
@@ -236,6 +237,29 @@ export function ExportSection({
     }
   }
 
+  const exportSituation = async () => {
+    setBusy('situation')
+    setNotice(null)
+    try {
+      const input = assemble()
+      const dxf = await generateSituationDxf({
+        projectName,
+        systemType,
+        network: input.network,
+        buildings: input.buildings.map((b) => ({ x: b.x, y: b.y, label: b.label })),
+        surveyPoints: input.surveyPoints,
+        pipeDiameterMm: new Map(input.sizing.pipes.map((p) => [p.id, p.nominalMm])),
+      })
+      const blob = new Blob([dxf], { type: 'application/dxf' })
+      downloadBlob(`${slug}_ситуационная_схема.dxf`, blob)
+      setNotice('done')
+    } catch {
+      setNotice('error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const exportActs = async () => {
     setBusy('acts')
     setNotice(null)
@@ -269,16 +293,26 @@ export function ExportSection({
     setNotice(null)
     try {
       const input = assemble()
-      const [{ dxf, dwg, converterFailed }, generalDxf, specDxf, pdf, xlsx, actsPdf, docsPdf] = await Promise.all([
-        buildDrawings(input),
-        generateGeneralDataDxf(input),
-        generateSpecSheetDxf(input),
-        generatePdf(input),
-        generateSpecXlsx(input),
-        generateActFormsPdf(input),
-        generateProjectDocsPdf(input),
-      ])
+      const [{ dxf, dwg, converterFailed }, generalDxf, specDxf, pdf, xlsx, actsPdf, docsPdf, situationDxf] =
+        await Promise.all([
+          buildDrawings(input),
+          generateGeneralDataDxf(input),
+          generateSpecSheetDxf(input),
+          generatePdf(input),
+          generateSpecXlsx(input),
+          generateActFormsPdf(input),
+          generateProjectDocsPdf(input),
+          generateSituationDxf({
+            projectName,
+            systemType,
+            network: input.network,
+            buildings: input.buildings.map((b) => ({ x: b.x, y: b.y, label: b.label })),
+            surveyPoints: input.surveyPoints,
+            pipeDiameterMm: new Map(input.sizing.pipes.map((p) => [p.id, p.nominalMm])),
+          }),
+        ])
       const files: Record<string, Blob | Uint8Array | string> = {
+        [`${slug}_00_ситуационная_схема.dxf`]: situationDxf,
         [`${slug}_00_общие_данные.dxf`]: generalDxf,
         [`${slug}_В1.dxf`]: dxf,
         [`${slug}_спецификация_лист.dxf`]: specDxf,
@@ -348,6 +382,9 @@ export function ExportSection({
         </button>
         <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportSpec()}>
           {label('spec', 'project.export.spec')}
+        </button>
+        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportSituation()}>
+          {label('situation', 'project.export.situation')}
         </button>
         <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportDocs()}>
           {label('docs', 'project.export.docs')}

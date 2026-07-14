@@ -1,5 +1,5 @@
 import { Colors, DxfWriter, LineTypes, point3d, TextHorizontalAlignment } from '@tarikjabiri/dxf'
-import type { ExportInput } from './exportdata'
+import type { ExportInput, SituationInput } from './exportdata'
 import { materialLabel, MATERIAL_LABELS } from './exportdata'
 import type { NetworkNode, TracedNetwork } from './trace'
 import { getClause, NORM_DOCUMENTS } from './normregistry'
@@ -742,4 +742,133 @@ function drawFlowArrow(dxf: DxfWriter, x: number, y: number, dx: number, dy: num
   const rightY = tipY - uy * size - ux * (size * 0.5)
   dxf.addLine(p3(tipX, tipY), p3(leftX, leftY))
   dxf.addLine(p3(tipX, tipY), p3(rightX, rightY))
+}
+
+// ============================================================
+// Situational scheme (ситуационная схема). GOST 21.704-2011 п. 4.3: drawn
+// WITHOUT scale, the designed route highlighted with a thick main line. Fits
+// the whole network (and light context) into one A3 sheet; the interactive
+// map already shows the route over a city basemap, this is the deliverable.
+// ============================================================
+
+const SITUATION_LAYERS = {
+  route: 'Ситуация-трасса',
+  context: 'Ситуация-подоснова',
+  labels: 'Ситуация-подписи',
+} as const
+
+/** Draws a segment as a thick main line (three offset strokes). */
+function thickLine(dxf: DxfWriter, ax: number, ay: number, bx: number, by: number, w: number): void {
+  const len = Math.hypot(bx - ax, by - ay)
+  if (len < 1e-9) return
+  const px = (-(by - ay) / len) * w
+  const py = ((bx - ax) / len) * w
+  for (const s of [-1, 0, 1]) {
+    dxf.addLine(p3(ax + px * s, ay + py * s), p3(bx + px * s, by + py * s))
+  }
+}
+
+export function buildSituationDxf(input: SituationInput): string {
+  const dxf = new DxfWriter()
+  dxf.addLayer(SITUATION_LAYERS.context, 8, LineTypes.Continuous)
+  dxf.addLayer(SITUATION_LAYERS.route, Colors.Red, LineTypes.Continuous)
+  dxf.addLayer(SITUATION_LAYERS.labels, Colors.Black, LineTypes.Continuous)
+  const topY = drawSheetFrame(dxf, 'Ситуационная схема', input.projectName)
+
+  // Fit-to-sheet transform (без масштаба): bounding box of all geometry mapped
+  // into the content area, preserving aspect ratio.
+  const pts: Array<{ x: number; y: number }> = [
+    ...input.network.nodes,
+    ...(input.buildings ?? []),
+    ...(input.surveyPoints ?? []),
+  ]
+  if (pts.length === 0) {
+    dxf.addText(p3(SHEET_MARGIN + 4, topY - 8), 3, 'Нет данных для схемы', {
+      secondAlignmentPoint: p3(SHEET_MARGIN + 4, topY - 8),
+    })
+    return dxf.stringify()
+  }
+  const minX = Math.min(...pts.map((p) => p.x))
+  const maxX = Math.max(...pts.map((p) => p.x))
+  const minY = Math.min(...pts.map((p) => p.y))
+  const maxY = Math.max(...pts.map((p) => p.y))
+  const boxL = SHEET_MARGIN + 6
+  const boxR = SHEET_W - SHEET_MARGIN - 6
+  const boxB = SHEET_MARGIN + 36 // leave room for the title block
+  const boxT = topY - 8
+  const spanX = Math.max(maxX - minX, 1)
+  const spanY = Math.max(maxY - minY, 1)
+  const scale = Math.min((boxR - boxL) / spanX, (boxT - boxB) / spanY)
+  const cx = (boxL + boxR) / 2 - ((minX + maxX) / 2) * scale
+  const cy = (boxB + boxT) / 2 - ((minY + maxY) / 2) * scale
+  const tx = (x: number) => cx + x * scale
+  const ty = (y: number) => cy + y * scale
+
+  const nodeById = new Map(input.network.nodes.map((n) => [n.id, n]))
+
+  // Light context: survey base and buildings.
+  dxf.setCurrentLayerName(SITUATION_LAYERS.context)
+  for (const s of input.surveyPoints ?? []) {
+    const x = tx(s.x)
+    const y = ty(s.y)
+    dxf.addLine(p3(x - 0.8, y), p3(x + 0.8, y))
+    dxf.addLine(p3(x, y - 0.8), p3(x, y + 0.8))
+  }
+  for (const b of input.buildings ?? []) {
+    dxf.addRectangle({ x: tx(b.x) - 1.2, y: ty(b.y) - 0.9 }, { x: tx(b.x) + 1.2, y: ty(b.y) + 0.9 })
+  }
+
+  // Designed route: thick main line (проектируемый участок, п. 4.3).
+  dxf.setCurrentLayerName(SITUATION_LAYERS.route)
+  for (const p of input.network.pipes) {
+    const a = nodeById.get(p.fromNode)
+    const b = nodeById.get(p.toNode)
+    if (!a || !b) continue
+    thickLine(dxf, tx(a.x), ty(a.y), tx(b.x), ty(b.y), 0.35)
+  }
+  // Diameter labels along the route (like the professional situational scheme).
+  if (input.pipeDiameterMm) {
+    dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
+    let last = 0
+    for (const p of input.network.pipes) {
+      const d = input.pipeDiameterMm.get(p.id)
+      const a = nodeById.get(p.fromNode)
+      const b = nodeById.get(p.toNode)
+      if (!d || !a || !b || d === last) continue
+      last = d
+      dxf.addText(p3(tx((a.x + b.x) / 2) + 1, ty((a.y + b.y) / 2) + 1), 2, `Ø${d}`, {
+        secondAlignmentPoint: p3(tx((a.x + b.x) / 2) + 1, ty((a.y + b.y) / 2) + 1),
+      })
+    }
+  }
+
+  // Source / outlet marker and label.
+  const src = input.network.nodes.find((n) => n.kind === 'source')
+  if (src) {
+    const label = input.systemType === 'water' ? 'ВОС' : 'Выпуск'
+    dxf.setCurrentLayerName(SITUATION_LAYERS.route)
+    dxf.addCircle(p3(tx(src.x), ty(src.y)), 2)
+    dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
+    dxf.addText(p3(tx(src.x) + 3, ty(src.y) + 3), 2.6, label, {
+      secondAlignmentPoint: p3(tx(src.x) + 3, ty(src.y) + 3),
+    })
+  }
+
+  // North arrow, top-left of the content area.
+  const nx = boxL + 6
+  const ny = boxT - 4
+  dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
+  dxf.addLine(p3(nx, ny - 8), p3(nx, ny))
+  dxf.addLine(p3(nx, ny), p3(nx - 1.6, ny - 2.4))
+  dxf.addLine(p3(nx, ny), p3(nx + 1.6, ny - 2.4))
+  dxf.addText(p3(nx, ny + 1.5), 2.4, 'С', {
+    horizontalAlignment: TextHorizontalAlignment.Center,
+    secondAlignmentPoint: p3(nx, ny + 1.5),
+  })
+
+  dxf.setCurrentLayerName(SHEET_LAYER)
+  dxf.addText(p3(SHEET_MARGIN + 2, topY - 3), 2, `Без масштаба${shortClause('drawing.generalData')}. Проектируемый участок выделен толстой линией`, {
+    secondAlignmentPoint: p3(SHEET_MARGIN + 2, topY - 3),
+  })
+  return dxf.stringify()
 }

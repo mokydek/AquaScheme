@@ -40,6 +40,14 @@ export async function generateSewerPlanDxf(input: {
   return buildSewerPlanDxf(input)
 }
 
+/** Situational scheme (ситуационная схема, без масштаба) as DXF. */
+export async function generateSituationDxf(
+  input: import('@aquascheme/engine').SituationInput,
+): Promise<string> {
+  const { buildSituationDxf } = await import('@aquascheme/engine/dxf')
+  return buildSituationDxf(input)
+}
+
 /** Sewer (К1) manhole and pipe schedule as an XLSX byte array (two sheets). */
 export async function generateSewerScheduleXlsx(
   schedule: import('@aquascheme/engine').SewerSchedule,

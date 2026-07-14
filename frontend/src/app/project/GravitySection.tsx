@@ -5,7 +5,12 @@ import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
-import { generateSewerPlanDxf, generateSewerProfileDxf, generateSewerScheduleXlsx } from '../../shared/exporters'
+import {
+  generateSewerPlanDxf,
+  generateSewerProfileDxf,
+  generateSewerScheduleXlsx,
+  generateSituationDxf,
+} from '../../shared/exporters'
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
@@ -164,6 +169,25 @@ export function GravitySection({
     }
   }
 
+  const exportSituation = async () => {
+    if (!result) return
+    setExporting(true)
+    try {
+      const network = networkFromRows(nodes, pipes)
+      const pipeDiameterMm = new Map(result.pipes.map((p) => [p.id, p.diameterMm]))
+      const dxf = await generateSituationDxf({
+        projectName,
+        systemType,
+        network,
+        buildings: buildings.map((b) => ({ x: b.x, y: b.y, label: b.label ?? undefined })),
+        pipeDiameterMm,
+      })
+      downloadText(`${slug}_ситуационная_схема.dxf`, dxf, 'application/dxf')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.gravity.hint')}</p>
@@ -221,6 +245,9 @@ export function GravitySection({
           <div className="section-actions" style={{ marginTop: 12 }}>
             <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportPlan()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportPlan')}
+            </button>
+            <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSituation()}>
+              {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSituation')}
             </button>
           </div>
 

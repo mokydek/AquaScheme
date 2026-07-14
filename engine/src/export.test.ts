@@ -5,7 +5,14 @@ import { placeFittings, selectMaterials } from './equipment'
 import { NORMATIVE_DEFAULTS } from './norms'
 import { sizeNetwork } from './sizing'
 import { traceNetwork } from './trace'
-import { buildGeneralDataDxf, buildNetworkDxf, buildSewerPlanDxf, buildSewerProfileDxf, buildSpecSheetDxf } from './dxf'
+import {
+  buildGeneralDataDxf,
+  buildNetworkDxf,
+  buildSewerPlanDxf,
+  buildSewerProfileDxf,
+  buildSituationDxf,
+  buildSpecSheetDxf,
+} from './dxf'
 import { solveGravityNetwork } from './norms/gravity'
 import type { TracedNetwork } from './trace'
 import { buildSpecification, specificationToCsv } from './specification'
@@ -197,6 +204,18 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
     expect(plan).toContain('ВК-1')
     expect(plan).toContain('Вып.')
     expect(plan).toContain('SECTION')
+
+    const situation = buildSituationDxf({
+      projectName: 'Тест К1',
+      systemType: 'sewer',
+      network,
+      buildings: [{ x: 200, y: 0, label: 'Д1' }],
+      pipeDiameterMm: new Map(gravity.pipes.map((p) => [p.id, p.diameterMm])),
+    })
+    expect(situation).toContain('Ситуационная схема')
+    expect(situation).toContain('Без масштаба')
+    expect(situation).toContain('Выпуск')
+    expect(situation).toContain('SECTION')
   })
 })
 
