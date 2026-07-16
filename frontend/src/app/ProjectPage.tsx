@@ -20,6 +20,7 @@ import { ResultsSection } from './project/ResultsSection'
 import { ExportSection } from './project/ExportSection'
 import { ImportSection } from './project/ImportSection'
 import { ParcelsSection } from './project/ParcelsSection'
+import { BasisSection } from './project/BasisSection'
 import { CatalogSection } from './project/CatalogSection'
 import { fetchCatalogs } from '../shared/catalog'
 import type { CatalogRow } from '../shared/catalog'
@@ -372,6 +373,7 @@ export function ProjectPage() {
           </p>
         )}
         <div className="panels">
+          <BasisSection projectId={project.id} dataset={datasets.basis} onSaved={load} />
           <ParcelsSection
             projectId={project.id}
             parcels={parcels}

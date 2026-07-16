@@ -216,6 +216,9 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
     expect(situation).toContain('Ситуационная схема')
     expect(situation).toContain('Без масштаба')
     expect(situation).toContain('Выпуск')
+    // Генплановская manner: legend block on the sheet.
+    expect(situation).toContain('Условные обозначения')
+    expect(situation).toContain('коридор сетей (проектируемая трасса)')
     expect(situation).toContain('SECTION')
 
     // The К1 general data sheet mirrors the album's sheet 2: drawing list,

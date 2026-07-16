@@ -16,6 +16,7 @@ import {
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
+import { SchemeView } from './SchemeView'
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -111,6 +112,15 @@ export function GravitySection({
   }, [result])
 
   const schedule = useMemo(() => (result ? buildSewerSchedule(result) : null), [result])
+
+  // Shared geometry for the on-screen scheme and the DXF exports.
+  const schemeModel = useMemo(() => {
+    if (!result) return null
+    return {
+      network: networkFromRows(nodes, pipes),
+      pipeDiameterMm: new Map(result.pipes.map((p) => [p.id, p.diameterMm])),
+    }
+  }, [result, nodes, pipes])
 
   // The full К1 sheet set, mirroring the professional НК album: общие данные,
   // ситуационная схема, план, продольный профиль, ведомость колодцев и труб.
@@ -246,6 +256,18 @@ export function GravitySection({
           <p className="stat-line ok">
             {t('project.gravity.outletFlow', { value: result.outletFlowLps.toFixed(2) })}
           </p>
+
+          {schemeModel && (
+            <div style={{ marginTop: 12 }}>
+              <SchemeView
+                title={t('project.gravity.schemeTitle')}
+                network={schemeModel.network}
+                buildings={buildings.map((b) => ({ x: b.x, y: b.y, label: b.label }))}
+                pipeDiameterMm={schemeModel.pipeDiameterMm}
+                outletFlowLps={result.outletFlowLps}
+              />
+            </div>
+          )}
           <div className="section-actions" style={{ marginTop: 4 }}>
             <button type="button" className="btn btn-sm" disabled={saving} onClick={() => void saveRun()}>
               {saving ? t('project.gravity.saving') : t('project.gravity.save')}

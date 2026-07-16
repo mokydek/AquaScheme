@@ -10,6 +10,7 @@ export type DatasetKind =
   | 'equipment'
   | 'region'
   | 'drainage'
+  | 'basis'
 
 export interface DatasetRow {
   id: string

@@ -771,8 +771,10 @@ function thickLine(dxf: DxfWriter, ax: number, ay: number, bx: number, by: numbe
 
 export function buildSituationDxf(input: SituationInput): string {
   const dxf = new DxfWriter()
-  dxf.addLayer(SITUATION_LAYERS.context, 8, LineTypes.Continuous)
-  dxf.addLayer(SITUATION_LAYERS.route, Colors.Red, LineTypes.Continuous)
+  // Colours follow the генплановская «Схема ливневой канализации»: red street
+  // context, the designed corridor as a thick BLUE line.
+  dxf.addLayer(SITUATION_LAYERS.context, Colors.Red, LineTypes.Continuous)
+  dxf.addLayer(SITUATION_LAYERS.route, Colors.Blue, LineTypes.Continuous)
   dxf.addLayer(SITUATION_LAYERS.labels, Colors.Black, LineTypes.Continuous)
   const topY = drawSheetFrame(dxf, 'Ситуационная схема', input.projectName)
 
@@ -827,7 +829,7 @@ export function buildSituationDxf(input: SituationInput): string {
     if (!a || !b) continue
     thickLine(dxf, tx(a.x), ty(a.y), tx(b.x), ty(b.y), 0.35)
   }
-  // Diameter labels along the route (like the professional situational scheme).
+  // Diameter labels rotated along the route (генплановская manner).
   if (input.pipeDiameterMm) {
     dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
     let last = 0
@@ -837,8 +839,13 @@ export function buildSituationDxf(input: SituationInput): string {
       const b = nodeById.get(p.toNode)
       if (!d || !a || !b || d === last) continue
       last = d
-      dxf.addText(p3(tx((a.x + b.x) / 2) + 1, ty((a.y + b.y) / 2) + 1), 2, `Ø${d}`, {
-        secondAlignmentPoint: p3(tx((a.x + b.x) / 2) + 1, ty((a.y + b.y) / 2) + 1),
+      const mx = (tx(a.x) + tx(b.x)) / 2
+      const my = (ty(a.y) + ty(b.y)) / 2
+      let angle = (Math.atan2(ty(b.y) - ty(a.y), tx(b.x) - tx(a.x)) * 180) / Math.PI
+      if (angle > 90 || angle < -90) angle += 180
+      dxf.addText(p3(mx, my + 1.2), 2, `Ø${d}`, {
+        rotation: angle,
+        secondAlignmentPoint: p3(mx, my + 1.2),
       })
     }
   }
@@ -866,6 +873,27 @@ export function buildSituationDxf(input: SituationInput): string {
     horizontalAlignment: TextHorizontalAlignment.Center,
     secondAlignmentPoint: p3(nx, ny + 1.5),
   })
+
+  // Legend (условные обозначения), bottom-left as on the генплановская scheme.
+  const lgX = boxL + 2
+  let lgY = boxB + 16
+  dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
+  dxf.addText(p3(lgX, lgY), 2.2, 'Условные обозначения', { secondAlignmentPoint: p3(lgX, lgY) })
+  lgY -= 5
+  dxf.setCurrentLayerName(SITUATION_LAYERS.context)
+  dxf.addLine(p3(lgX, lgY + 0.8), p3(lgX + 10, lgY + 0.8))
+  dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
+  dxf.addText(p3(lgX + 12, lgY), 1.8, 'подоснова (здания, красные линии)', { secondAlignmentPoint: p3(lgX + 12, lgY) })
+  lgY -= 5
+  dxf.setCurrentLayerName(SITUATION_LAYERS.route)
+  thickLine(dxf, lgX, lgY + 0.8, lgX + 10, lgY + 0.8, 0.35)
+  dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
+  dxf.addText(p3(lgX + 12, lgY), 1.8, 'коридор сетей (проектируемая трасса)', { secondAlignmentPoint: p3(lgX + 12, lgY) })
+  lgY -= 5
+  dxf.setCurrentLayerName(SITUATION_LAYERS.route)
+  dxf.addRectangle({ x: lgX + 3, y: lgY - 0.5 }, { x: lgX + 7, y: lgY + 2 })
+  dxf.setCurrentLayerName(SITUATION_LAYERS.labels)
+  dxf.addText(p3(lgX + 12, lgY), 1.8, 'выпуск / очистные сооружения', { secondAlignmentPoint: p3(lgX + 12, lgY) })
 
   dxf.setCurrentLayerName(SHEET_LAYER)
   dxf.addText(p3(SHEET_MARGIN + 2, topY - 3), 2, `Без масштаба${shortClause('drawing.generalData')}. Проектируемый участок выделен толстой линией`, {
