@@ -432,6 +432,7 @@ export const kk = {
         missing: 'жүктелмеген',
         saved: 'Файл сақталды',
         migrationNeeded: 'Supabase-те 0011 миграциясы қажет (SQL Editor), сосын қайта жүктеңіз',
+        bucketMissing: 'Supabase-те source-files қоймасы жоқ. Storage бөлімінде (private) құрыңыз да қайталаңыз',
         dwgNote: 'DWG негіздер желіні немесе топонегізді импорттау кезінде конвертация сервисі арқылы DXF-ке айналдырылады',
       },
       parcels: {

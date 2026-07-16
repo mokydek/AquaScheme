@@ -41,7 +41,7 @@ export function BasisSection({
   const { t } = useTranslation()
   const { session } = useAuth()
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [notice, setNotice] = useState<'saved' | 'error' | 'migrationNeeded' | null>(null)
+  const [notice, setNotice] = useState<'saved' | 'error' | 'migrationNeeded' | 'bucketMissing' | null>(null)
 
   const files = ((dataset?.content ?? { files: {} }) as BasisContent).files ?? {}
   const uploadedCount = BASIS_ITEMS.filter((i) => files[i.id]).length
@@ -52,17 +52,27 @@ export function BasisSection({
     setBusyId(itemId)
     setNotice(null)
     try {
-      const path = `${session.user.id}/${projectId}/basis_${itemId}_${file.name}`
+      // Supabase Storage keys allow only a safe ASCII subset, so a Cyrillic /
+      // spaced / comma filename (e.g. «...ОС 3-4, 3-3, 3-8 (1).pdf») is rejected
+      // with 400. Use a deterministic ASCII key and keep the original name only
+      // for display in the dataset.
+      const ext = (file.name.includes('.') ? file.name.split('.').pop() ?? '' : '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 8)
+        .toLowerCase()
+      const path = `${session.user.id}/${projectId}/basis_${itemId}${ext ? `.${ext}` : ''}`
       const upload = await supabase.storage
         .from('source-files')
-        .upload(path, file, { upsert: true })
+        .upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
       if (upload.error) throw upload.error
       await saveDataset(projectId, 'basis', { files: { ...files, [itemId]: file.name } })
       setNotice('saved')
       await onSaved()
     } catch (error) {
-      const code = (error as { code?: string })?.code
-      setNotice(code === '23514' ? 'migrationNeeded' : 'error')
+      const err = error as { code?: string; message?: string }
+      if (err.code === '23514') setNotice('migrationNeeded')
+      else if ((err.message ?? '').toLowerCase().includes('bucket')) setNotice('bucketMissing')
+      else setNotice('error')
     } finally {
       setBusyId(null)
       event.target.value = ''
@@ -104,6 +114,7 @@ export function BasisSection({
       </div>
       {notice === 'saved' && <p className="stat-line ok">{t('project.basis.saved')}</p>}
       {notice === 'migrationNeeded' && <p className="notice error">{t('project.basis.migrationNeeded')}</p>}
+      {notice === 'bucketMissing' && <p className="notice error">{t('project.basis.bucketMissing')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
       <p className="hint" style={{ marginTop: 8 }}>{t('project.basis.dwgNote')}</p>
     </Panel>

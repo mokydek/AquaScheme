@@ -432,6 +432,7 @@ export const en = {
         missing: 'not uploaded',
         saved: 'File saved',
         migrationNeeded: 'Apply migration 0011 in Supabase (SQL Editor), then retry',
+        bucketMissing: 'The source-files storage bucket is missing in Supabase. Create it under Storage (private), then retry',
         dwgNote: 'DWG bases (e.g. the overall DWG plan) are converted to DXF via the converter service when importing the network or the survey base',
       },
       parcels: {

@@ -432,6 +432,7 @@ export const ru = {
         missing: 'не загружен',
         saved: 'Файл сохранён',
         migrationNeeded: 'Нужна миграция 0011 в Supabase (SQL Editor), затем повторите загрузку',
+        bucketMissing: 'В Supabase нет бакета хранилища source-files. Создайте его в разделе Storage (private), затем повторите',
         dwgNote: 'DWG подложки (например, общий план в DWG) конвертируются в DXF через сервис конвертации при импорте сети или топоосновы',
       },
       parcels: {
