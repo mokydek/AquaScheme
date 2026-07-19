@@ -552,6 +552,18 @@ export const NORM_REGISTRY: NormClause[] = [
     status: 'unverified',
   },
   {
+    id: 'route.redLines',
+    documentCode: 'ТЗ на проектирование',
+    clause: 'п. 6.1',
+    requirement:
+      'Коллектор укладывать в границах красных линий улиц и дорог в соответствии с ПДП района; трасса — в коридоре земельного отвода по акту выбора',
+    valueText: 'трасса в границах коридора',
+    units: '—',
+    appliesSystem: STORM,
+    appliesWork: BOTH_WORK,
+    status: 'unverified',
+  },
+  {
     id: 'crossing.casing',
     documentCode: 'ТЗ на проектирование',
     clause: 'п. 6.1',
