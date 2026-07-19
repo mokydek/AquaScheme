@@ -3,6 +3,8 @@ import {
   gridToGeologyRows,
   guessGeologyField,
   parseGeologyRows,
+  parseGroundwaterRange,
+  parseIgeDescriptions,
   summarizeGeology,
 } from './geology'
 
@@ -98,6 +100,30 @@ describe('gridToGeologyRows', () => {
     const parsed = parseGeologyRows(rows)
     expect(parsed.boreholes).toHaveLength(1)
     expect(parsed.boreholes[0].layers).toHaveLength(2)
+  })
+})
+
+describe('parseIgeDescriptions / parseGroundwaterRange (prose reports)', () => {
+  const PROSE = `
+  ИГЭ 0 – растительный слой почвы. Мощность слоя 0,4м.
+  ИГЭ 2 – суглинок коричневого цвета, от твердой до мягкопластичной консистенции с прослоями песка. Вскрыт с глубины 0,0-3,0м. Мощность слоя 3,0-5,6м.
+  ИГЭ 2-1 – суглинок заиленный, серого цвета. Вскрыт с глубины 3,5-5,7м. Мощность слоя 1,1-7,8м.
+  Подземные воды на участке проектирования вскрыты на глубине 0,5-5,6м (абсолютные отметки).
+  `
+  it('reads ИГЭ codes, names, opening depth and thickness from prose', () => {
+    const ige = parseIgeDescriptions(PROSE)
+    expect(ige.map((i) => i.code)).toEqual(['0', '2', '2-1'])
+    expect(ige[0].thicknessM).toBe(0.4)
+    expect(ige[1].name).toContain('суглинок коричневого цвета')
+    expect(ige[1].openedFromM).toBe(0)
+    expect(ige[1].thicknessM).toBe(5.6)
+    expect(ige[2].code).toBe('2-1')
+    expect(ige[2].openedFromM).toBe(3.5)
+  })
+
+  it('reads the groundwater depth range from prose', () => {
+    expect(parseGroundwaterRange(PROSE)).toEqual({ minDepthM: 0.5, maxDepthM: 5.6 })
+    expect(parseGroundwaterRange('текст без воды')).toBeNull()
   })
 })
 

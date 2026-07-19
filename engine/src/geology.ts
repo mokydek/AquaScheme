@@ -328,6 +328,67 @@ export function parseGeologyRows(rows: Array<Record<string, unknown>>): GeologyP
   return { boreholes: order.map((label) => byLabel.get(label) as Borehole), issues, total: rows.length }
 }
 
+/**
+ * Real survey reports (отчёты ИГИ) rarely ship the flat per-borehole layer
+ * table our template uses: the engineering-geological elements are described
+ * in PROSE («ИГЭ 2 — суглинок… Вскрыт с глубины 0,0-3,0м. Мощность слоя
+ * 3,0-5,6м.»), properties sit in a wide per-ИГЭ table, and the borehole logs
+ * are drawings. These parsers read the prose part so a real report yields the
+ * ИГЭ list and the groundwater range even before any table mapping.
+ */
+export interface IgeDescription {
+  code: string
+  name: string
+  /** Shallowest reported opening depth, m (min of «Вскрыт с глубины»). */
+  openedFromM: number | null
+  /** Largest reported thickness, m (max of «Мощность слоя»). */
+  thicknessM: number | null
+}
+
+const NUM = String.raw`(\d+(?:[.,]\d+)?)`
+const RANGE = String.raw`${NUM}\s*(?:-\s*${NUM})?`
+
+function ruNumber(text: string | undefined): number | null {
+  if (!text) return null
+  const n = Number(text.replace(',', '.'))
+  return Number.isFinite(n) ? n : null
+}
+
+/** ИГЭ descriptions from report prose, in order of appearance. */
+export function parseIgeDescriptions(text: string): IgeDescription[] {
+  const out: IgeDescription[] = []
+  const igeRe = /ИГЭ\s*№?\s*(\d+(?:-\d+)?)\s*[–—-]\s*([^.\n]+)[.,]/g
+  let match: RegExpExecArray | null
+  while ((match = igeRe.exec(text)) !== null) {
+    const tail = text.slice(match.index, match.index + 600)
+    const opened = new RegExp(String.raw`Вскрыт[аы]?\s+с\s+глубин[ыи]\s+${RANGE}\s*м`, 'i').exec(tail)
+    const thickness = new RegExp(String.raw`Мощность\s+сло[яё][^\d]{0,10}${RANGE}\s*м`, 'i').exec(tail)
+    out.push({
+      code: match[1],
+      name: match[2].trim().replace(/\s+/g, ' '),
+      openedFromM: ruNumber(opened?.[1]),
+      thicknessM: ruNumber(thickness?.[2] ?? thickness?.[1]),
+    })
+  }
+  return out
+}
+
+export interface GroundwaterRange {
+  minDepthM: number
+  maxDepthM: number
+}
+
+/** Groundwater depth range from prose («вскрыты на глубине 0,5-5,6м»). */
+export function parseGroundwaterRange(text: string): GroundwaterRange | null {
+  const re = new RegExp(String.raw`вод[ыа]?[^.]{0,120}?(?:вскрыты|встречены|залегают)[^.]{0,60}?глубин[еы]\s+${RANGE}\s*м`, 'i')
+  const m = re.exec(text)
+  if (!m) return null
+  const a = ruNumber(m[1])
+  const b = ruNumber(m[2]) ?? a
+  if (a === null || b === null) return null
+  return { minDepthM: Math.min(a, b), maxDepthM: Math.max(a, b) }
+}
+
 const AGGRESSIVENESS_RANK: Record<Aggressiveness, number> = { low: 0, medium: 1, high: 2 }
 
 export interface GeologySummary {
