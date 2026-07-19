@@ -63,15 +63,37 @@ const composition = [
 ]
 const g1 = composition.filter(Boolean).length / composition.length
 
-// --- Groups 2-4: engineering/formatting/note need the parsed etalon model;
-// manual checks live in manual-checks.json (0..1 each). ---
+// --- Group 2 (engineering): the auto part comes from out/result.json written
+// by the bench run (master-plan diameter comparison, structures present);
+// slopes/elevations vs the etalon profiles stay manual. Auto covers 2 of the
+// 6 sub-checks of the group; the remaining 4/6 come from manual-checks.json.
 let manual = { engineering: null, formatting: null, note: null }
 const manualPath = join(BM, 'manual-checks.json')
 if (existsSync(manualPath)) manual = { ...manual, ...JSON.parse(readText(manualPath)) }
 
+let engineering = manual.engineering
+const resultPath = join(OUT, 'result.json')
+if (existsSync(resultPath)) {
+  const r = JSON.parse(readText(resultPath))
+  const cmp = r.masterPlanComparison
+  const diameters = cmp ? cmp.matched / Math.max(cmp.matched + cmp.differing, 1) : null
+  const structures =
+    [r.liftStationNeeded === true, r.grilles > 0 && r.grilles === r.manholes, r.outletPresent === true]
+      .filter(Boolean).length / 3
+  const auto = diameters === null ? structures : (diameters + structures) / 2
+  console.log(`Инженерия (авто 2/6): диаметры vs генплан ${diameters === null ? '—' : (diameters * 100).toFixed(0) + '%'}, сооружения ${(structures * 100).toFixed(0)}%`)
+  if (cmp) for (const row of cmp.rows) {
+    if (row.verdict !== 'match') console.log(`  ≠ ${row.id}: план ${row.plan ?? '—'}, у нас ${row.design ?? '—'} (${row.verdict})`)
+  }
+  engineering = auto * (2 / 6) + (manual.engineering ?? 0) * (4 / 6)
+  if (manual.engineering === null || manual.engineering === undefined) {
+    console.log('  (4/6 подпунктов группы — уклоны/отметки/расход vs эталон — не заполнены в manual-checks.json, считаются как 0)')
+  }
+}
+
 const parts = [
   ['Состав', 0.25, g1],
-  ['Инженерия', 0.35, manual.engineering],
+  ['Инженерия', 0.35, engineering],
   ['Оформление', 0.25, manual.formatting],
   ['Записка', 0.15, manual.note],
 ]

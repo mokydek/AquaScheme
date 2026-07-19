@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { assessLiftStationNeed } from './norms/structures'
+import { compareWithMasterPlan } from './norms/masterplan'
+import type { PlanSegment } from './norms/masterplan'
 import { buildSewerSchedule, solveGravityNetwork } from './norms/gravity'
 import { buildSewerSpecification } from './norms/sewerspec'
 import {
@@ -129,6 +131,37 @@ describe.skipIf(!existsSync(BM))('benchmark end-to-end run (composition)', () =>
       no++
     }
     write(`${String(no).padStart(2, '0')}_защитная_сетка_для_колодцев.dxf`, buildProtectiveGrilleSheetDxf(projectName, schedule.manholes.length))
+
+    // Machine-readable result for scripts/benchmark.mjs (engineering group):
+    // side connections map onto the master-plan scheme segments, the last
+    // trunk pipe onto «магистраль — оголовок». The lift station is a pressure
+    // element the gravity model does not carry — an honest missingInDesign.
+    const planPath = join(BM, 'masterplan.json')
+    let comparison: ReturnType<typeof compareWithMasterPlan> | null = null
+    if (existsSync(planPath)) {
+      const plan = JSON.parse(readFileSync(planPath, 'utf8')) as { segments: PlanSegment[] }
+      const diaOf = (pipeId: string) => result.pipes.find((p) => p.id === pipeId)?.diameterMm ?? 0
+      const design = [
+        { id: 'ОС III-4 — магистраль', designDiameterMm: diaOf('S0') },
+        { id: 'ОС III-8 — магистраль', designDiameterMm: diaOf('S1') },
+        { id: 'ОС II-1 — магистраль', designDiameterMm: diaOf('S2') },
+        { id: 'ОС III-6 — магистраль', designDiameterMm: diaOf('S3') },
+        { id: 'магистраль — оголовок (выпуск в р. Есиль)', designDiameterMm: diaOf(`P${Math.round(TOTAL_M / STEP_M)}`) || diaOf('P157') },
+      ]
+      comparison = compareWithMasterPlan(design, plan.segments)
+    }
+    write('result.json', JSON.stringify({
+      outletFlowLps: result.outletFlowLps,
+      manholes: schedule.manholes.length,
+      grilles: spec.find((i) => i.name.includes('Решётка'))?.quantity ?? 0,
+      liftStationNeeded: assessLiftStationNeed(profile.stations.map((s) => s.depthM)).needed.value,
+      outletPresent: network.nodes.some((n) => n.kind === 'source'),
+      masterPlanComparison: comparison && {
+        matched: comparison.matched,
+        differing: comparison.differing,
+        rows: comparison.rows.map((r) => ({ id: r.id, plan: r.planDiameterMm, design: r.designDiameterMm, verdict: r.verdict })),
+      },
+    }, null, 2))
 
     write('README.md', [
       '# Прогон бенчмарка (генерируется bench-run.test.ts)',
