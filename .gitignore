@@ -30,3 +30,7 @@ npm-debug.log*
 # Official norm editions must not be redistributed
 docs/norms/*.pdf
 docs/norms/txt/
+
+# Real-object benchmark data (confidential: sources and the etalon album).
+# The whole folder stays local; only generic product code goes to git.
+docs/benchmark/
