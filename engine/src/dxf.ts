@@ -298,9 +298,13 @@ export function buildGeneralDataDxf(input: ExportInput): string {
  * official standard, НБ3), filled from a specification source (built-in by
  * default).
  */
-export function buildSpecSheetDxf(input: ExportInput, items?: SpecItem[]): string {
+export function buildSpecSheetDxf(
+  input: { projectName: string } & Partial<ExportInput>,
+  items?: SpecItem[],
+): string {
   const dxf = new DxfWriter()
-  const spec = items ?? buildSpecification(input)
+  // Without explicit items the full ExportInput is required to derive them.
+  const spec = items ?? buildSpecification(input as ExportInput)
   let y = drawSheetFrame(
     dxf,
     'Спецификация оборудования, изделий и материалов наружных сетей водоснабжения и канализации',

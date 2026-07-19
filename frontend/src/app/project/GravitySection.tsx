@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { buildSewerSchedule, computeNetworkDemand, NORMATIVE_DEFAULTS, solveGravityNetwork } from '@aquascheme/engine'
+import {
+  assessLiftStationNeed,
+  buildSewerSchedule,
+  buildSewerSpecification,
+  computeNetworkDemand,
+  NORMATIVE_DEFAULTS,
+  solveGravityNetwork,
+} from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
@@ -11,6 +18,8 @@ import {
   generateProfileSheetSetDxf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
+  generateSewerSpecSheetDxf,
+  generateSewerSpecXlsx,
   generateSewerScheduleXlsx,
   generateSituationDxf,
   zipBundle,
@@ -140,7 +149,16 @@ export function GravitySection({
         .filter((n): n is NonNullable<typeof n> => !!n)
         .map((n) => ({ x: n.x, y: n.y }))
       const sheetSystem = systemType === 'storm' ? ('storm' as const) : ('sewer' as const)
-      const [general, situation, plan, profile, xlsx, planSheets, profileSheets] = await Promise.all([
+      // Specification НК.С: lift station from the profile depths (ТЗ rule),
+      // the waterproofing set when the water table sits above the deepest
+      // excavation (dataset geology, groundwaterDepthM).
+      const groundwaterDepthM = (geologyDataset?.content as { groundwaterDepthM?: number } | null)?.groundwaterDepthM
+      const specItems = buildSewerSpecification({
+        schedule,
+        liftStation: assessLiftStationNeed(result.profile.stations.map((s) => s.depthM)).needed.value,
+        highGroundwater: groundwaterDepthM !== undefined && groundwaterDepthM < result.profile.maxDepthM,
+      })
+      const [general, situation, plan, profile, xlsx, specSheet, specXlsx, planSheets, profileSheets] = await Promise.all([
         generateSewerGeneralDataDxf({
           projectName,
           schedule,
@@ -157,6 +175,8 @@ export function GravitySection({
         generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels }),
         generateSewerProfileDxf({ projectName, profile: result.profile }),
         generateSewerScheduleXlsx(schedule),
+        generateSewerSpecSheetDxf(projectName, specItems),
+        generateSewerSpecXlsx(specItems),
         mainPath.length >= 2
           ? generatePlanSheetSetDxf({ projectName, network, pipeDiameterMm, mainPath, buildingLabels, system: sheetSystem })
           : Promise.resolve([]),
@@ -168,9 +188,11 @@ export function GravitySection({
         [`${slug}_03_план_${systemType === 'storm' ? 'К2' : 'К1'}_сводный.dxf`]: plan,
         [`${slug}_04_профиль_${systemType === 'storm' ? 'К2' : 'К1'}_сводный.dxf`]: profile,
         [`${slug}_05_ведомость.xlsx`]: xlsx,
+        [`${slug}_06_спецификация_НК.dxf`]: specSheet,
+        [`${slug}_06_спецификация_НК.xlsx`]: specXlsx,
       }
       // Per-picket sheets follow the summary sheets, numbered like the album.
-      let sheetNo = 6
+      let sheetNo = 7
       const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.]+/g, '_')
       for (const sheet of [...planSheets, ...profileSheets]) {
         files[`${slug}_${String(sheetNo).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf

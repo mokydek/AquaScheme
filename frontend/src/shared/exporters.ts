@@ -82,6 +82,34 @@ export async function generateSituationDxf(
   return buildSituationDxf(input)
 }
 
+/** Sewer specification sheet (ГОСТ 21.110 form, НК.С) as DXF. */
+export async function generateSewerSpecSheetDxf(
+  projectName: string,
+  items: import('@aquascheme/engine').SpecItem[],
+): Promise<string> {
+  const { buildSpecSheetDxf } = await import('@aquascheme/engine/dxf')
+  return buildSpecSheetDxf({ projectName }, items)
+}
+
+/** Sewer specification as an XLSX byte array (with the АГСК code column). */
+export async function generateSewerSpecXlsx(
+  items: import('@aquascheme/engine').SpecItem[],
+): Promise<Uint8Array> {
+  const XLSX = await import('xlsx')
+  const rows = items.map((i) => ({
+    'Поз.': i.pos,
+    'Наименование': i.name,
+    'Тип, марка': i.spec,
+    'Код (АГСК-3, раздел)': i.code ?? '',
+    'Ед. изм.': i.unit,
+    'Кол-во': i.quantity,
+  }))
+  const sheet = XLSX.utils.json_to_sheet(rows)
+  const book = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(book, sheet, 'Спецификация')
+  return XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+}
+
 /** Sewer (К1) manhole and pipe schedule as an XLSX byte array (two sheets). */
 export async function generateSewerScheduleXlsx(
   schedule: import('@aquascheme/engine').SewerSchedule,
