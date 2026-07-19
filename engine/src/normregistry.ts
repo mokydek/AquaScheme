@@ -540,6 +540,18 @@ export const NORM_REGISTRY: NormClause[] = [
     sourcePage: 39,
   },
   {
+    id: 'sewer.design.minBurial',
+    documentCode: 'СН РК 4.01-03-2013*',
+    clause: null,
+    requirement:
+      'Критерий подбора самотёчного коллектора на плоском рельефе: минимизация заглубления — больший диаметр с минимально необходимым уклоном вместо минимального диаметра с крутым уклоном; оба решения удовлетворяют нормам наполнения и скоростей — выбор является проектным решением',
+    valueText: 'минимизация заглубления',
+    units: '—',
+    appliesSystem: STORM,
+    appliesWork: BOTH_WORK,
+    status: 'unverified',
+  },
+  {
     id: 'crossing.casing',
     documentCode: 'ТЗ на проектирование',
     clause: 'п. 6.1',

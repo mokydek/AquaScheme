@@ -121,6 +121,17 @@ export interface GravityDesignOptions {
   groundSlope?: number
   /** Pipe material for the maximum velocity limit (5.10.3). */
   material?: 'metal' | 'nonmetal'
+  /**
+   * Design criterion. 'minDiameter' (default) picks the smallest pipe and
+   * steepens the slope until it works — economical on sloped terrain.
+   * 'minBurial' minimises the burial growth on FLAT terrain the way
+   * professional trunk collectors are designed: for every diameter the
+   * smallest workable slope is found, the pipe that fits the ground slope
+   * wins, otherwise the one with the flattest required slope (typically the
+   * larger diameter). Both are norm-compliant; the choice is a design
+   * decision (registry sewer.design.minBurial).
+   */
+  strategy?: 'minDiameter' | 'minBurial'
 }
 
 const SLOPE_CAP = 0.1 // 10% — practical steepness bound before drop structures
@@ -144,9 +155,61 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
   const candidates = GRAVITY_DIAMETERS.filter((d) => d >= minDia)
   let fallback: GravitySegmentDesign | null = null
 
+  if (opts.strategy === 'minBurial') {
+    // For every diameter find the smallest workable slope (filling and
+    // self-cleaning both satisfied). The first diameter whose required slope
+    // fits the ground slope wins (the pipe follows the terrain, burial stays
+    // constant); on flat terrain the flattest required slope wins.
+    const makeDesign = (D: number, slope: number): GravitySegmentDesign => {
+      const Dm = D / 1000
+      const fill = fillForFlow(Q, Dm, slope, n) ?? 0.99
+      const v = manningVelocity(circularSection(Dm, fill).hydraulicRadiusM, slope, n)
+      const issues: GravityIssue[] = []
+      if (v > vMax) {
+        issues.push({
+          code: 'overMaxVelocity',
+          refs: ['sewer.velocity.max'],
+          message: `Скорость ${v.toFixed(2)} м/с выше предельной ${vMax} м/с; требуются перепадные колодцы или гашение скорости`,
+        })
+      }
+      return {
+        diameterMm: D,
+        slope: Math.round(slope * 1e5) / 1e5,
+        fillRatio: Math.round(fill * 1000) / 1000,
+        velocityMs: Math.round(v * 100) / 100,
+        flowLps,
+        issues,
+      }
+    }
+    let flattest: { D: number; slope: number } | null = null
+    for (const D of candidates) {
+      const Dm = D / 1000
+      const minV = minVelocityMps(D, system).value
+      const normMin = minSlopeForDiameter(D)?.value ?? 0
+      let required: number | null = null
+      for (let slope = Math.max(normMin, 0.0003); slope <= SLOPE_CAP + 1e-9; slope *= 1.05) {
+        const fill = fillForFlow(Q, Dm, slope, n)
+        if (fill === null || fill > maxFillR) continue
+        const v = manningVelocity(circularSection(Dm, fill).hydraulicRadiusM, slope, n)
+        if (v < minV) continue
+        required = slope
+        break
+      }
+      if (required === null) continue // over capacity even at the cap
+      if (required <= Math.max(groundSlope, 0.0003) + 1e-9) {
+        // Lay along the terrain: never flatter than required.
+        return makeDesign(D, Math.max(required, Math.min(groundSlope, SLOPE_CAP)))
+      }
+      if (!flattest || required < flattest.slope) flattest = { D, slope: required }
+    }
+    if (flattest) return makeDesign(flattest.D, flattest.slope)
+    // No diameter carries the flow: fall through to the minDiameter loop,
+    // which produces the honest over-filled fallback.
+  }
+
   for (const D of candidates) {
     const Dm = D / 1000
-    const minV = minVelocityMps(D).value
+    const minV = minVelocityMps(D, system).value
     const normMin = minSlopeForDiameter(D)?.value ?? 0
     const base = Math.max(groundSlope, normMin, 0.0005)
 
@@ -302,6 +365,8 @@ export function solveGravityNetwork(input: {
   roughness?: number
   /** Freezing depth for min burial (п. 7.2.4); default 1.5 m. */
   freezingDepthM?: number
+  /** Design criterion per segment; see GravityDesignOptions.strategy. */
+  strategy?: 'minDiameter' | 'minBurial'
 }): GravityNetworkResult {
   const flows = accumulateGravityFlows(input.network, input.buildingFlowLps)
   const nodeById = new Map(input.network.nodes.map((n) => [n.id, n]))
@@ -317,6 +382,7 @@ export function solveGravityNetwork(input: {
       system: input.system,
       roughness: input.roughness,
       groundSlope,
+      strategy: input.strategy,
     })
     return { ...design, id: p.id, fromNode: p.fromNode, toNode: p.toNode, lengthM: p.lengthM }
   })

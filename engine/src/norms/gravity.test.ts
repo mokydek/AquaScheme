@@ -229,3 +229,23 @@ describe('materials schedule (ведомость колодцев и труб)',
     expect(schedule.totalPipeLengthM).toBe(200)
   })
 })
+
+describe('designGravitySegment minBurial strategy (benchmark G-14)', () => {
+  it('prefers a large flat pipe on flat terrain where minDiameter steepens a small one', () => {
+    const flat = { system: 'storm' as const, groundSlope: 0.0005 }
+    const a = designGravitySegment(2400, { ...flat, strategy: 'minBurial' })
+    const b = designGravitySegment(2400, flat)
+    expect(a.issues).toHaveLength(0)
+    expect(a.diameterMm).toBeGreaterThanOrEqual(1500)
+    expect(a.slope).toBeLessThanOrEqual(0.002)
+    expect(a.diameterMm).toBeGreaterThan(b.diameterMm)
+    expect(a.slope).toBeLessThan(b.slope)
+  })
+
+  it('still picks the smallest pipe that follows sloped terrain', () => {
+    const a = designGravitySegment(100, { system: 'storm', groundSlope: 0.02, strategy: 'minBurial' })
+    expect(a.diameterMm).toBeLessThanOrEqual(500)
+    expect(a.slope).toBeGreaterThanOrEqual(0.002)
+    expect(a.issues.filter((i) => i.code === 'overMaxFilling')).toHaveLength(0)
+  })
+})

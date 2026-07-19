@@ -52,8 +52,17 @@ function velocityRow(diameterMm: number): MinVelocityRow {
   return diameterMm < rows[0].dMinMm ? rows[0] : rows[rows.length - 1]
 }
 
-/** Таблица 5.19 (5.10.1): наименьшая скорость при наибольшем расчётном наполнении. */
-export function minVelocityMps(diameterMm: number): Justified<number> {
+/**
+ * Таблица 5.19 (5.10.1): наименьшая скорость при наибольшем расчётном
+ * наполнении. Для дождевой сети действует примечание 3 к таблице: при
+ * Р = 0,33 года наименьшую скорость следует принимать 0,6 м/сек (стр. 40
+ * PDF) — поэтому storm получает 0,6 независимо от диаметра. Если проект
+ * принимает другой период однократного превышения Р, значение уточняется.
+ */
+export function minVelocityMps(diameterMm: number, system: 'sewer' | 'storm' = 'sewer'): Justified<number> {
+  if (system === 'storm') {
+    return justified(0.6, ['sewer.velocity.min'], 'normative', 'дождевая сеть при Р=0,33 года — примечание 3 к таблице 5.19')
+  }
   return justified(velocityRow(diameterMm).vMinMps, ['sewer.velocity.min'])
 }
 

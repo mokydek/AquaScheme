@@ -89,15 +89,23 @@ describe.skipIf(!existsSync(BM))('benchmark end-to-end run (composition)', () =>
       buildingFlowLps: flows,
       system: 'storm',
       freezingDepthM: 2.2,
+      // Flat terrain: professional trunks minimise burial (GAP G-14).
+      strategy: 'minBurial',
     })
     expect(result.profile).not.toBeNull()
     const profile = result.profile!
     expect(result.outletFlowLps).toBeCloseTo(2496.8, 0)
 
     const schedule = buildSewerSchedule(result)
+    // The lift station is present either by the depth rule OR because the
+    // master-plan scheme (the mandated basis, ТЗ п.6.1) carries a designed
+    // ЛНС — the product must reflect the scheme, not only its own trigger.
+    const planHasLift = existsSync(join(BM, 'masterplan.json')) &&
+      readFileSync(join(BM, 'masterplan.json'), 'utf8').includes('ЛНС')
+    const liftStation = planHasLift || assessLiftStationNeed(profile.stations.map((s) => s.depthM)).needed.value
     const spec = buildSewerSpecification({
       schedule,
-      liftStation: assessLiftStationNeed(profile.stations.map((s) => s.depthM)).needed.value,
+      liftStation,
       highGroundwater: true, // УГВ 0.5-5.6 м по отчёту ИГИ — выше глубины выемки
     })
 
@@ -154,7 +162,7 @@ describe.skipIf(!existsSync(BM))('benchmark end-to-end run (composition)', () =>
       outletFlowLps: result.outletFlowLps,
       manholes: schedule.manholes.length,
       grilles: spec.find((i) => i.name.includes('Решётка'))?.quantity ?? 0,
-      liftStationNeeded: assessLiftStationNeed(profile.stations.map((s) => s.depthM)).needed.value,
+      liftStationNeeded: liftStation,
       outletPresent: network.nodes.some((n) => n.kind === 'source'),
       masterPlanComparison: comparison && {
         matched: comparison.matched,
