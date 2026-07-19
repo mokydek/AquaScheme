@@ -8,6 +8,7 @@ import type { SpecItem } from './specification'
 import type { GravityProfile } from './norms/gravity'
 import { manholeLabels, picketLabel } from './norms/gravity'
 import type { SewerSchedule } from './norms/gravity'
+import { profileSheetSpecs } from './norms/sheetset'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -465,10 +466,15 @@ const SEWER_PROFILE_LAYER = 'К1-профиль'
  * sheet: the ground and invert lines with a GOST 21.704 form 2 side table.
  * Everything is taken from the computed profile — no invented values.
  */
-export function buildSewerProfileDxf(input: { projectName: string; profile: GravityProfile }): string {
+export function buildSewerProfileDxf(input: {
+  projectName: string
+  profile: GravityProfile
+  /** Sheet caption; defaults to the whole-collector title. Per-picket sheets pass «Профиль К2 ПК…-ПК…». */
+  sheetTitle?: string
+}): string {
   const dxf = new DxfWriter()
   dxf.addLayer(SEWER_PROFILE_LAYER, Colors.Black, LineTypes.Continuous)
-  const topY = drawSheetFrame(dxf, 'Продольный профиль сети К1', input.projectName)
+  const topY = drawSheetFrame(dxf, input.sheetTitle ?? 'Продольный профиль сети К1', input.projectName)
   const stations = input.profile.stations
   if (stations.length < 2) {
     dxf.addText(p3(SHEET_MARGIN + 4, topY - 8), 3, 'Недостаточно данных для профиля', {
@@ -642,6 +648,30 @@ function distancesFromOutlet(network: TracedNetwork, outletId: string): Map<stri
  * mains with diameter labels and flow arrows toward the outlet, manholes ВК-n
  * and the outlet «Вып.».
  */
+export interface ProfileSheetFile {
+  /** Sheet title, doubles as the file base name: «Профиль К2 ПК0 - ПК8+50». */
+  title: string
+  dxf: string
+}
+
+/**
+ * The per-picket profile sheet set (нарезка листов профиля как в
+ * профессиональном комплекте НК): the gravity profile is cut at manhole
+ * stations into ~targetPerSheetM fragments and each fragment becomes its own
+ * sheet through buildSewerProfileDxf, titled «Профиль К2 ПК…-ПК…».
+ */
+export function buildProfileSheetSetDxf(
+  projectName: string,
+  profile: GravityProfile,
+  system: 'sewer' | 'storm' = 'storm',
+  targetPerSheetM = 850,
+): ProfileSheetFile[] {
+  return profileSheetSpecs(profile, system, targetPerSheetM).map((spec) => ({
+    title: spec.title,
+    dxf: buildSewerProfileDxf({ projectName, profile: spec.profile, sheetTitle: spec.title }),
+  }))
+}
+
 export function buildSewerPlanDxf(input: {
   projectName: string
   network: TracedNetwork

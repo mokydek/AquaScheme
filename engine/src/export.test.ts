@@ -8,6 +8,7 @@ import { traceNetwork } from './trace'
 import {
   buildGeneralDataDxf,
   buildNetworkDxf,
+  buildProfileSheetSetDxf,
   buildSewerGeneralDataDxf,
   buildSewerPlanDxf,
   buildSewerProfileDxf,
@@ -15,6 +16,7 @@ import {
   buildSpecSheetDxf,
 } from './dxf'
 import { buildSewerSchedule, solveGravityNetwork } from './norms/gravity'
+import type { GravityProfile } from './norms/gravity'
 import type { TracedNetwork } from './trace'
 import { buildSpecification, specificationToCsv } from './specification'
 import { buildNoteDoc } from './note'
@@ -108,6 +110,32 @@ describe('DXF export', () => {
     expect(dxf).toContain('В1-геология')
     expect(dxf).toContain('УГВ')
     expect(dxf).toContain('С-1')
+  }, 60000)
+})
+
+describe('picket profile sheet set (benchmark G-1)', () => {
+  it('cuts the profile into named К2 sheets, each a valid DXF', () => {
+    const stations = Array.from({ length: 17 }, (_, i) => i * 100)
+    const profile: GravityProfile = {
+      stations: stations.map((c, i) => ({
+        nodeId: `K${i}`,
+        chainageM: c,
+        groundElevationM: 350 - c * 0.001,
+        invertElevationM: 348 - c * 0.002,
+        depthM: 2 + c * 0.001,
+        diameterMm: 2000,
+      })),
+      maxDepthM: 3.6,
+      outletInvertElevationM: 348,
+      totalLengthM: 1600,
+    }
+    const sheets = buildProfileSheetSetDxf('Тестовый коллектор', profile, 'storm', 850)
+    expect(sheets.length).toBeGreaterThan(1)
+    expect(sheets[0].title).toMatch(/^Профиль К2 ПК0 - ПК\d/)
+    for (const sheet of sheets) {
+      expect(sheet.dxf).toContain(sheet.title)
+      expect(sheet.dxf.trimEnd().endsWith('EOF')).toBe(true)
+    }
   }, 60000)
 })
 
