@@ -27,8 +27,13 @@ import { agskSectionForGravityPipe } from './agsk'
  * engineering guardrails.
  */
 
-/** Standard sewer/storm pipe diameter series, mm. */
-export const GRAVITY_DIAMETERS = [150, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1500] as const
+/**
+ * Standard sewer/storm pipe diameter series, mm. Large trunk collectors use
+ * reinforced concrete non-pressure pipes (серия 3.008.1-7/89 goes up to
+ * 2400 мм), so the series continues past 1500 — a storm trunk of Ф2000 must
+ * be selectable, not reported as "no bigger pipe".
+ */
+export const GRAVITY_DIAMETERS = [150, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1500, 1600, 2000, 2400] as const
 
 export interface CircularSection {
   /** Central angle subtended by the water surface, radians (0..2π). */

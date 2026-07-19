@@ -170,6 +170,7 @@ export const NORM_DOCUMENTS: NormDocument[] = [
   { code: 'СП РК 2.04-01-2017', title: 'Строительная климатология', edition: '2017', status: 'unverified' },
   { code: 'СНиП 2.01.15-90', title: 'Инженерная защита территорий, зданий и сооружений от опасных геологических процессов', edition: '1990 (справочно)', status: 'unverified' },
   { code: 'СНиП 2.04.03-85', title: 'Канализация. Наружные сети и сооружения', edition: '1985 (справочно)', status: 'unverified' },
+  { code: 'ТЗ на проектирование', title: 'Задание на проектирование объекта (утверждается заказчиком, реквизиты — в проекте)', edition: 'по проекту', status: 'unverified' },
 ]
 
 /**
@@ -537,6 +538,18 @@ export const NORM_REGISTRY: NormClause[] = [
     status: 'verified',
     sourceFile: SN_VODOOTVEDENIE_PDF,
     sourcePage: 39,
+  },
+  {
+    id: 'scheme.masterPlanBasis',
+    documentCode: 'ТЗ на проектирование',
+    clause: 'п. 6.1',
+    requirement:
+      'Состав сооружений, диаметры и параметры определить и обосновать расчётами, приняв за основу ПДП (предварительную схему), разработанную генпланом; расхождения расчёта со схемой обосновываются явно',
+    valueText: 'схема генплана — основа, отклонения обосновать',
+    units: '—',
+    appliesSystem: STORM,
+    appliesWork: BOTH_WORK,
+    status: 'unverified',
   },
   {
     id: 'sewer.velocity.min',
