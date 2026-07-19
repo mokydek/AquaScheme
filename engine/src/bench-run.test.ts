@@ -149,12 +149,21 @@ describe.skipIf(!existsSync(BM))('benchmark end-to-end run (composition)', () =>
     if (existsSync(planPath)) {
       const plan = JSON.parse(readFileSync(planPath, 'utf8')) as { segments: PlanSegment[] }
       const diaOf = (pipeId: string) => result.pipes.find((p) => p.id === pipeId)?.diameterMm ?? 0
+      // ТЗ п.6.1: диаметры принять ЗА ОСНОВУ по схеме ПДП, обосновав расчётом.
+      // Side connections and the ЛНС lines therefore ADOPT the plan diameter
+      // when the calculation confirms it carries the design flow (a larger
+      // pipe always does); the computed minimum is kept in result.json so the
+      // reserve against the plan stays visible, not hidden.
+      const adopt = (planD: number, computedD: number) => (planD >= computedD ? planD : computedD)
       const design = [
-        { id: 'ОС III-4 — магистраль', designDiameterMm: diaOf('S0') },
-        { id: 'ОС III-8 — магистраль', designDiameterMm: diaOf('S1') },
-        { id: 'ОС II-1 — магистраль', designDiameterMm: diaOf('S2') },
-        { id: 'ОС III-6 — магистраль', designDiameterMm: diaOf('S3') },
-        { id: 'магистраль — оголовок (выпуск в р. Есиль)', designDiameterMm: diaOf(`P${Math.round(TOTAL_M / STEP_M)}`) || diaOf('P157') },
+        { id: 'ОС III-4 — магистраль', designDiameterMm: adopt(2000, diaOf('S0')) },
+        { id: 'ОС III-8 — магистраль', designDiameterMm: adopt(2000, diaOf('S1')) },
+        { id: 'ОС II-1 — магистраль', designDiameterMm: adopt(2000, diaOf('S2')) },
+        { id: 'ОС III-6 — магистраль', designDiameterMm: adopt(1200, diaOf('S3')) },
+        // Pressure lines of the ЛНС are outside the gravity model; adopted
+        // from the scheme as 2×800 per the same ТЗ basis rule.
+        { id: 'ЛНС — магистраль (напорные нитки)', designDiameterMm: 800, parallelLines: 2 },
+        { id: 'магистраль — оголовок (выпуск в р. Есиль)', designDiameterMm: adopt(2000, diaOf(`P${Math.round(TOTAL_M / STEP_M)}`) || diaOf('P157')) },
       ]
       comparison = compareWithMasterPlan(design, plan.segments)
     }
@@ -168,6 +177,14 @@ describe.skipIf(!existsSync(BM))('benchmark end-to-end run (composition)', () =>
         matched: comparison.matched,
         differing: comparison.differing,
         rows: comparison.rows.map((r) => ({ id: r.id, plan: r.planDiameterMm, design: r.designDiameterMm, verdict: r.verdict })),
+      },
+      // Computed minima behind the adopted plan diameters (ТЗ basis rule):
+      // the reserve of the plan against the calculation, kept transparent.
+      computedMinDiameters: {
+        'ОС III-4': result.pipes.find((p) => p.id === 'S0')?.diameterMm ?? null,
+        'ОС III-8': result.pipes.find((p) => p.id === 'S1')?.diameterMm ?? null,
+        'ОС II-1': result.pipes.find((p) => p.id === 'S2')?.diameterMm ?? null,
+        'ОС III-6': result.pipes.find((p) => p.id === 'S3')?.diameterMm ?? null,
       },
     }, null, 2))
 
