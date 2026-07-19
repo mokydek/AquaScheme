@@ -82,6 +82,32 @@ export async function generateSituationDxf(
   return buildSituationDxf(input)
 }
 
+/** Sewer explanatory note (записка К1/К2) as a PDF blob (pdfmake, lazy). */
+export async function generateSewerNotePdf(
+  input: import('@aquascheme/engine').SewerNoteInput,
+): Promise<Blob> {
+  const [{ buildSewerNoteDoc }, pdfMakeMod, pdfFontsMod] = await Promise.all([
+    import('@aquascheme/engine'),
+    import('pdfmake/build/pdfmake'),
+    import('pdfmake/build/vfs_fonts'),
+  ])
+  const pdfMake = (pdfMakeMod as { default?: unknown }).default ?? pdfMakeMod
+  const fonts = pdfFontsMod as unknown as {
+    pdfMake?: { vfs: Record<string, string> }
+    default?: { pdfMake?: { vfs: Record<string, string> }; vfs?: Record<string, string> }
+    vfs?: Record<string, string>
+  }
+  const vfs = fonts.pdfMake?.vfs ?? fonts.default?.pdfMake?.vfs ?? fonts.default?.vfs ?? fonts.vfs
+  const maker = pdfMake as {
+    vfs?: unknown
+    createPdf: (doc: unknown) => { getBlob: (cb: (b: Blob) => void) => void }
+  }
+  maker.vfs = vfs
+  return new Promise((resolve) => {
+    maker.createPdf(buildSewerNoteDoc(input) as Record<string, unknown>).getBlob(resolve)
+  })
+}
+
 /** Per-manhole material table sheets + the protective grille sheet. */
 export async function generateManholeSheetsDxf(
   projectName: string,
