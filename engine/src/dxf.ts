@@ -676,6 +676,83 @@ export function buildProfileSheetSetDxf(
   }))
 }
 
+/**
+ * «Таблица расхода материалов по сборным канализационным колодцам» — the
+ * per-manhole material sheets of a professional НК album. The model knows the
+ * mark, picket, depth and pipe diameter of every manhole; the per-element
+ * consumption (кольца КС, плиты, днища, скобы) comes from a типовой проект
+ * whose series is confirmed by the engineer, so that column honestly says
+ * «по типовому проекту (уточняется)» instead of invented ring marks.
+ */
+export function buildManholeMaterialSheetsDxf(
+  projectName: string,
+  schedule: SewerSchedule,
+  perSheet = 30,
+): ProfileSheetFile[] {
+  const sheets: ProfileSheetFile[] = []
+  for (let start = 0; start < schedule.manholes.length; start += perSheet) {
+    const part = schedule.manholes.slice(start, start + perSheet)
+    const partNo = Math.floor(start / perSheet) + 1
+    const title = `Таблица расхода материалов по сборным канализационным колодцам (лист ${partNo})`
+    const dxf = new DxfWriter()
+    let y = drawSheetFrame(dxf, title, projectName)
+    const x0 = SHEET_MARGIN + 4
+    const rightX = SHEET_W - SHEET_MARGIN - 4
+    dxf.addText(p3(x0, y), 2.2, 'Расход элементов сборного ж/б — по типовому проекту (серия уточняется)', {
+      secondAlignmentPoint: p3(x0, y),
+    })
+    y -= 6
+    drawTextTable(
+      dxf, x0, y, [0, 30, 70, 110, 150], rightX,
+      ['Марка', 'Пикет', 'Глубина, м', 'Ду, мм', 'Элементы сборного ж/б'],
+      part.map((m) => [
+        m.label,
+        m.picket,
+        (m.depthMm / 1000).toFixed(2),
+        String(m.pipeDiameterMm),
+        'по т.пр. (уточняется)',
+      ]),
+    )
+    sheets.push({ title, dxf: dxf.stringify() })
+  }
+  return sheets
+}
+
+/**
+ * «Защитная сетка для колодцев» — the design task demands protective grilles
+ * with an anti-corrosion coating in every inspection manhole and the album
+ * carries a dedicated sheet for them. The exact product drawing comes from
+ * the agreed изделие, so this sheet holds the sketch, the count and the
+ * coating requirement, marked «чертёж изделия уточняется».
+ */
+export function buildProtectiveGrilleSheetDxf(projectName: string, manholeCount: number): string {
+  const dxf = new DxfWriter()
+  const title = 'Защитная сетка для колодцев'
+  let y = drawSheetFrame(dxf, title, projectName)
+  const x0 = SHEET_MARGIN + 4
+  const line = (s: string, h = 2.4) => {
+    dxf.addText(p3(x0, y), h, s, { secondAlignmentPoint: p3(x0, y) })
+    y -= 6
+  }
+  line(`Количество: ${manholeCount} шт (по одной на каждый смотровой колодец, ТЗ п. 6.1)`)
+  line('Покрытие: антикоррозийное (агрессивность грунтовых вод к стали — высокая по отчёту ИГИ)')
+  line('Чертёж изделия уточняется по согласованному производителю', 2)
+  // Sketch: a square frame with a bar grid, marked as a sketch.
+  const gx = x0 + 10
+  const gy = y - 66
+  const size = 60
+  dxf.addRectangle({ x: gx, y: gy }, { x: gx + size, y: gy + size })
+  for (let i = 1; i < 6; i++) {
+    const offset = (size / 6) * i
+    dxf.addLine(p3(gx + offset, gy), p3(gx + offset, gy + size))
+    dxf.addLine(p3(gx, gy + offset), p3(gx + size, gy + offset))
+  }
+  dxf.addText(p3(gx, gy - 5), 2, 'Эскиз. Размеры по месту установки', {
+    secondAlignmentPoint: p3(gx, gy - 5),
+  })
+  return dxf.stringify()
+}
+
 export function buildSewerPlanDxf(input: {
   projectName: string
   network: TracedNetwork

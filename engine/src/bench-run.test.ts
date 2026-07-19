@@ -6,8 +6,10 @@ import { assessLiftStationNeed } from './norms/structures'
 import { buildSewerSchedule, solveGravityNetwork } from './norms/gravity'
 import { buildSewerSpecification } from './norms/sewerspec'
 import {
+  buildManholeMaterialSheetsDxf,
   buildPlanSheetSetDxf,
   buildProfileSheetSetDxf,
+  buildProtectiveGrilleSheetDxf,
   buildSewerGeneralDataDxf,
   buildSewerPlanDxf,
   buildSewerProfileDxf,
@@ -120,11 +122,13 @@ describe.skipIf(!existsSync(BM))('benchmark end-to-end run (composition)', () =>
 
     const planSheets = buildPlanSheetSetDxf({ projectName, network, pipeDiameterMm, mainPath, system: 'storm' })
     const profileSheets = buildProfileSheetSetDxf(projectName, profile, 'storm')
+    const manholeSheets = buildManholeMaterialSheetsDxf(projectName, schedule)
     let no = 5
-    for (const sheet of [...planSheets, ...profileSheets]) {
-      write(`${String(no).padStart(2, '0')}_${sheet.title.replace(/\.\s*М1:500$/, '').replace(/[\s.]+/g, '_')}.dxf`, sheet.dxf)
+    for (const sheet of [...planSheets, ...profileSheets, ...manholeSheets]) {
+      write(`${String(no).padStart(2, '0')}_${sheet.title.replace(/\.\s*М1:500$/, '').replace(/[\s.()]+/g, '_')}.dxf`, sheet.dxf)
       no++
     }
+    write(`${String(no).padStart(2, '0')}_защитная_сетка_для_колодцев.dxf`, buildProtectiveGrilleSheetDxf(projectName, schedule.manholes.length))
 
     write('README.md', [
       '# Прогон бенчмарка (генерируется bench-run.test.ts)',

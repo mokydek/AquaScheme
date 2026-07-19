@@ -14,6 +14,7 @@ import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
   generateSewerGeneralDataDxf,
+  generateManholeSheetsDxf,
   generatePlanSheetSetDxf,
   generateProfileSheetSetDxf,
   generateSewerPlanDxf,
@@ -158,7 +159,7 @@ export function GravitySection({
         liftStation: assessLiftStationNeed(result.profile.stations.map((s) => s.depthM)).needed.value,
         highGroundwater: groundwaterDepthM !== undefined && groundwaterDepthM < result.profile.maxDepthM,
       })
-      const [general, situation, plan, profile, xlsx, specSheet, specXlsx, planSheets, profileSheets] = await Promise.all([
+      const [general, situation, plan, profile, xlsx, specSheet, specXlsx, planSheets, profileSheets, manholeSheets] = await Promise.all([
         generateSewerGeneralDataDxf({
           projectName,
           schedule,
@@ -181,6 +182,7 @@ export function GravitySection({
           ? generatePlanSheetSetDxf({ projectName, network, pipeDiameterMm, mainPath, buildingLabels, system: sheetSystem })
           : Promise.resolve([]),
         generateProfileSheetSetDxf(projectName, result.profile, sheetSystem),
+        generateManholeSheetsDxf(projectName, schedule),
       ])
       const files: Record<string, string | Uint8Array> = {
         [`${slug}_01_общие_данные.dxf`]: general,
@@ -193,11 +195,12 @@ export function GravitySection({
       }
       // Per-picket sheets follow the summary sheets, numbered like the album.
       let sheetNo = 7
-      const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.]+/g, '_')
-      for (const sheet of [...planSheets, ...profileSheets]) {
+      const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.()]+/g, '_')
+      for (const sheet of [...planSheets, ...profileSheets, ...manholeSheets.tables]) {
         files[`${slug}_${String(sheetNo).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
         sheetNo++
       }
+      files[`${slug}_${String(sheetNo).padStart(2, '0')}_защитная_сетка_для_колодцев.dxf`] = manholeSheets.grille
       const zip = await zipBundle(files)
       const url = URL.createObjectURL(zip)
       const a = document.createElement('a')

@@ -82,6 +82,18 @@ export async function generateSituationDxf(
   return buildSituationDxf(input)
 }
 
+/** Per-manhole material table sheets + the protective grille sheet. */
+export async function generateManholeSheetsDxf(
+  projectName: string,
+  schedule: import('@aquascheme/engine').SewerSchedule,
+): Promise<{ tables: Array<{ title: string; dxf: string }>; grille: string }> {
+  const { buildManholeMaterialSheetsDxf, buildProtectiveGrilleSheetDxf } = await import('@aquascheme/engine/dxf')
+  return {
+    tables: buildManholeMaterialSheetsDxf(projectName, schedule),
+    grille: buildProtectiveGrilleSheetDxf(projectName, schedule.manholes.length),
+  }
+}
+
 /** Sewer specification sheet (ГОСТ 21.110 form, НК.С) as DXF. */
 export async function generateSewerSpecSheetDxf(
   projectName: string,
