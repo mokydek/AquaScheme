@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { paginateByStations, profileSheetSpecs, sliceProfile } from './sheetset'
+import { paginateByStations, planWindows, profileSheetSpecs, sliceProfile } from './sheetset'
 import type { GravityProfile } from './gravity'
 
 /** Stations every 100 m over 1.6 km (17 manholes). */
@@ -54,6 +54,32 @@ function profileOf(stations: number[]): GravityProfile {
     totalLengthM: stations[stations.length - 1],
   }
 }
+
+describe('planWindows', () => {
+  it('windows an L-shaped route with margins and picket labels', () => {
+    const path = [
+      { x: 0, y: 0 },
+      { x: 500, y: 0 },
+      { x: 1000, y: 0 },
+      { x: 1000, y: 500 },
+    ]
+    const windows = planWindows(path, 550, 60)
+    expect(windows.length).toBeGreaterThanOrEqual(2)
+    expect(windows[0].label.startsWith('ПК0 - ')).toBe(true)
+    // First window covers the western leg with the margin applied.
+    expect(windows[0].minX).toBe(-60)
+    expect(windows[0].minY).toBe(-60)
+    // Windows are contiguous along the chainage.
+    for (let i = 1; i < windows.length; i++) expect(windows[i].fromM).toBe(windows[i - 1].toM)
+    // The bend leg appears in the last window's box.
+    const last = windows[windows.length - 1]
+    expect(last.maxY).toBeGreaterThanOrEqual(500)
+  })
+
+  it('returns nothing for a degenerate path', () => {
+    expect(planWindows([{ x: 0, y: 0 }])).toEqual([])
+  })
+})
 
 describe('sliceProfile / profileSheetSpecs', () => {
   it('slices stations inclusively and recomputes the fragment depth', () => {

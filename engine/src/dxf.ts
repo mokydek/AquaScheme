@@ -8,7 +8,7 @@ import type { SpecItem } from './specification'
 import type { GravityProfile } from './norms/gravity'
 import { manholeLabels, picketLabel } from './norms/gravity'
 import type { SewerSchedule } from './norms/gravity'
-import { profileSheetSpecs } from './norms/sheetset'
+import { planWindows, profileSheetSpecs } from './norms/sheetset'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -677,6 +677,8 @@ export function buildSewerPlanDxf(input: {
   network: TracedNetwork
   pipeDiameterMm: Map<string, number>
   buildingLabels?: Map<string, string>
+  /** Sheet caption; per-picket sheets pass «План К2 ПК…-ПК…. М1:500». */
+  sheetTitle?: string
 }): string {
   const dxf = new DxfWriter()
   dxf.addLayer(K1_LAYERS.network, Colors.Blue, LineTypes.Continuous)
@@ -751,10 +753,56 @@ export function buildSewerPlanDxf(input: {
   const xs = input.network.nodes.map((n) => n.x)
   const ys = input.network.nodes.map((n) => n.y)
   dxf.setCurrentLayerName(K1_LAYERS.annotation)
-  dxf.addText(p3(Math.min(...xs), Math.max(...ys) + 12), 4, `AquaScheme. Сеть К1. План. ${input.projectName}`, {
+  const caption = input.sheetTitle ?? 'Сеть К1. План'
+  dxf.addText(p3(Math.min(...xs), Math.max(...ys) + 12), 4, `AquaScheme. ${caption}. ${input.projectName}`, {
     secondAlignmentPoint: p3(Math.min(...xs), Math.max(...ys) + 12),
   })
   return dxf.stringify()
+}
+
+/**
+ * The per-picket PLAN sheet set: the main route is windowed by chainage
+ * (bounds on manhole stations, a margin around the sub-path) and each window
+ * becomes its own plan sheet with only the network inside the box, titled
+ * «План К2 ПК…-ПК…. М1:500» like the professional set.
+ */
+export function buildPlanSheetSetDxf(input: {
+  projectName: string
+  network: TracedNetwork
+  pipeDiameterMm: Map<string, number>
+  /** Vertices of the main collector in order, for chainage windows. */
+  mainPath: Array<{ x: number; y: number }>
+  buildingLabels?: Map<string, string>
+  system?: 'sewer' | 'storm'
+  targetPerSheetM?: number
+  marginM?: number
+}): ProfileSheetFile[] {
+  const mark = (input.system ?? 'storm') === 'storm' ? 'К2' : 'К1'
+  return planWindows(input.mainPath, input.targetPerSheetM ?? 550, input.marginM ?? 60).map((w) => {
+    const inWindow = new Set(
+      input.network.nodes.filter((n) => n.x >= w.minX && n.x <= w.maxX && n.y >= w.minY && n.y <= w.maxY).map((n) => n.id),
+    )
+    // Keep pipes with at least one end inside; pull the other end in so the
+    // pipe is drawn complete instead of dangling at the window edge.
+    const keepNodes = new Set(inWindow)
+    const pipes = input.network.pipes.filter((p) => inWindow.has(p.fromNode) || inWindow.has(p.toNode))
+    for (const p of pipes) {
+      keepNodes.add(p.fromNode)
+      keepNodes.add(p.toNode)
+    }
+    const nodes = input.network.nodes.filter((n) => keepNodes.has(n.id))
+    const title = `План ${mark} ${w.label}. М1:500`
+    return {
+      title,
+      dxf: buildSewerPlanDxf({
+        projectName: input.projectName,
+        network: { nodes, pipes, totalLengthM: pipes.reduce((s, p) => s + p.lengthM, 0) },
+        pipeDiameterMm: input.pipeDiameterMm,
+        buildingLabels: input.buildingLabels,
+        sheetTitle: title,
+      }),
+    }
+  })
 }
 
 /** A small arrowhead at (x, y) pointing along the (dx, dy) direction. */

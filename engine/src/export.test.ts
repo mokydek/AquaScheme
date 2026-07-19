@@ -8,6 +8,7 @@ import { traceNetwork } from './trace'
 import {
   buildGeneralDataDxf,
   buildNetworkDxf,
+  buildPlanSheetSetDxf,
   buildProfileSheetSetDxf,
   buildSewerGeneralDataDxf,
   buildSewerPlanDxf,
@@ -132,6 +133,47 @@ describe('picket profile sheet set (benchmark G-1)', () => {
     const sheets = buildProfileSheetSetDxf('Тестовый коллектор', profile, 'storm', 850)
     expect(sheets.length).toBeGreaterThan(1)
     expect(sheets[0].title).toMatch(/^Профиль К2 ПК0 - ПК\d/)
+    for (const sheet of sheets) {
+      expect(sheet.dxf).toContain(sheet.title)
+      expect(sheet.dxf.trimEnd().endsWith('EOF')).toBe(true)
+    }
+  }, 60000)
+})
+
+describe('picket plan sheet set (benchmark G-1)', () => {
+  it('windows the network into named plan sheets containing only nearby nodes', () => {
+    // Straight main 0..1600 m with manholes every 100 m and one far building.
+    const nodes = [
+      ...Array.from({ length: 17 }, (_, i) => ({
+        id: `K${i}`,
+        kind: (i === 16 ? 'source' : 'junction') as 'source' | 'junction',
+        x: i * 100,
+        y: 0,
+        groundElevation: 350,
+      })),
+      { id: 'FAR', kind: 'building' as const, x: 1590, y: 20, groundElevation: 350, buildingId: 'b-far' },
+    ]
+    const pipes = Array.from({ length: 16 }, (_, i) => ({
+      id: `P${i}`,
+      kind: 'main' as const,
+      fromNode: `K${i}`,
+      toNode: `K${i + 1}`,
+      lengthM: 100,
+    }))
+    const sheets = buildPlanSheetSetDxf({
+      projectName: 'Тестовый коллектор',
+      network: { nodes, pipes, totalLengthM: 1600 },
+      pipeDiameterMm: new Map(pipes.map((p) => [p.id, 2000])),
+      mainPath: nodes.slice(0, 17).map((n) => ({ x: n.x, y: n.y })),
+      buildingLabels: new Map([['b-far', 'Здание-Х']]),
+      system: 'storm',
+      targetPerSheetM: 550,
+    })
+    expect(sheets.length).toBeGreaterThanOrEqual(3)
+    expect(sheets[0].title).toMatch(/^План К2 ПК0 - ПК\d.*М1:500$/)
+    // The far building sits at the tail: present on the last sheet, absent on the first.
+    expect(sheets[0].dxf).not.toContain('Здание-Х')
+    expect(sheets[sheets.length - 1].dxf).toContain('Здание-Х')
     for (const sheet of sheets) {
       expect(sheet.dxf).toContain(sheet.title)
       expect(sheet.dxf.trimEnd().endsWith('EOF')).toBe(true)

@@ -81,6 +81,59 @@ export function sliceProfile(profile: GravityProfile, fromM: number, toM: number
   }
 }
 
+export interface PlanWindow extends SheetInterval {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
+/**
+ * Rectangular windows for per-picket PLAN sheets: the main route is paginated
+ * by its vertex chainage and each interval gets the bounding box of its
+ * sub-path (with interpolated interval bounds) plus a margin — everything
+ * inside the box belongs on the sheet «План К2 ПК…-ПК…».
+ */
+export function planWindows(
+  mainPath: Array<{ x: number; y: number }>,
+  targetPerSheetM = 550,
+  marginM = 60,
+): PlanWindow[] {
+  if (mainPath.length < 2) return []
+  const chain: number[] = [0]
+  for (let i = 1; i < mainPath.length; i++) {
+    chain.push(chain[i - 1] + Math.hypot(mainPath[i].x - mainPath[i - 1].x, mainPath[i].y - mainPath[i - 1].y))
+  }
+  const pointAt = (m: number): { x: number; y: number } => {
+    for (let i = 1; i < chain.length; i++) {
+      if (m <= chain[i] + 1e-9) {
+        const t = (m - chain[i - 1]) / Math.max(chain[i] - chain[i - 1], 1e-12)
+        return {
+          x: mainPath[i - 1].x + t * (mainPath[i].x - mainPath[i - 1].x),
+          y: mainPath[i - 1].y + t * (mainPath[i].y - mainPath[i - 1].y),
+        }
+      }
+    }
+    return mainPath[mainPath.length - 1]
+  }
+  return paginateByStations(chain, targetPerSheetM).map((interval) => {
+    const pts = [
+      pointAt(interval.fromM),
+      ...mainPath.filter((_, i) => chain[i] > interval.fromM + 1e-9 && chain[i] < interval.toM - 1e-9),
+      pointAt(interval.toM),
+    ]
+    const xs = pts.map((p) => p.x)
+    const ys = pts.map((p) => p.y)
+    return {
+      ...interval,
+      minX: Math.min(...xs) - marginM,
+      minY: Math.min(...ys) - marginM,
+      maxX: Math.max(...xs) + marginM,
+      maxY: Math.max(...ys) + marginM,
+    }
+  })
+}
+
 export interface ProfileSheetSpec {
   /** Sheet title, e.g. «Профиль К2 ПК0 - ПК6+10.53». */
   title: string
