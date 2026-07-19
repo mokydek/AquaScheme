@@ -7,6 +7,8 @@ import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
   generateSewerGeneralDataDxf,
+  generatePlanSheetSetDxf,
+  generateProfileSheetSetDxf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
   generateSewerScheduleXlsx,
@@ -131,7 +133,14 @@ export function GravitySection({
       const network = networkFromRows(nodes, pipes)
       const pipeDiameterMm = new Map(result.pipes.map((p) => [p.id, p.diameterMm]))
       const buildingLabels = new Map(buildings.map((b) => [b.id, b.label ?? '']))
-      const [general, situation, plan, profile, xlsx] = await Promise.all([
+      // The main collector path in station order, for the per-picket windows.
+      const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
+      const mainPath = result.profile.stations
+        .map((s) => nodeById.get(s.nodeId))
+        .filter((n): n is NonNullable<typeof n> => !!n)
+        .map((n) => ({ x: n.x, y: n.y }))
+      const sheetSystem = systemType === 'storm' ? ('storm' as const) : ('sewer' as const)
+      const [general, situation, plan, profile, xlsx, planSheets, profileSheets] = await Promise.all([
         generateSewerGeneralDataDxf({
           projectName,
           schedule,
@@ -148,14 +157,26 @@ export function GravitySection({
         generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels }),
         generateSewerProfileDxf({ projectName, profile: result.profile }),
         generateSewerScheduleXlsx(schedule),
+        mainPath.length >= 2
+          ? generatePlanSheetSetDxf({ projectName, network, pipeDiameterMm, mainPath, buildingLabels, system: sheetSystem })
+          : Promise.resolve([]),
+        generateProfileSheetSetDxf(projectName, result.profile, sheetSystem),
       ])
-      const zip = await zipBundle({
+      const files: Record<string, string | Uint8Array> = {
         [`${slug}_01_общие_данные.dxf`]: general,
         [`${slug}_02_ситуационная_схема.dxf`]: situation,
-        [`${slug}_03_план_К1.dxf`]: plan,
-        [`${slug}_04_профиль_К1.dxf`]: profile,
-        [`${slug}_05_ведомость_К1.xlsx`]: xlsx,
-      })
+        [`${slug}_03_план_${systemType === 'storm' ? 'К2' : 'К1'}_сводный.dxf`]: plan,
+        [`${slug}_04_профиль_${systemType === 'storm' ? 'К2' : 'К1'}_сводный.dxf`]: profile,
+        [`${slug}_05_ведомость.xlsx`]: xlsx,
+      }
+      // Per-picket sheets follow the summary sheets, numbered like the album.
+      let sheetNo = 6
+      const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.]+/g, '_')
+      for (const sheet of [...planSheets, ...profileSheets]) {
+        files[`${slug}_${String(sheetNo).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
+        sheetNo++
+      }
+      const zip = await zipBundle(files)
       const url = URL.createObjectURL(zip)
       const a = document.createElement('a')
       a.href = url

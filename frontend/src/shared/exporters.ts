@@ -40,6 +40,29 @@ export async function generateSewerPlanDxf(input: {
   return buildSewerPlanDxf(input)
 }
 
+/** Per-picket profile sheet set («Профиль К2 ПК…-ПК…»), one DXF per sheet. */
+export async function generateProfileSheetSetDxf(
+  projectName: string,
+  profile: import('@aquascheme/engine').GravityProfile,
+  system: 'sewer' | 'storm',
+): Promise<Array<{ title: string; dxf: string }>> {
+  const { buildProfileSheetSetDxf } = await import('@aquascheme/engine/dxf')
+  return buildProfileSheetSetDxf(projectName, profile, system)
+}
+
+/** Per-picket plan sheet set («План К2 ПК…-ПК…. М1:500»), one DXF per sheet. */
+export async function generatePlanSheetSetDxf(input: {
+  projectName: string
+  network: import('@aquascheme/engine').TracedNetwork
+  pipeDiameterMm: Map<string, number>
+  mainPath: Array<{ x: number; y: number }>
+  buildingLabels?: Map<string, string>
+  system?: 'sewer' | 'storm'
+}): Promise<Array<{ title: string; dxf: string }>> {
+  const { buildPlanSheetSetDxf } = await import('@aquascheme/engine/dxf')
+  return buildPlanSheetSetDxf(input)
+}
+
 /** Sewer (К1) general data sheet as DXF (ведомости, показатели, акты). */
 export async function generateSewerGeneralDataDxf(input: {
   projectName: string
