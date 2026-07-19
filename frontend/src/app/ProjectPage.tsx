@@ -430,6 +430,7 @@ export function ProjectPage() {
                 pipes={pipes}
                 normsDataset={datasets.normative}
                 geologyDataset={datasets.geology}
+                parcels={parcels}
               />
             </>
           )}

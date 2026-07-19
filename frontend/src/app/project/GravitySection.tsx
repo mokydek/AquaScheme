@@ -4,10 +4,14 @@ import {
   assessLiftStationNeed,
   buildSewerSchedule,
   buildSewerSpecification,
+  checkRouteInCorridor,
   computeNetworkDemand,
   NORMATIVE_DEFAULTS,
+  ringFromGeoJsonGeometry,
   solveGravityNetwork,
 } from '@aquascheme/engine'
+import type { CorridorCheck } from '@aquascheme/engine'
+import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
@@ -61,6 +65,7 @@ export function GravitySection({
   pipes,
   normsDataset,
   geologyDataset,
+  parcels,
 }: {
   projectId: string
   systemType: 'sewer' | 'storm'
@@ -70,12 +75,15 @@ export function GravitySection({
   pipes: PipeRow[]
   normsDataset?: DatasetRow
   geologyDataset?: DatasetRow
+  /** Project parcels; kind 'right_of_way' rings form the corridor to check. */
+  parcels?: ParcelRow[]
 }) {
   const { t } = useTranslation()
   const [exporting, setExporting] = useState(false)
   // Design criterion: minBurial is what professional flat-terrain trunks use
   // (registry sewer.design.minBurial); minDiameter is the economical default.
   const [strategy, setStrategy] = useState<'minDiameter' | 'minBurial'>('minBurial')
+  const [corridorCheck, setCorridorCheck] = useState<CorridorCheck | null>(null)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
 
@@ -217,6 +225,23 @@ export function GravitySection({
     } finally {
       setExporting(false)
     }
+  }
+
+  // Mandatory corridor check (ТЗ п.6.1): the main collector path against the
+  // right-of-way rings loaded/drawn in the parcels section.
+  const runCorridorCheck = () => {
+    if (!result?.profile) return
+    const network = networkFromRows(nodes, pipes)
+    const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
+    const mainPath = result.profile.stations
+      .map((s) => nodeById.get(s.nodeId))
+      .filter((n): n is NonNullable<typeof n> => !!n)
+      .map((n) => ({ x: n.x, y: n.y }))
+    const rings = (parcels ?? [])
+      .filter((p) => p.kind === 'right_of_way')
+      .map((p) => ringFromGeoJsonGeometry(p.geometry))
+      .filter((r): r is NonNullable<typeof r> => !!r)
+    setCorridorCheck(checkRouteInCorridor(mainPath, rings))
   }
 
   const exportNote = async () => {
@@ -416,9 +441,21 @@ export function GravitySection({
             <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSituation()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSituation')}
             </button>
+            <button type="button" className="btn btn-sm" disabled={!result.profile} onClick={runCorridorCheck}>
+              {t('project.gravity.corridorRun')}
+            </button>
             <button type="button" className="btn btn-sm" disabled={exporting || !result.profile} onClick={() => void exportNote()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportNote')}
             </button>
+            {corridorCheck && (
+              <span className={`stat-line${corridorCheck.inside.value ? ' ok' : ' warn'}`} style={{ marginTop: 0 }}>
+                {corridorCheck.inside.value
+                  ? t('project.gravity.corridorOk')
+                  : corridorCheck.violations.length === 0
+                    ? t('project.gravity.corridorNone')
+                    : t('project.gravity.corridorViolations', { count: corridorCheck.violations.length })}
+              </span>
+            )}
             <button type="button" className="btn btn-sm" disabled={exporting || !result.profile} onClick={() => void exportBundle()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
             </button>
