@@ -17,6 +17,7 @@ import {
   generateManholeSheetsDxf,
   generatePlanSheetSetDxf,
   generateProfileSheetSetDxf,
+  generateSewerNotePdf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
   generateSewerSpecSheetDxf,
@@ -72,6 +73,9 @@ export function GravitySection({
 }) {
   const { t } = useTranslation()
   const [exporting, setExporting] = useState(false)
+  // Design criterion: minBurial is what professional flat-terrain trunks use
+  // (registry sewer.design.minBurial); minDiameter is the economical default.
+  const [strategy, setStrategy] = useState<'minDiameter' | 'minBurial'>('minBurial')
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
 
@@ -115,8 +119,8 @@ export function GravitySection({
     const network = networkFromRows(nodes, pipes)
     const freezingDepthM =
       ((geologyDataset?.content ?? {}) as { freezingDepthM?: number }).freezingDepthM ?? 1.5
-    return solveGravityNetwork({ network, buildingFlowLps, system: systemType, freezingDepthM })
-  }, [buildings, nodes, pipes, normsDataset, geologyDataset, systemType])
+    return solveGravityNetwork({ network, buildingFlowLps, system: systemType, freezingDepthM, strategy })
+  }, [buildings, nodes, pipes, normsDataset, geologyDataset, systemType, strategy])
 
   const rows = useMemo(() => {
     if (!result) return []
@@ -206,6 +210,41 @@ export function GravitySection({
       const a = document.createElement('a')
       a.href = url
       a.download = `${slug}_комплект_К1.zip`
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const exportNote = async () => {
+    if (!result || !schedule) return
+    setExporting(true)
+    try {
+      const groundwaterDepthM = (geologyDataset?.content as { groundwaterDepthM?: number } | null)?.groundwaterDepthM
+      const spec = buildSewerSpecification({
+        schedule,
+        liftStation: assessLiftStationNeed((result.profile?.stations ?? []).map((s) => s.depthM)).needed.value,
+        highGroundwater:
+          groundwaterDepthM !== undefined && result.profile !== null && groundwaterDepthM < result.profile.maxDepthM,
+      })
+      const blob = await generateSewerNotePdf({
+        projectName,
+        dateIso: new Date().toISOString(),
+        system: systemType,
+        result,
+        spec,
+        designStrategyNote:
+          strategy === 'minBurial'
+            ? 'Критерий подбора: минимизация заглубления коллектора на плоском рельефе (проектное решение, запись реестра sewer.design.minBurial).'
+            : undefined,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slug}_записка_${systemType === 'storm' ? 'К2' : 'К1'}.pdf`
       document.body.append(a)
       a.click()
       a.remove()
@@ -360,11 +399,25 @@ export function GravitySection({
             <NormBadge refs={['sewer.minDiameter', 'sewer.velocity.min', 'sewer.filling.max', 'sewer.slope.min']} />
           </div>
           <div className="section-actions" style={{ marginTop: 12 }}>
+            <label className="field" style={{ maxWidth: 320 }}>
+              <span className="field-label">{t('project.gravity.strategy')}</span>
+              <select
+                className="input"
+                value={strategy}
+                onChange={(e) => setStrategy(e.target.value as 'minDiameter' | 'minBurial')}
+              >
+                <option value="minBurial">{t('project.gravity.strategyMinBurial')}</option>
+                <option value="minDiameter">{t('project.gravity.strategyMinDiameter')}</option>
+              </select>
+            </label>
             <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportPlan()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportPlan')}
             </button>
             <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSituation()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSituation')}
+            </button>
+            <button type="button" className="btn btn-sm" disabled={exporting || !result.profile} onClick={() => void exportNote()}>
+              {exporting ? t('project.gravity.exporting') : t('project.gravity.exportNote')}
             </button>
             <button type="button" className="btn btn-sm" disabled={exporting || !result.profile} onClick={() => void exportBundle()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
