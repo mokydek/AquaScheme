@@ -4,6 +4,7 @@ import {
   assessLiftStationNeed,
   buildSewerSchedule,
   buildSewerSpecification,
+  buildStormDemo,
   checkRouteInCorridor,
   computeNetworkDemand,
   NORMATIVE_DEFAULTS,
@@ -13,8 +14,9 @@ import {
 import type { CorridorCheck } from '@aquascheme/engine'
 import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams } from '@aquascheme/engine'
-import { networkFromRows } from '../../shared/network'
+import { networkFromRows, replaceNetwork } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
+import { supabase } from '../../shared/supabase'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
   generateSewerGeneralDataDxf,
@@ -66,6 +68,7 @@ export function GravitySection({
   normsDataset,
   geologyDataset,
   parcels,
+  onChanged,
 }: {
   projectId: string
   systemType: 'sewer' | 'storm'
@@ -77,6 +80,8 @@ export function GravitySection({
   geologyDataset?: DatasetRow
   /** Project parcels; kind 'right_of_way' rings form the corridor to check. */
   parcels?: ParcelRow[]
+  /** Reload the project data after the demo seeding. */
+  onChanged?: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const [exporting, setExporting] = useState(false)
@@ -114,16 +119,22 @@ export function GravitySection({
       ...NORMATIVE_DEFAULTS,
       ...((normsDataset?.content ?? {}) as Partial<NormativeParams>),
     }
-    const demand = computeNetworkDemand(
-      buildings.map((b) => ({
-        id: b.id,
-        residents: b.residents ?? 0,
-        specificDemandLpd: b.specific_demand_lpd ?? undefined,
-      })),
-      norms,
-    )
     const buildingFlowLps = new Map<string, number>()
-    for (const b of demand.buildings) if (b.id) buildingFlowLps.set(b.id, b.designFlowLps)
+    if (systemType === 'storm') {
+      // Storm inflows are catchment/treatment-plant flows entered directly,
+      // not domestic demand: the residents field holds the inflow in L/s.
+      for (const b of buildings) buildingFlowLps.set(b.id, b.residents ?? 0)
+    } else {
+      const demand = computeNetworkDemand(
+        buildings.map((b) => ({
+          id: b.id,
+          residents: b.residents ?? 0,
+          specificDemandLpd: b.specific_demand_lpd ?? undefined,
+        })),
+        norms,
+      )
+      for (const b of demand.buildings) if (b.id) buildingFlowLps.set(b.id, b.designFlowLps)
+    }
     const network = networkFromRows(nodes, pipes)
     const freezingDepthM =
       ((geologyDataset?.content ?? {}) as { freezingDepthM?: number }).freezingDepthM ?? 1.5
@@ -224,6 +235,43 @@ export function GravitySection({
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } finally {
       setExporting(false)
+    }
+  }
+
+  // Seed the flat-terrain trunk demo (нейтральные имена и датум отметок;
+  // инженерная форма бенчмарка: ~15.8 км, 4 боковых притока, высокий итог).
+  const [seeding, setSeeding] = useState(false)
+  const seedDemo = async () => {
+    setSeeding(true)
+    try {
+      const demo = buildStormDemo()
+      await supabase.from('buildings').delete().eq('project_id', projectId)
+      const { data: inserted, error } = await supabase
+        .from('buildings')
+        .insert(demo.sources.map((s) => ({
+          project_id: projectId,
+          label: s.label,
+          x: s.x,
+          y: s.y,
+          floors: 1,
+          residents: s.flowLps,
+        })))
+        .select('id,label')
+      if (error) throw error
+      // Wire engine building ids to the inserted rows through node.building_id.
+      const idByLabel = new Map((inserted ?? []).map((r: { id: string; label: string }) => [r.label, r.id]))
+      const network = {
+        ...demo.network,
+        nodes: demo.network.nodes.map((n) => {
+          if (n.kind !== 'building') return n
+          // Engine node OS1..OS4 ↔ inserted building «ОС-1..ОС-4».
+          return { ...n, buildingId: idByLabel.get(`ОС-${n.id.slice(2)}`) ?? n.buildingId }
+        }),
+      }
+      await replaceNetwork(projectId, network)
+      await onChanged?.()
+    } finally {
+      setSeeding(false)
     }
   }
 
@@ -360,7 +408,19 @@ export function GravitySection({
   return (
     <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.gravity.hint')}</p>
-      {!result && <p className="stat-line warn">{t('project.gravity.needNetwork')}</p>}
+      {!result && (
+        <>
+          <p className="stat-line warn">{t('project.gravity.needNetwork')}</p>
+          {systemType === 'storm' && (
+            <div className="section-actions">
+              <button type="button" className="btn btn-sm" disabled={seeding} onClick={() => void seedDemo()}>
+                {seeding ? t('project.gravity.demoSeeding') : t('project.gravity.demoSeed')}
+              </button>
+              <span className="stat-line" style={{ marginTop: 0 }}>{t('project.gravity.demoSeedHint')}</span>
+            </div>
+          )}
+        </>
+      )}
       {result && (
         <>
           <p className="stat-line ok">

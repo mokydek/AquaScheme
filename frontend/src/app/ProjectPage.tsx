@@ -35,7 +35,6 @@ import { GravitySection } from './project/GravitySection'
 import { syncNormRegistry } from '../shared/norms'
 import { syncRegions } from '../shared/regions'
 import { NormRegistrySection } from './project/NormRegistrySection'
-import { Panel } from './project/Panel'
 import { analyzeParcelViolations } from '@aquascheme/engine'
 import type { ViolationPipe } from '@aquascheme/engine'
 import { autoAssignParcels, fetchParcels, parcelPolygons } from '../shared/parcels'
@@ -431,13 +430,23 @@ export function ProjectPage() {
                 normsDataset={datasets.normative}
                 geologyDataset={datasets.geology}
                 parcels={parcels}
+                onChanged={load}
               />
             </>
           )}
           {isStorm && (
-            <Panel title={t('project.gravity.title')} status="default">
-              <p className="hint">{t('project.gravity.stormPending')}</p>
-            </Panel>
+            <GravitySection
+              projectId={project.id}
+              systemType="storm"
+              projectName={project.name}
+              buildings={buildings}
+              nodes={nodes}
+              pipes={pipes}
+              normsDataset={datasets.normative}
+              geologyDataset={datasets.geology}
+              parcels={parcels}
+              onChanged={load}
+            />
           )}
           {isWater && (
             <>
