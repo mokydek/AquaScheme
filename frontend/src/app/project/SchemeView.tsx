@@ -24,11 +24,19 @@ export interface SchemeViewProps {
   pipeDiameterMm: Map<string, number>
   outletFlowLps?: number
   outletLabel?: string
+  /** Corridor (полоса отвода) rings in local coordinates, drawn dashed. */
+  corridorRings?: Array<Array<{ x: number; y: number }>>
+  /**
+   * Step ids currently visible (see buildSituationSteps). Absent — everything
+   * is drawn at once (the static sheet). Layers fade in as steps arrive.
+   */
+  visibleSteps?: Set<string>
 }
 
-export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFlowLps, outletLabel }: SchemeViewProps) {
+export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFlowLps, outletLabel, corridorRings, visibleSteps }: SchemeViewProps) {
   const model = useMemo(() => {
-    const pts = [...network.nodes.map((n) => ({ x: n.x, y: n.y })), ...buildings]
+    const ringPts = (corridorRings ?? []).flat()
+    const pts = [...network.nodes.map((n) => ({ x: n.x, y: n.y })), ...buildings, ...ringPts]
     if (pts.length === 0) return null
     const minX = Math.min(...pts.map((p) => p.x))
     const maxX = Math.max(...pts.map((p) => p.x))
@@ -66,10 +74,20 @@ export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFl
       labels,
       buildings: buildings.map((b) => ({ x: tx(b.x), y: ty(b.y), label: b.label ?? '' })),
       outlet: outlet ? { x: tx(outlet.x), y: ty(outlet.y) } : null,
+      corridors: (corridorRings ?? []).map((ring) =>
+        ring.map((p) => `${tx(p.x).toFixed(1)},${ty(p.y).toFixed(1)}`).join(' '),
+      ),
     }
-  }, [network, buildings, pipeDiameterMm])
+  }, [network, buildings, pipeDiameterMm, corridorRings])
 
   if (!model) return null
+
+  // A layer is shown when playback reached its step (or no playback at all).
+  const shown = (step: string) => !visibleSteps || visibleSteps.has(step)
+  const layerStyle = (step: string) => ({
+    opacity: shown(step) ? 1 : 0,
+    transition: 'opacity 0.5s ease',
+  })
 
   return (
     <svg
@@ -92,40 +110,53 @@ export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFl
       </g>
 
       {/* Context: buildings (красные линии style) */}
-      {model.buildings.map((b, i) => (
-        <g key={i}>
-          <rect x={b.x - 7} y={b.y - 5} width={14} height={10} fill="none" stroke={CONTEXT} strokeWidth={1} />
-          {b.label && (
-            <text x={b.x} y={b.y - 8} textAnchor="middle" fontSize={9} fill={CONTEXT}>
-              {b.label}
-            </text>
-          )}
-        </g>
-      ))}
+      <g style={layerStyle('context')}>
+        {model.buildings.map((b, i) => (
+          <g key={i}>
+            <rect x={b.x - 7} y={b.y - 5} width={14} height={10} fill="none" stroke={CONTEXT} strokeWidth={1} />
+            {b.label && (
+              <text x={b.x} y={b.y - 8} textAnchor="middle" fontSize={9} fill={CONTEXT}>
+                {b.label}
+              </text>
+            )}
+          </g>
+        ))}
+      </g>
+
+      {/* Corridor: right-of-way rings, dashed */}
+      <g style={layerStyle('corridor')}>
+        {model.corridors.map((points, i) => (
+          <polygon key={i} points={points} fill="none" stroke={ROUTE} strokeWidth={1} strokeDasharray="6 4" />
+        ))}
+      </g>
 
       {/* Route: thick blue */}
-      {model.segments.map((s) => (
-        <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={ROUTE} strokeWidth={4} strokeLinecap="round" />
-      ))}
+      <g style={layerStyle('route')}>
+        {model.segments.map((s) => (
+          <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={ROUTE} strokeWidth={4} strokeLinecap="round" />
+        ))}
+      </g>
 
       {/* Diameter labels along the route */}
-      {model.labels.map((l) => (
-        <text
-          key={l.id}
-          x={l.mx}
-          y={l.my - 7}
-          textAnchor="middle"
-          fontSize={12}
-          fill={ROUTE}
-          transform={`rotate(${l.angle} ${l.mx} ${l.my})`}
-        >
-          {l.text}
-        </text>
-      ))}
+      <g style={layerStyle('diameters')}>
+        {model.labels.map((l) => (
+          <text
+            key={l.id}
+            x={l.mx}
+            y={l.my - 7}
+            textAnchor="middle"
+            fontSize={12}
+            fill={ROUTE}
+            transform={`rotate(${l.angle} ${l.mx} ${l.my})`}
+          >
+            {l.text}
+          </text>
+        ))}
+      </g>
 
       {/* Outlet: filled blue rectangle with flow */}
       {model.outlet && (
-        <g>
+        <g style={layerStyle('outlet')}>
           <rect x={model.outlet.x - 10} y={model.outlet.y - 8} width={20} height={16} fill={ROUTE} opacity={0.85} />
           <text x={model.outlet.x + 14} y={model.outlet.y - 2} fontSize={12} fill={INK}>
             {outletLabel ?? 'Выпуск'}
@@ -139,7 +170,7 @@ export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFl
       )}
 
       {/* Legend */}
-      <g transform={`translate(${PAD - 20},${H - 64})`} fontSize={11} fill={INK}>
+      <g transform={`translate(${PAD - 20},${H - 64})`} fontSize={11} fill={INK} style={layerStyle('legend')}>
         <text x={0} y={0} fontWeight={600}>Условные обозначения</text>
         <line x1={0} y1={14} x2={34} y2={14} stroke={CONTEXT} strokeWidth={1} />
         <text x={42} y={18}>подоснова (здания, красные линии)</text>
@@ -147,6 +178,8 @@ export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFl
         <text x={42} y={34}>коридор сетей (проектируемая трасса)</text>
         <rect x={11} y={40} width={12} height={10} fill={ROUTE} opacity={0.85} />
         <text x={42} y={49}>выпуск / очистные сооружения</text>
+        <line x1={0} y1={60} x2={34} y2={60} stroke={ROUTE} strokeWidth={1} strokeDasharray="6 4" />
+        <text x={42} y={64}>полоса отвода (красные линии)</text>
       </g>
     </svg>
   )

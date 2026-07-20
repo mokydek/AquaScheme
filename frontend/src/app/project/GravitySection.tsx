@@ -33,7 +33,7 @@ import {
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
-import { SchemeView } from './SchemeView'
+import { SchemeBuilder } from './SchemeBuilder'
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -369,12 +369,25 @@ export function GravitySection({
 
           {schemeModel && (
             <div style={{ marginTop: 12 }}>
-              <SchemeView
-                title={t('project.gravity.schemeTitle')}
-                network={schemeModel.network}
-                buildings={buildings.map((b) => ({ x: b.x, y: b.y, label: b.label }))}
-                pipeDiameterMm={schemeModel.pipeDiameterMm}
-                outletFlowLps={result.outletFlowLps}
+              <SchemeBuilder
+                scheme={{
+                  title: t('project.gravity.schemeTitle'),
+                  network: schemeModel.network,
+                  buildings: buildings.map((b) => ({ x: b.x, y: b.y, label: b.label })),
+                  pipeDiameterMm: schemeModel.pipeDiameterMm,
+                  outletFlowLps: result.outletFlowLps,
+                  corridorRings: (parcels ?? [])
+                    .filter((p) => p.kind === 'right_of_way')
+                    .map((p) => ringFromGeoJsonGeometry(p.geometry))
+                    .filter((r): r is NonNullable<typeof r> => !!r),
+                }}
+                steps={{
+                  network: schemeModel.network,
+                  pipeDiameterMm: schemeModel.pipeDiameterMm,
+                  buildingsCount: buildings.length,
+                  corridorRings: (parcels ?? []).filter((p) => p.kind === 'right_of_way').length,
+                  outletFlowLps: result.outletFlowLps,
+                }}
               />
             </div>
           )}
