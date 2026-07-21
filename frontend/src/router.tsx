@@ -2,10 +2,22 @@ import { createBrowserRouter } from 'react-router-dom'
 import { RootLayout } from './shared/RootLayout'
 import { RequireAuth } from './shared/RequireAuth'
 
+/**
+ * Shown while the initial lazy route chunk loads. Providing it on the root
+ * route satisfies React Router 7's hydration requirement (без него в консоли
+ * предупреждение «No HydrateFallback element provided»).
+ */
+function HydrateFallback() {
+  return (
+    <div role="status" aria-busy="true" style={{ minHeight: '60vh' }} />
+  )
+}
+
 export const router = createBrowserRouter([
   {
     path: '/',
     Component: RootLayout,
+    HydrateFallback,
     children: [
       {
         index: true,
