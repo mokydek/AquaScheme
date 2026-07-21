@@ -17,6 +17,8 @@ import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows, replaceNetwork } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { supabase } from '../../shared/supabase'
+import { saveDataset } from '../../shared/datasets'
+import { insertParcel } from '../../shared/parcels'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
   generateSewerGeneralDataDxf,
@@ -35,7 +37,6 @@ import {
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
-import { SchemeBuilder } from './SchemeBuilder'
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -147,15 +148,6 @@ export function GravitySection({
   }, [result])
 
   const schedule = useMemo(() => (result ? buildSewerSchedule(result) : null), [result])
-
-  // Shared geometry for the on-screen scheme and the DXF exports.
-  const schemeModel = useMemo(() => {
-    if (!result) return null
-    return {
-      network: networkFromRows(nodes, pipes),
-      pipeDiameterMm: new Map(result.pipes.map((p) => [p.id, p.diameterMm])),
-    }
-  }, [result, nodes, pipes])
 
   // The full К1 sheet set, mirroring the professional НК album: общие данные,
   // ситуационная схема, план, продольный профиль, ведомость колодцев и труб.
@@ -269,6 +261,33 @@ export function GravitySection({
         }),
       }
       await replaceNetwork(projectId, network)
+
+      // All the other project files at once, so the set can be exported right
+      // away: geology (high groundwater — the object's key condition), norms,
+      // seismicity and the right-of-way corridor around the trunk.
+      await saveDataset(projectId, 'geology', {
+        soilType: 'clay',
+        groundwaterDepthM: 0.5,
+        corrosivity: 'high',
+        freezingDepthM: 2.2,
+        subsidenceType: null,
+        heaving: true,
+        swelling: true,
+      })
+      await saveDataset(projectId, 'seismic', { siteIntensityPoints: 6 })
+      await saveDataset(projectId, 'normative', { ...NORMATIVE_DEFAULTS })
+      // Corridor strip ±40 m around the straight demo trunk (полоса отвода).
+      const ys = demo.network.nodes.filter((n) => n.kind !== 'building').map((n) => n.y)
+      const y0 = Math.min(...ys)
+      const y1 = Math.max(...ys)
+      await supabase.from('parcels').delete().eq('project_id', projectId).eq('kind', 'right_of_way')
+      await insertParcel(projectId, 'right_of_way', [
+        { x: -40, y: y0 - 40 },
+        { x: 40, y: y0 - 40 },
+        { x: 40, y: y1 + 40 },
+        { x: -40, y: y1 + 40 },
+      ], 'Полоса отвода (демо)')
+
       await onChanged?.()
     } finally {
       setSeeding(false)
@@ -427,30 +446,6 @@ export function GravitySection({
             {t('project.gravity.outletFlow', { value: result.outletFlowLps.toFixed(2) })}
           </p>
 
-          {schemeModel && (
-            <div style={{ marginTop: 12 }}>
-              <SchemeBuilder
-                scheme={{
-                  title: t('project.gravity.schemeTitle'),
-                  network: schemeModel.network,
-                  buildings: buildings.map((b) => ({ x: b.x, y: b.y, label: b.label })),
-                  pipeDiameterMm: schemeModel.pipeDiameterMm,
-                  outletFlowLps: result.outletFlowLps,
-                  corridorRings: (parcels ?? [])
-                    .filter((p) => p.kind === 'right_of_way')
-                    .map((p) => ringFromGeoJsonGeometry(p.geometry))
-                    .filter((r): r is NonNullable<typeof r> => !!r),
-                }}
-                steps={{
-                  network: schemeModel.network,
-                  pipeDiameterMm: schemeModel.pipeDiameterMm,
-                  buildingsCount: buildings.length,
-                  corridorRings: (parcels ?? []).filter((p) => p.kind === 'right_of_way').length,
-                  outletFlowLps: result.outletFlowLps,
-                }}
-              />
-            </div>
-          )}
           <div className="section-actions" style={{ marginTop: 4 }}>
             <button type="button" className="btn btn-sm" disabled={saving} onClick={() => void saveRun()}>
               {saving ? t('project.gravity.saving') : t('project.gravity.save')}

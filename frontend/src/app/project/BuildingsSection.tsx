@@ -21,12 +21,23 @@ export function BuildingsSection({
   projectId,
   buildings,
   onChanged,
+  mode = 'buildings',
 }: {
   projectId: string
   buildings: BuildingRow[]
   onChanged: () => Promise<void>
+  /**
+   * 'buildings' — dwellings with residents (water supply). 'inflows' — storm
+   * inflow points (treatment plants ОС) whose flow is entered directly in
+   * L/s: a rain collector is fed by catchment discharge, NOT by residents, so
+   * the storeys field is hidden and the residents column becomes «Расход, л/с».
+   */
+  mode?: 'buildings' | 'inflows'
 }) {
   const { t } = useTranslation()
+  const inflow = mode === 'inflows'
+  const tr = (key: string, opts?: Record<string, unknown>) =>
+    inflow ? t(`project.inflows.${key}`, opts) : t(`project.buildings.${key}`, opts)
   const [draft, setDraft] = useState<DraftBuilding>(EMPTY_DRAFT)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
@@ -40,7 +51,7 @@ export function BuildingsSection({
       const routed = await routeUpload(file, ['csv'])
       const parsed = parseBuildingsCsv(routed.text ?? '')
       if (parsed.buildings.length === 0) {
-        setNotice({ kind: 'error', text: t('project.buildings.issues', { count: parsed.issues.length }) })
+        setNotice({ kind: 'error', text: tr('issues', { count: parsed.issues.length }) })
         return
       }
       await supabase.from('buildings').delete().eq('project_id', projectId)
@@ -55,9 +66,9 @@ export function BuildingsSection({
         })),
       )
       if (error) throw error
-      const parts = [t('project.buildings.replaced', { count: parsed.buildings.length })]
+      const parts = [tr('replaced', { count: parsed.buildings.length })]
       if (parsed.issues.length > 0) {
-        parts.push(t('project.buildings.issues', { count: parsed.issues.length }))
+        parts.push(tr('issues', { count: parsed.issues.length }))
       }
       setNotice({ kind: 'info', text: parts.join('. ') })
       await onChanged()
@@ -75,8 +86,9 @@ export function BuildingsSection({
     setNotice(null)
     const x = Number(draft.x.replace(',', '.'))
     const y = Number(draft.y.replace(',', '.'))
-    const floors = Number(draft.floors)
-    const residents = Number(draft.residents)
+    // Inflow points have no storeys; the flow is stored in the residents column.
+    const floors = inflow ? 1 : Number(draft.floors)
+    const residents = Number(draft.residents.replace(',', '.'))
     const valid =
       Number.isFinite(x) &&
       Number.isFinite(y) &&
@@ -85,7 +97,7 @@ export function BuildingsSection({
       Number.isFinite(residents) &&
       residents >= 0
     if (!valid) {
-      setNotice({ kind: 'error', text: t('project.buildings.invalidRow') })
+      setNotice({ kind: 'error', text: tr('invalidRow') })
       return
     }
     setBusy(true)
@@ -117,8 +129,8 @@ export function BuildingsSection({
     setDraft((d) => ({ ...d, [field]: e.target.value }))
 
   return (
-    <Panel title={t('project.buildings.title')} status={buildings.length > 0 ? 'filled' : 'empty'}>
-      <p className="hint">{t('project.buildings.hint')}</p>
+    <Panel title={tr('title')} status={buildings.length > 0 ? 'filled' : 'empty'}>
+      <p className="hint">{tr('hint')}</p>
       <div className="section-actions">
         <input
           className="file-input"
@@ -128,19 +140,19 @@ export function BuildingsSection({
         />
       </div>
       {buildings.length === 0 ? (
-        <p className="stat-line">{t('project.buildings.emptyList')}</p>
+        <p className="stat-line">{tr('emptyList')}</p>
       ) : (
         <>
-          <p className="stat-line">{t('project.buildings.count', { count: buildings.length })}</p>
+          <p className="stat-line">{tr('count', { count: buildings.length })}</p>
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>{t('project.buildings.thLabel')}</th>
-                  <th className="num">{t('project.buildings.thX')}</th>
-                  <th className="num">{t('project.buildings.thY')}</th>
-                  <th className="num">{t('project.buildings.thFloors')}</th>
-                  <th className="num">{t('project.buildings.thResidents')}</th>
+                  <th>{tr('thLabel')}</th>
+                  <th className="num">{tr('thX')}</th>
+                  <th className="num">{tr('thY')}</th>
+                  {!inflow && <th className="num">{tr('thFloors')}</th>}
+                  <th className="num">{tr('thResidents')}</th>
                   <th />
                 </tr>
               </thead>
@@ -150,7 +162,7 @@ export function BuildingsSection({
                     <td>{b.label ?? ''}</td>
                     <td className="num">{b.x}</td>
                     <td className="num">{b.y}</td>
-                    <td className="num">{b.floors}</td>
+                    {!inflow && <td className="num">{b.floors}</td>}
                     <td className="num">{b.residents ?? ''}</td>
                     <td>
                       <button
@@ -158,7 +170,7 @@ export function BuildingsSection({
                         className="link-btn"
                         onClick={() => void removeBuilding(b.id)}
                       >
-                        {t('project.buildings.delete')}
+                        {tr('delete')}
                       </button>
                     </td>
                   </tr>
@@ -171,40 +183,42 @@ export function BuildingsSection({
       <form className="add-row" onSubmit={(e) => void addBuilding(e)}>
         <input
           className="input input-sm"
-          placeholder={t('project.buildings.thLabel')}
+          placeholder={tr('thLabel')}
           value={draft.label}
           onChange={setField('label')}
         />
         <input
           className="input input-sm"
-          placeholder={t('project.buildings.thX')}
+          placeholder={tr('thX')}
           value={draft.x}
           onChange={setField('x')}
           required
         />
         <input
           className="input input-sm"
-          placeholder={t('project.buildings.thY')}
+          placeholder={tr('thY')}
           value={draft.y}
           onChange={setField('y')}
           required
         />
+        {!inflow && (
+          <input
+            className="input input-sm"
+            placeholder={tr('thFloors')}
+            value={draft.floors}
+            onChange={setField('floors')}
+            required
+          />
+        )}
         <input
           className="input input-sm"
-          placeholder={t('project.buildings.thFloors')}
-          value={draft.floors}
-          onChange={setField('floors')}
-          required
-        />
-        <input
-          className="input input-sm"
-          placeholder={t('project.buildings.thResidents')}
+          placeholder={tr('thResidents')}
           value={draft.residents}
           onChange={setField('residents')}
           required
         />
         <button className="btn btn-sm" type="submit" disabled={busy}>
-          {t('project.buildings.add')}
+          {tr('add')}
         </button>
       </form>
       {notice && <p className={`notice ${notice.kind}`}>{notice.text}</p>}

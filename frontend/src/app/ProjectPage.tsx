@@ -32,6 +32,7 @@ import { fetchGeology } from '../shared/geology'
 import type { Borehole } from '@aquascheme/engine'
 import { DrainageSection } from './project/DrainageSection'
 import { GravitySection } from './project/GravitySection'
+import { SituationSchemeSection } from './project/SituationSchemeSection'
 import { syncNormRegistry } from '../shared/norms'
 import { syncRegions } from '../shared/regions'
 import { NormRegistrySection } from './project/NormRegistrySection'
@@ -448,6 +449,16 @@ export function ProjectPage() {
               onChanged={load}
             />
           )}
+          {(isSewer || isStorm) && (
+            <SituationSchemeSection
+              systemType={isStorm ? 'storm' : 'sewer'}
+              buildings={buildings}
+              nodes={nodes}
+              pipes={pipes}
+              geologyDataset={datasets.geology}
+              parcels={parcels}
+            />
+          )}
           {isWater && (
             <>
               <ImportSection
@@ -509,7 +520,12 @@ export function ProjectPage() {
             </>
           )}
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
-          <BuildingsSection projectId={project.id} buildings={buildings} onChanged={load} />
+          <BuildingsSection
+            projectId={project.id}
+            buildings={buildings}
+            onChanged={load}
+            mode={isStorm ? 'inflows' : 'buildings'}
+          />
           <SourceSection projectId={project.id} dataset={datasets.source} onSaved={load} />
           <RegionSection
             projectId={project.id}
