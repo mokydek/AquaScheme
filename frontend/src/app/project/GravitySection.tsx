@@ -4,7 +4,6 @@ import {
   assessLiftStationNeed,
   buildSewerSchedule,
   buildSewerSpecification,
-  buildStormDemo,
   checkRouteInCorridor,
   computeNetworkDemand,
   NORMATIVE_DEFAULTS,
@@ -14,11 +13,9 @@ import {
 import type { CorridorCheck } from '@aquascheme/engine'
 import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams } from '@aquascheme/engine'
-import { networkFromRows, replaceNetwork } from '../../shared/network'
+import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
-import { supabase } from '../../shared/supabase'
-import { saveDataset } from '../../shared/datasets'
-import { insertParcel } from '../../shared/parcels'
+import { seedStormProject } from '../../shared/stormDemo'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
   generateSewerGeneralDataDxf,
@@ -230,64 +227,21 @@ export function GravitySection({
     }
   }
 
-  // Seed the flat-terrain trunk demo (нейтральные имена и датум отметок;
-  // инженерная форма бенчмарка: ~15.8 км, 4 боковых притока, высокий итог).
+  // Seed a WHOLE ready demo project (benchmark-shaped): inflow sources, the
+  // ~15.8 km trunk, geology with boreholes, seismicity, norms, the corridor
+  // and the permitting-documents checklist — all panels at once.
   const [seeding, setSeeding] = useState(false)
+  const [seedNotice, setSeedNotice] = useState<string | null>(null)
   const seedDemo = async () => {
     setSeeding(true)
+    setSeedNotice(null)
     try {
-      const demo = buildStormDemo()
-      await supabase.from('buildings').delete().eq('project_id', projectId)
-      const { data: inserted, error } = await supabase
-        .from('buildings')
-        .insert(demo.sources.map((s) => ({
-          project_id: projectId,
-          label: s.label,
-          x: s.x,
-          y: s.y,
-          floors: 1,
-          residents: s.flowLps,
-        })))
-        .select('id,label')
-      if (error) throw error
-      // Wire engine building ids to the inserted rows through node.building_id.
-      const idByLabel = new Map((inserted ?? []).map((r: { id: string; label: string }) => [r.label, r.id]))
-      const network = {
-        ...demo.network,
-        nodes: demo.network.nodes.map((n) => {
-          if (n.kind !== 'building') return n
-          // Engine node OS1..OS4 ↔ inserted building «ОС-1..ОС-4».
-          return { ...n, buildingId: idByLabel.get(`ОС-${n.id.slice(2)}`) ?? n.buildingId }
-        }),
-      }
-      await replaceNetwork(projectId, network)
-
-      // All the other project files at once, so the set can be exported right
-      // away: geology (high groundwater — the object's key condition), norms,
-      // seismicity and the right-of-way corridor around the trunk.
-      await saveDataset(projectId, 'geology', {
-        soilType: 'clay',
-        groundwaterDepthM: 0.5,
-        corrosivity: 'high',
-        freezingDepthM: 2.2,
-        subsidenceType: null,
-        heaving: true,
-        swelling: true,
-      })
-      await saveDataset(projectId, 'seismic', { siteIntensityPoints: 6 })
-      await saveDataset(projectId, 'normative', { ...NORMATIVE_DEFAULTS })
-      // Corridor strip ±40 m around the straight demo trunk (полоса отвода).
-      const ys = demo.network.nodes.filter((n) => n.kind !== 'building').map((n) => n.y)
-      const y0 = Math.min(...ys)
-      const y1 = Math.max(...ys)
-      await supabase.from('parcels').delete().eq('project_id', projectId).eq('kind', 'right_of_way')
-      await insertParcel(projectId, 'right_of_way', [
-        { x: -40, y: y0 - 40 },
-        { x: 40, y: y0 - 40 },
-        { x: 40, y: y1 + 40 },
-        { x: -40, y: y1 + 40 },
-      ], 'Полоса отвода (демо)')
-
+      const { seededSections, failures } = await seedStormProject(projectId)
+      setSeedNotice(
+        failures.length === 0
+          ? t('project.gravity.demoSeedDone', { count: seededSections })
+          : t('project.gravity.demoSeedPartial', { count: seededSections, failed: failures.join(', ') }),
+      )
       await onChanged?.()
     } finally {
       setSeeding(false)
@@ -438,6 +392,7 @@ export function GravitySection({
               <span className="stat-line" style={{ marginTop: 0 }}>{t('project.gravity.demoSeedHint')}</span>
             </div>
           )}
+          {seedNotice && <p className="stat-line ok">{seedNotice}</p>}
         </>
       )}
       {result && (
