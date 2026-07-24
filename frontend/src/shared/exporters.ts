@@ -96,12 +96,26 @@ export async function generateSewerNotePdf(
   const maker = pdfMake as {
     vfs?: unknown
     addVirtualFileSystem?: (files: Record<string, string>) => void
-    createPdf: (doc: unknown) => { getBlob: (cb: (b: Blob) => void) => void }
+    createPdf: (doc: unknown) => PdfDocument
   }
   if (maker.addVirtualFileSystem) maker.addVirtualFileSystem(vfs)
   else maker.vfs = vfs
-  return new Promise((resolve) => {
-    maker.createPdf(buildSewerNoteDoc(input) as Record<string, unknown>).getBlob(resolve)
+  return pdfDocumentBlob(maker.createPdf(buildSewerNoteDoc(input) as Record<string, unknown>))
+}
+
+interface PdfDocument {
+  getBlob: (callback?: (blob: Blob) => void) => Promise<Blob> | void
+}
+
+/** pdfmake 0.3 returns a Promise; 0.2 completes through the callback. */
+function pdfDocumentBlob(document: PdfDocument): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    try {
+      const pending = document.getBlob(resolve)
+      if (pending && typeof pending.then === 'function') pending.then(resolve, reject)
+    } catch (error) {
+      reject(error)
+    }
   })
 }
 
@@ -212,13 +226,11 @@ async function renderPdfDoc(doc: unknown): Promise<Blob> {
   const maker = pdfMake as {
     vfs?: unknown
     addVirtualFileSystem?: (files: Record<string, string>) => void
-    createPdf: (doc: unknown) => { getBlob: (cb: (b: Blob) => void) => void }
+    createPdf: (doc: unknown) => PdfDocument
   }
   if (maker.addVirtualFileSystem) maker.addVirtualFileSystem(vfs)
   else maker.vfs = vfs
-  return new Promise((resolve) => {
-    maker.createPdf(doc).getBlob(resolve)
-  })
+  return pdfDocumentBlob(maker.createPdf(doc))
 }
 
 /** Explanatory note as a PDF blob (pdfmake, lazy loaded). */
