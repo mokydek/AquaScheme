@@ -3,6 +3,7 @@ import {
   gridToGeologyRows,
   guessGeologyField,
   parseGeologyRows,
+  parseGeologyReportSummary,
   parseGroundwaterRange,
   parseIgeDescriptions,
   summarizeGeology,
@@ -124,6 +125,23 @@ describe('parseIgeDescriptions / parseGroundwaterRange (prose reports)', () => {
   it('reads the groundwater depth range from prose', () => {
     expect(parseGroundwaterRange(PROSE)).toEqual({ minDepthM: 0.5, maxDepthM: 5.6 })
     expect(parseGroundwaterRange('текст без воды')).toBeNull()
+  })
+
+  it('extracts a conservative, reviewable project summary', () => {
+    const summary = parseGeologyReportSummary(`${PROSE}
+      Нормативная глубина сезонного промерзания грунтов, см:
+      - суглинки и глины - 171; пески мелкие - 208; пески крупные - 222; крупнообломочные грунты - 253.
+      Коррозионная активность грунтов по отношению к углеродистой стали - высокая.
+      Район не сейсмоактивен.`)
+    expect(summary.ige.map((item) => item.code)).toEqual(['0', '2', '2-1'])
+    expect(summary.groundwater).toEqual({ minDepthM: 0.5, maxDepthM: 5.6 })
+    expect(summary.freezingDepthM).toBe(2.53)
+    expect(summary.maxAggressiveness).toBe('high')
+    expect(summary.seismicInactive).toBe(true)
+  })
+
+  it('deduplicates IGE descriptions repeated later in legends', () => {
+    expect(parseIgeDescriptions(`${PROSE}\n${PROSE}`).map((item) => item.code)).toEqual(['0', '2', '2-1'])
   })
 })
 

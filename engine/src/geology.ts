@@ -357,9 +357,12 @@ function ruNumber(text: string | undefined): number | null {
 /** ИГЭ descriptions from report prose, in order of appearance. */
 export function parseIgeDescriptions(text: string): IgeDescription[] {
   const out: IgeDescription[] = []
+  const seen = new Set<string>()
   const igeRe = /ИГЭ\s*№?\s*(\d+(?:-\d+)?)\s*[–—-]\s*([^.\n]+)[.,]/g
   let match: RegExpExecArray | null
   while ((match = igeRe.exec(text)) !== null) {
+    if (seen.has(match[1])) continue
+    seen.add(match[1])
     const tail = text.slice(match.index, match.index + 600)
     const opened = new RegExp(String.raw`Вскрыт[аы]?\s+с\s+глубин[ыи]\s+${RANGE}\s*м`, 'i').exec(tail)
     const thickness = new RegExp(String.raw`Мощность\s+сло[яё][^\d]{0,10}${RANGE}\s*м`, 'i').exec(tail)
@@ -387,6 +390,55 @@ export function parseGroundwaterRange(text: string): GroundwaterRange | null {
   const b = ruNumber(m[2]) ?? a
   if (a === null || b === null) return null
   return { minDepthM: Math.min(a, b), maxDepthM: Math.max(a, b) }
+}
+
+export interface GeologyReportSummary {
+  ige: IgeDescription[]
+  groundwater: GroundwaterRange | null
+  /** Conservative design value: the largest reported normative freezing depth. */
+  freezingDepthM: number | null
+  maxAggressiveness: Aggressiveness | null
+  seismicInactive: boolean | null
+}
+
+/**
+ * Extract the project-level facts that are normally written in prose rather
+ * than in the borehole tables. Values remain a review proposal in the UI: a
+ * prose report cannot reconstruct per-borehole layer boundaries honestly.
+ */
+export function parseGeologyReportSummary(text: string): GeologyReportSummary {
+  const normalized = text.replace(/\s+/g, ' ')
+  const freezingHeading = /нормативн[а-яё]*\s+глубин[а-яё]*\s+сезонн[а-яё]*\s+промерзан[а-яё]*/i.exec(normalized)
+  let freezingDepthM: number | null = null
+  if (freezingHeading) {
+    const tail = normalized.slice(freezingHeading.index, freezingHeading.index + 700)
+    const depthsCm = [...tail.matchAll(/-\s*(\d{2,3})\s*(?=;|\.|,|см|$)/gi)]
+      .map((m) => Number(m[1]))
+      .filter((value) => value >= 50 && value <= 500)
+    if (depthsCm.length > 0) freezingDepthM = Math.max(...depthsCm) / 100
+  }
+
+  let maxAggressiveness: Aggressiveness | null = null
+  const aggressionText = normalized
+  if (/сильн[а-яё]*\s+(?:сульфатн[а-яё]*|хлоридн[а-яё]*|агресси[а-яё]*)|активност[а-яё]*\s+грунт[а-яё]*[\s\S]{0,500}высок/i.test(aggressionText)) {
+    maxAggressiveness = 'high'
+  } else if (/средн[а-яё]*\s+(?:сульфатн[а-яё]*|хлоридн[а-яё]*|агресси[а-яё]*)/i.test(aggressionText)) {
+    maxAggressiveness = 'medium'
+  } else if (/слаб[а-яё]*\s+(?:сульфатн[а-яё]*|хлоридн[а-яё]*|агресси[а-яё]*)/i.test(aggressionText)) {
+    maxAggressiveness = 'low'
+  }
+
+  const seismicInactive = /район\s+не\s+сейсмоактивен/i.test(normalized)
+    ? true
+    : /сейсмичност|сейсмоактив/i.test(normalized) ? false : null
+
+  return {
+    ige: parseIgeDescriptions(text),
+    groundwater: parseGroundwaterRange(text),
+    freezingDepthM,
+    maxAggressiveness,
+    seismicInactive,
+  }
 }
 
 const AGGRESSIVENESS_RANK: Record<Aggressiveness, number> = { low: 0, medium: 1, high: 2 }

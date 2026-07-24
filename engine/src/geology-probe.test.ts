@@ -8,8 +8,7 @@ import {
   gridToGeologyRows,
   guessGeologyField,
   parseGeologyRows,
-  parseGroundwaterRange,
-  parseIgeDescriptions,
+  parseGeologyReportSummary,
 } from './geology'
 
 /**
@@ -74,12 +73,17 @@ describe.skipIf(!available)('geology pipeline on the real survey report', () => 
     // Real reports keep the ИГЭ list and groundwater in prose (the flat layer
     // table of our template is absent), so the prose parsers are the primary
     // path here; the table path stays for template-shaped reports.
-    const ige = parseIgeDescriptions(fullText)
-    const water = parseGroundwaterRange(fullText)
+    const summary = parseGeologyReportSummary(fullText)
+    const ige = summary.ige
+    const water = summary.groundwater
     console.log(`[geology-probe] prose ИГЭ: ${ige.length} (${ige.map((i) => i.code).join(', ')}); water: ${water ? `${water.minDepthM}-${water.maxDepthM} м` : 'не найдена'}`)
 
     expect(perPage.length + ige.length).toBeGreaterThan(0)
     expect(ige.length).toBeGreaterThanOrEqual(5)
+    expect(new Set(ige.map((item) => item.code)).size).toBe(ige.length)
     expect(water).not.toBeNull()
+    expect(summary.freezingDepthM).toBeGreaterThanOrEqual(2)
+    expect(summary.maxAggressiveness).toBe('high')
+    expect(summary.seismicInactive).toBe(true)
   }, 240000)
 })

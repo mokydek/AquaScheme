@@ -6,11 +6,13 @@ import {
   extractTable,
   GEOLOGY_TEMPLATE_EXAMPLE,
   GEOLOGY_TEMPLATE_HEADERS,
+  guessGeologyField,
   hasTextLayer,
   parseGeologyRows,
+  parseGeologyReportSummary,
   summarizeGeology,
 } from '@aquascheme/engine'
-import type { Aggressiveness, Borehole, GeologyIssue, TextItem } from '@aquascheme/engine'
+import type { Aggressiveness, Borehole, GeologyIssue, GeologyReportSummary, TextItem } from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
 import { replaceGeology } from '../../shared/geology'
@@ -51,9 +53,10 @@ export function GeologySection({
 
   const [busy, setBusy] = useState(false)
   const [issues, setIssues] = useState<GeologyIssue[]>([])
-  const [notice, setNotice] = useState<'imported' | 'empty' | 'saved' | 'error' | 'migrationNeeded' | 'scan' | 'pdfError' | null>(null)
+  const [notice, setNotice] = useState<'imported' | 'empty' | 'saved' | 'error' | 'migrationNeeded' | 'scan' | 'pdfError' | 'prose' | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [pdfTable, setPdfTable] = useState<{ grid: string[][]; columnCount: number } | null>(null)
+  const [pdfReport, setPdfReport] = useState<GeologyReportSummary | null>(null)
 
   // Summary form (GeologyInput + project attributes) persisted to the dataset.
   const [soilType, setSoilType] = useState<SoilType>(content?.soilType ?? 'loam')
@@ -133,17 +136,44 @@ export function GeologySection({
     setUploadMessage(null)
     setIssues([])
     setPdfTable(null)
+    setPdfReport(null)
     try {
       const routed = await routeUpload(file, ['pdf'])
       const pages = await loadPdfTextByPage(routed.file)
-      // Offset each page vertically so rows never merge across page breaks;
-      // columns (x) stay consistent for a table repeated across pages.
-      const items: TextItem[] = pages.flatMap((p, i) => p.items.map((it) => ({ ...it, y: it.y - i * 100000 })))
+      const items: TextItem[] = pages.flatMap((p) => p.items)
       if (!hasTextLayer(items)) {
         setNotice('scan')
         return
       }
-      const table = extractTable(items)
+
+      const fullText = pages.map((page) => page.items.map((item) => item.str).join(' ')).join('\n')
+      const report = parseGeologyReportSummary(fullText)
+      const hasReportFacts = report.ige.length > 0 || report.groundwater !== null || report.freezingDepthM !== null
+      if (hasReportFacts) {
+        setPdfReport(report)
+        if (report.groundwater) setGroundwater(String(report.groundwater.minDepthM))
+        if (report.freezingDepthM !== null) setFreezing(String(report.freezingDepthM))
+        if (report.maxAggressiveness) setCorrosivity(report.maxAggressiveness)
+      }
+
+      // A multi-page report contains unrelated tables and profile drawings.
+      // Only offer the column wizard for a page whose header maps to at least
+      // two geology fields; combining every page creates a convincing-looking
+      // but unusable mega-table on the real 73-page report.
+      const candidates = pages
+        .map((page) => {
+          const table = extractTable(page.items)
+          const known = table.rows[0]?.filter((cell) => guessGeologyField(cell) !== null).length ?? 0
+          return { table, known }
+        })
+        .filter((candidate) => candidate.known >= 2 && candidate.table.rows.length >= 2)
+        .sort((a, b) => b.known - a.known || b.table.rows.length - a.table.rows.length)
+      const table = candidates[0]?.table
+      if (!table) {
+        if (hasReportFacts) setNotice('prose')
+        else setNotice('scan')
+        return
+      }
       if (table.rows.length === 0 || table.columnCount === 0) {
         setNotice('scan')
         return
@@ -208,7 +238,33 @@ export function GeologySection({
       {notice === 'migrationNeeded' && <p className="notice error">{t('project.geology.migrationNeeded')}</p>}
       {notice === 'scan' && <p className="notice error">{t('project.geology.pdf.scan')}</p>}
       {notice === 'pdfError' && <p className="notice error">{t('project.geology.pdf.error')}</p>}
+      {notice === 'prose' && <p className="notice warn">{t('project.geology.pdf.prose')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
+
+      {pdfReport && (
+        <div className="kv-list" style={{ marginTop: 12 }}>
+          <div className="kv">
+            <span className="kv-label">{t('project.geology.pdf.reportIge')}</span>
+            <span className="kv-value">{pdfReport.ige.map((item) => item.code).join(', ') || '—'}</span>
+          </div>
+          <div className="kv">
+            <span className="kv-label">{t('project.geology.pdf.reportWater')}</span>
+            <span className="kv-value">
+              {pdfReport.groundwater
+                ? `${pdfReport.groundwater.minDepthM}–${pdfReport.groundwater.maxDepthM} м`
+                : '—'}
+            </span>
+          </div>
+          <div className="kv">
+            <span className="kv-label">{t('project.geology.pdf.reportSeismic')}</span>
+            <span className="kv-value">
+              {pdfReport.seismicInactive === null
+                ? '—'
+                : t(pdfReport.seismicInactive ? 'project.geology.pdf.seismicInactive' : 'project.geology.pdf.seismicMentioned')}
+            </span>
+          </div>
+        </div>
+      )}
 
       {pdfTable && (
         <GeologyPdfImport
