@@ -33,12 +33,14 @@ function diameterColor(diameter: number | undefined): string {
 export function LiveSituationMap({
   network,
   pipeDiameterMm,
+  pipeDisplayLabel,
   buildings,
   corridorRings,
   outletFlowLps,
 }: {
   network: TracedNetwork
   pipeDiameterMm: Map<string, number>
+  pipeDisplayLabel?: Map<string, string>
   buildings: Array<{ x: number; y: number; label?: string | null }>
   corridorRings: Array<Array<LocalPoint>>
   outletFlowLps?: number
@@ -50,24 +52,41 @@ export function LiveSituationMap({
     const container = containerRef.current
     if (!container) return
     const map = L.map(container, { zoomControl: true, preferCanvas: true, minZoom: 10, maxZoom: 19 })
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const streetMap = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       crossOrigin: true,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map)
+    })
+    const satelliteMap = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 19,
+        crossOrigin: true,
+        attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics',
+      },
+    )
+    const reliefMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      crossOrigin: true,
+      attribution: 'Map data &copy; OpenStreetMap contributors, SRTM | Map style &copy; OpenTopoMap',
+    })
+    streetMap.addTo(map)
 
     const bounds = L.latLngBounds([])
     const nodeById = new Map(network.nodes.map((node) => [node.id, node]))
+    const corridorLayer = L.layerGroup()
 
     for (const ring of corridorRings) {
       const positions = ring.map(project202451ToWgs84)
-      if (positions.length < 3) continue
-      L.polygon(positions, { color: '#1746d1', weight: 2, fillColor: '#1746d1', fillOpacity: 0.06, dashArray: '7 6' })
-        .bindTooltip('Коридор (полоса отвода)')
-        .addTo(map)
-      positions.forEach((position) => bounds.extend(position))
+      if (positions.length < 2) continue
+      // The DWG corridor is a folded boundary chain, not a safe fill polygon.
+      // Filling it creates the large self-intersecting "blue blinds" seen in the UI.
+      L.polyline(positions, { color: '#c43131', weight: 2, opacity: 0.9, dashArray: '7 6' })
+        .bindTooltip('Проверочный контур полосы отвода (без заливки)')
+        .addTo(corridorLayer)
     }
 
+    let previousMainLabel: string | undefined
     for (const pipe of network.pipes) {
       const from = nodeById.get(pipe.fromNode)
       const to = nodeById.get(pipe.toNode)
@@ -75,6 +94,7 @@ export function LiveSituationMap({
       const fromPosition = project202451ToWgs84(from)
       const toPosition = project202451ToWgs84(to)
       const diameter = pipeDiameterMm.get(pipe.id)
+      const diameterLabel = pipeDisplayLabel?.get(pipe.id) ?? (diameter ? `Ø${diameter}` : 'Ø—')
       const isService = pipe.kind === 'service'
       const line = L.polyline([fromPosition, toPosition], {
         color: isService ? '#c53364' : diameterColor(diameter),
@@ -83,18 +103,20 @@ export function LiveSituationMap({
         dashArray: isService ? '7 5' : undefined,
       }).addTo(map)
       line.bindTooltip(
-        `<strong>${isService ? 'Подключение' : 'Коллектор'}</strong><br>Ø${diameter ?? '—'} мм<br>${pipe.lengthM.toFixed(1)} м`,
+        `<strong>${isService ? 'Подключение ОС' : 'Проектный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м`,
         { sticky: true },
       )
       const a = L.latLng(fromPosition)
       const b = L.latLng(toPosition)
       const midpoint = L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2)
-      if (!isService && diameter) {
+      const showDiameterLabel = isService ? pipe.lengthM > 1 : diameterLabel !== previousMainLabel
+      if (showDiameterLabel && diameter) {
         L.marker(midpoint, {
           interactive: false,
-          icon: L.divIcon({ className: 'pipe-map-diameter', html: `Ø${diameter}`, iconSize: [58, 18], iconAnchor: [29, 9] }),
+          icon: L.divIcon({ className: 'pipe-map-diameter', html: diameterLabel, iconSize: [68, 18], iconAnchor: [34, 9] }),
         }).addTo(map)
       }
+      if (!isService) previousMainLabel = diameterLabel
       bounds.extend(fromPosition)
       bounds.extend(toPosition)
     }
@@ -119,10 +141,22 @@ export function LiveSituationMap({
     const legend = new L.Control({ position: 'bottomleft' })
     legend.onAdd = () => {
       const element = L.DomUtil.create('div', 'situation-map-legend')
-      element.innerHTML = '<strong>Расчётная сеть</strong><span><i class="main"></i>коллектор</span><span><i class="service"></i>подключение ОС</span><span><i class="corridor"></i>полоса отвода</span>'
+      element.innerHTML = '<strong>Проектная сеть</strong><span><i class="main"></i>ось коллектора</span><span><i class="service"></i>подключение ОС</span><span><i class="corridor"></i>полоса отвода (опция)</span>'
       return element
     }
     legend.addTo(map)
+
+    L.control.layers(
+      {
+        'Карта OSM': streetMap,
+        'Спутник Esri': satelliteMap,
+        'Рельеф OpenTopoMap': reliefMap,
+      },
+      {
+        'Полоса отвода (проверочная)': corridorLayer,
+      },
+      { collapsed: false, position: 'topright' },
+    ).addTo(map)
 
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [38, 38], maxZoom: 14 })
     else map.setView([51.12433, 71.33639], 13)
@@ -135,14 +169,14 @@ export function LiveSituationMap({
       map.remove()
       setReady(false)
     }
-  }, [network, pipeDiameterMm, buildings, corridorRings, outletFlowLps])
+  }, [network, pipeDiameterMm, pipeDisplayLabel, buildings, corridorRings, outletFlowLps])
 
   return (
     <div className="live-situation-map-wrap">
       {!ready && <div className="live-map-loading"><span className="export-progress-spinner" />Загрузка настоящей карты…</div>}
-      <div ref={containerRef} className="live-situation-map" aria-label="Интерактивная карта OpenStreetMap с расчётной трассой" />
+      <div ref={containerRef} className="live-situation-map" aria-label="Интерактивная карта с проектной трассой коллектора" />
       <p className="reference-source-note">
-        Подложка: OpenStreetMap. Трасса и диаметры — расчёт AquaScheme. Геопривязка 2024-51-НК выполнена из локальной системы DWG по контрольным точкам проектной ситуационной схемы.
+        Подложка переключается между картой, спутником и обзорным рельефом. Ось трассы и подключения взяты из данных DWG проекта 2024-51-НК; проектные диаметры не подменяются автоматическим гидравлическим подбором. Инженерные отметки рельефа учитываются в продольном профиле и расчёте, а не меняют план трассы. Полоса отвода доступна отдельным выключенным слоем и никогда не заливается.
       </p>
     </div>
   )

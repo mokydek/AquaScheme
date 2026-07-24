@@ -955,7 +955,7 @@ textarea {
 .situation-map-legend span { display: flex; align-items: center; gap: 7px; }
 .situation-map-legend i { display: inline-block; width: 24px; height: 0; border-top: 4px solid #173f9f; }
 .situation-map-legend i.service { border-top: 3px dashed #c53364; }
-.situation-map-legend i.corridor { border-top: 2px dashed #1746d1; }
+.situation-map-legend i.corridor { border-top: 2px dashed #c43131; }
 
 .scheme-view-tabs button {
   border: 0;

@@ -73,6 +73,27 @@ export function SituationSchemeSection({
     [parcels],
   )
 
+  const projectPipeDisplay = useMemo(() => {
+    if (!hasReferenceSheet || !model) return undefined
+    const diameterMm = new Map(model.pipeDiameterMm)
+    const labels = new Map<string, string>()
+    const setProjectDiameter = (pipeId: string, diameter: number, label = `Ø${diameter}`) => {
+      diameterMm.set(pipeId, diameter)
+      labels.set(pipeId, label)
+    }
+
+    // Adopted diameters from the supplied 2024-51-НК.С schedule and sheet 2.
+    // The automatic hydraulic check remains visible in the calculations tab.
+    for (let index = 1; index <= 17; index += 1) setProjectDiameter(`К2-${index}`, 2000)
+    setProjectDiameter('К2-3', 1200)
+    setProjectDiameter('К2-4', 800, '2×Ø800')
+    setProjectDiameter('Подключение-1', 1200)
+    setProjectDiameter('Подключение-2', 1600)
+    setProjectDiameter('Подключение-3', 1200)
+    setProjectDiameter('Подключение-4', 2000)
+    return { diameterMm, labels }
+  }, [hasReferenceSheet, model])
+
   const nodeLabel = useMemo(() => {
     const buildingById = new Map(buildings.map((building) => [building.id, building.label ?? building.id]))
     const labels = new Map(nodes.map((node, index) => [
@@ -96,7 +117,7 @@ export function SituationSchemeSection({
               </button>
               )}
               <button type="button" className={view === 'calculated' ? 'active' : ''} onClick={() => setView('calculated')}>
-                Расчётная схема
+                Проектная трасса на карте
               </button>
               <button type="button" className={view === 'calculations' ? 'active' : ''} onClick={() => setView('calculations')}>
                 Расчёты труб и диаметры
@@ -110,7 +131,8 @@ export function SituationSchemeSection({
             <LiveSituationMap
               network={model.network}
               buildings={buildings.map((building) => ({ x: building.x, y: building.y, label: building.label }))}
-              pipeDiameterMm={model.pipeDiameterMm}
+              pipeDiameterMm={projectPipeDisplay?.diameterMm ?? model.pipeDiameterMm}
+              pipeDisplayLabel={projectPipeDisplay?.labels}
               corridorRings={corridorRings}
               outletFlowLps={model.outletFlowLps}
             />
