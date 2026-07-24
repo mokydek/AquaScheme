@@ -7,6 +7,8 @@ FROM node:20-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb xauth libxcb1 libxcb-util1 libxcb-cursor0 libxcb-icccm4 \
     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
+    libxcb-shape0 libxcb-randr0 libxcb-sync1 libxcb-xfixes0 libxcb-shm0 \
+    libxcb-render0 libxcb-glx0 libx11-xcb1 \
     libxkbcommon0 libxkbcommon-x11-0 libx11-6 libxext6 libxrender1 \
     libsm6 libice6 libgl1 libegl1 libfontconfig1 libdbus-1-3 \
     ca-certificates wget \
