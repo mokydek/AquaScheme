@@ -104,19 +104,19 @@ export async function generateSewerNotePdf(
 }
 
 interface PdfDocument {
-  getBlob: (callback?: (blob: Blob) => void) => Promise<Blob> | void
+  getBlob: () => Promise<unknown>
 }
 
-/** pdfmake 0.3 returns a Promise; 0.2 completes through the callback. */
-function pdfDocumentBlob(document: PdfDocument): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    try {
-      const pending = document.getBlob(resolve)
-      if (pending && typeof pending.then === 'function') pending.then(resolve, reject)
-    } catch (error) {
-      reject(error)
-    }
-  })
+/** pdfmake 0.3 returns a Promise, but normalize defensively across runtimes. */
+async function pdfDocumentBlob(document: PdfDocument): Promise<Blob> {
+  const output = await document.getBlob()
+  if (output instanceof Blob) return output
+  if (output instanceof ArrayBuffer) return new Blob([output], { type: 'application/pdf' })
+  if (ArrayBuffer.isView(output)) {
+    const bytes = new Uint8Array(output.buffer, output.byteOffset, output.byteLength)
+    return new Blob([bytes], { type: 'application/pdf' })
+  }
+  throw new TypeError('pdfmake returned an unsupported PDF data type')
 }
 
 /** pdfmake 0.3 exports the VFS object directly; 0.2 used nested wrappers. */
@@ -172,7 +172,7 @@ export async function generateSewerSpecXlsx(
   const sheet = XLSX.utils.json_to_sheet(rows)
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'Спецификация')
-  return XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+  return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
 }
 
 /** Sewer (К1) manhole and pipe schedule as an XLSX byte array (two sheets). */
@@ -195,7 +195,7 @@ export async function generateSewerScheduleXlsx(
     'Код АГСК-3': p.agskCode,
   }))
   XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(pipes), 'Трубы')
-  return XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+  return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
 }
 
 /** Bill of materials as an XLSX byte array (SheetJS), ГОСТ 21.110 form 1. */
@@ -212,7 +212,16 @@ export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> 
   const sheet = XLSX.utils.json_to_sheet(rows)
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'Спецификация')
-  return XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+  return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
+}
+
+function xlsxBytes(output: unknown): Uint8Array {
+  if (output instanceof Uint8Array) return output
+  if (output instanceof ArrayBuffer) return new Uint8Array(output)
+  if (ArrayBuffer.isView(output)) {
+    return new Uint8Array(output.buffer, output.byteOffset, output.byteLength)
+  }
+  throw new TypeError('SheetJS returned an unsupported XLSX data type')
 }
 
 /** Render a pdfmake document definition to a Blob (pdfmake, lazy loaded). */
@@ -256,14 +265,20 @@ export async function convertToDwg(dxf: string): Promise<Blob> {
   return convertDrawing(dxf, 'dwg')
 }
 
-async function toBytes(data: Blob | Uint8Array | string): Promise<Uint8Array> {
+type BundleData = Blob | ArrayBuffer | ArrayBufferView | string
+
+async function toBytes(data: BundleData): Promise<Uint8Array> {
   if (typeof data === 'string') return new TextEncoder().encode(data)
   if (data instanceof Uint8Array) return data
+  if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+  }
   return new Uint8Array(await data.arrayBuffer())
 }
 
 /** Bundle named files into a single ZIP blob (fflate, lazy loaded). */
-export async function zipBundle(files: Record<string, Blob | Uint8Array | string>): Promise<Blob> {
+export async function zipBundle(files: Record<string, BundleData>): Promise<Blob> {
   const { zipSync } = await import('fflate')
   const entries: Record<string, Uint8Array> = {}
   for (const [name, data] of Object.entries(files)) {
