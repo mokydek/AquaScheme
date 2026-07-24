@@ -5,10 +5,10 @@ import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import type { ParcelRow } from '../../shared/parcels'
-import { SchemeBuilder } from './SchemeBuilder'
 import { Panel } from './Panel'
 import { ReferenceSituationView } from './ReferenceSituationView'
 import { PipeCalculationsView } from './PipeCalculationsView'
+import { LiveSituationMap } from './LiveSituationMap'
 
 /**
  * Standalone «Ситуационная схема» category: the scheme is built here on its own
@@ -107,24 +107,12 @@ export function SituationSchemeSection({
           ) : view === 'calculations' ? (
             <PipeCalculationsView pipes={model.calculatedPipes} nodeLabel={nodeLabel} />
           ) : (
-            <SchemeBuilder
-              scheme={{
-                title: t('project.gravity.schemeTitle'),
-                network: model.network,
-                buildings: buildings.map((b) => ({ x: b.x, y: b.y, label: b.label })),
-                pipeDiameterMm: model.pipeDiameterMm,
-                outletFlowLps: model.outletFlowLps,
-                corridorRings,
-                backgroundImageUrl: hasReferenceSheet ? '/reference/2024-51-situation.png' : undefined,
-              }}
-              steps={{
-                network: model.network,
-                pipeDiameterMm: model.pipeDiameterMm,
-                buildingsCount: buildings.length,
-                corridorRings: corridorRings.length,
-                outletFlowLps: model.outletFlowLps,
-                diametersAdoptedFromPlan: hasReferenceSheet,
-              }}
+            <LiveSituationMap
+              network={model.network}
+              buildings={buildings.map((building) => ({ x: building.x, y: building.y, label: building.label }))}
+              pipeDiameterMm={model.pipeDiameterMm}
+              corridorRings={corridorRings}
+              outletFlowLps={model.outletFlowLps}
             />
           )}
           {hasReferenceSheet && (
