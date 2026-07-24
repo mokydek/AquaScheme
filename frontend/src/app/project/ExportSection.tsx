@@ -361,8 +361,22 @@ export function ExportSection({
     }
   }
 
-  const label = (job: Job, key: string) =>
-    busy === job ? t('project.export.generating') : t(key)
+  const jobLabels: Record<Job, string> = {
+    drawing: 'project.export.drawing',
+    pdf: 'project.export.pdf',
+    spec: 'project.export.spec',
+    situation: 'project.export.situation',
+    docs: 'project.export.docs',
+    acts: 'project.export.acts',
+    bundle: 'project.export.bundle',
+  }
+
+  const label = (job: Job, key: string) => busy === job ? (
+    <>
+      <span className="button-spinner" aria-hidden="true" />
+      {t('project.export.generating')}
+    </>
+  ) : t(key)
 
   return (
     <Panel title={t('project.export.title')} status={canExport ? 'filled' : 'empty'}>
@@ -387,28 +401,39 @@ export function ExportSection({
       </div>
 
       <div className="section-actions">
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null || (!withDxf && !withDwg)} onClick={() => void exportDrawing()}>
+        <button type="button" className={`btn btn-sm${busy === 'drawing' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null || (!withDxf && !withDwg)} aria-busy={busy === 'drawing'} onClick={() => void exportDrawing()}>
           {label('drawing', 'project.export.drawing')}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportPdf()}>
+        <button type="button" className={`btn btn-sm${busy === 'pdf' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'pdf'} onClick={() => void exportPdf()}>
           {label('pdf', 'project.export.pdf')}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportSpec()}>
+        <button type="button" className={`btn btn-sm${busy === 'spec' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'spec'} onClick={() => void exportSpec()}>
           {label('spec', 'project.export.spec')}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportSituation()}>
+        <button type="button" className={`btn btn-sm${busy === 'situation' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'situation'} onClick={() => void exportSituation()}>
           {label('situation', 'project.export.situation')}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportDocs()}>
+        <button type="button" className={`btn btn-sm${busy === 'docs' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'docs'} onClick={() => void exportDocs()}>
           {label('docs', 'project.export.docs')}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportActs()}>
+        <button type="button" className={`btn btn-sm${busy === 'acts' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'acts'} onClick={() => void exportActs()}>
           {label('acts', 'project.export.acts')}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!canExport || busy !== null} onClick={() => void exportBundle()}>
+        <button type="button" className={`btn btn-sm${busy === 'bundle' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'bundle'} onClick={() => void exportBundle()}>
           {label('bundle', 'project.export.bundle')}
         </button>
       </div>
+
+      {busy && (
+        <div className="export-progress" role="status" aria-live="polite">
+          <span className="export-progress-spinner" aria-hidden="true" />
+          <div className="export-progress-copy">
+            <strong>{t('project.export.progress', { name: t(jobLabels[busy]) })}</strong>
+            <span>{t('project.export.progressHint')}</span>
+          </div>
+          <span className="export-progress-bar" aria-hidden="true"><i /></span>
+        </div>
+      )}
 
       {notice === 'done' && <p className="stat-line ok">{t('project.export.done')}</p>}
       {notice === 'converterError' && <p className="notice error">{t('project.export.converterError')}</p>}

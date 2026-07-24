@@ -717,6 +717,90 @@ textarea {
   font-size: 13px;
 }
 
+.btn.is-loading,
+.btn.is-loading:disabled {
+  background: var(--accent);
+  color: #ffffff;
+  opacity: 1;
+}
+
+.button-spinner,
+.export-progress-spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: export-spin 0.7s linear infinite;
+}
+
+.export-progress {
+  position: relative;
+  margin-top: 16px;
+  padding: 14px 16px 17px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  color: var(--ink);
+}
+
+.export-progress-spinner {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.export-progress-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+
+.export-progress-copy span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.export-progress-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--line);
+}
+
+.export-progress-bar i {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: var(--accent);
+  animation: export-progress 1.25s ease-in-out infinite;
+}
+
+@keyframes export-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes export-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button-spinner,
+  .export-progress-spinner,
+  .export-progress-bar i {
+    animation-duration: 2.5s;
+  }
+}
+
 .file-input {
   font-family: var(--font-mono);
   font-size: 12px;

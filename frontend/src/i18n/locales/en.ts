@@ -604,6 +604,8 @@ export const en = {
         dwgUnavailable: 'DWG unavailable: the conversion service is not configured (VITE_CONVERTER_URL)',
         converterError: 'DWG was not produced: the conversion service is unavailable. The drawing was downloaded as DXF',
         generating: 'Generating',
+        progress: 'Generating: {{name}}',
+        progressHint: 'Keep this page open — the download will start automatically',
         done: 'File generated',
         error: 'Failed to generate the file',
       },
