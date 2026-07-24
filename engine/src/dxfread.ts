@@ -78,7 +78,7 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
         const first = pts[0]
         const last = pts[pts.length - 1]
         const needsClosing = closed && Math.hypot(first.x - last.x, first.y - last.y) > 1e-9
-        segments.push({ points: needsClosing ? [...pts, { ...first }] : pts, layer })
+        segments.push({ points: needsClosing ? [...pts, { ...first }] : pts, layer, closed })
         bump(layer, 'segments')
       }
     } else if (entity.type === 'POINT' || entity.type === 'INSERT') {

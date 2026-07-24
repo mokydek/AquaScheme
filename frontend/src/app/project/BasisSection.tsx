@@ -27,7 +27,13 @@ export const BASIS_ITEMS = [
   { id: 'tu', label: 'Технические условия (ТУ)' },
 ] as const
 
-type BasisContent = { files: Record<string, string>; referenceFiles?: string[]; mode?: 'demo-derived' }
+type BasisContent = {
+  files: Record<string, string>
+  referenceFiles?: string[]
+  mode?: 'demo-derived'
+  project?: { name: string; code: string; stage: string; customer: string; customerBin: string; apzNumber: string; apzDate: string; address: string }
+  designSchedule?: Array<{ system: string; designation: string; standard: string; diameterMm: number; lengthM: number }>
+}
 
 export function BasisSection({
   projectId,
@@ -85,6 +91,15 @@ export function BasisSection({
     <Panel title={t('project.basis.title')} status={uploadedCount === BASIS_ITEMS.length ? 'filled' : uploadedCount > 0 ? 'default' : 'empty'}>
       <p className="hint">{t('project.basis.hint')}</p>
       <p className="stat-line">{t('project.basis.progress', { count: uploadedCount, total: BASIS_ITEMS.length })}</p>
+      {content.project && (
+        <div className="kv-list" style={{ marginTop: 12 }}>
+          <div className="kv"><span className="kv-label">Объект</span><span className="kv-value">{content.project.name}</span></div>
+          <div className="kv"><span className="kv-label">Шифр / стадия</span><span className="kv-value">{content.project.code} · {content.project.stage}</span></div>
+          <div className="kv"><span className="kv-label">Заказчик</span><span className="kv-value">{content.project.customer} · БИН {content.project.customerBin}</span></div>
+          <div className="kv"><span className="kv-label">АПЗ</span><span className="kv-value">№{content.project.apzNumber} от {content.project.apzDate}</span></div>
+          <div className="kv"><span className="kv-label">Адрес</span><span className="kv-value">{content.project.address}</span></div>
+        </div>
+      )}
       <div className="table-wrap" style={{ marginTop: 8 }}>
         <table className="data-table">
           <thead>
@@ -114,6 +129,24 @@ export function BasisSection({
           </tbody>
         </table>
       </div>
+      {content.designSchedule && content.designSchedule.length > 0 && (
+        <details style={{ marginTop: 12 }}>
+          <summary>Проектная спецификация труб — {content.designSchedule.length} позиций</summary>
+          <div className="table-wrap" style={{ marginTop: 8 }}>
+            <table className="data-table">
+              <thead><tr><th>Система</th><th>Наименование</th><th>Стандарт</th><th className="num">Ø, мм</th><th className="num">Длина, м</th></tr></thead>
+              <tbody>
+                {content.designSchedule.map((item, index) => (
+                  <tr key={`${item.designation}-${index}`}>
+                    <td>{item.system}</td><td>{item.designation}</td><td>{item.standard}</td>
+                    <td className="num">{item.diameterMm}</td><td className="num">{item.lengthM.toLocaleString('ru-RU')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
       {referenceFiles.length > 0 && (
         <details style={{ marginTop: 12 }}>
           <summary>{t('project.basis.references', { count: referenceFiles.length })}</summary>

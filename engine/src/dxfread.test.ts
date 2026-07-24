@@ -66,6 +66,16 @@ describe('parseDxfNetwork', () => {
   it('returns ok false for garbage input', () => {
     expect(parseDxfNetwork('definitely not a dxf').ok).toBe(false)
   })
+
+  it('preserves the closed flag needed for land-allocation polygons', () => {
+    const closed = FIXTURE.replace(
+      ['90', '3', '10', '100.0'].join('\r\n'),
+      ['90', '3', '70', '1', '10', '100.0'].join('\r\n'),
+    )
+    const polygon = parseDxfNetwork(closed).segments[1]
+    expect(polygon.closed).toBe(true)
+    expect(polygon.points[0]).toEqual(polygon.points.at(-1))
+  })
 })
 
 function surveyFixture(zs: Array<number | null>): string {

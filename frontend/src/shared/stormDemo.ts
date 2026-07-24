@@ -1,38 +1,37 @@
-import { buildStormDemo, NORMATIVE_DEFAULTS } from '@aquascheme/engine'
-import type { Borehole } from '@aquascheme/engine'
+import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import type { CatalogItem, TracedNetwork } from '@aquascheme/engine'
 import { supabase } from './supabase'
 import { replaceNetwork } from './network'
 import { saveDataset } from './datasets'
 import { insertParcel } from './parcels'
 import { replaceGeology } from './geology'
+import { deleteCatalog, fetchCatalogs, saveCatalog, setActiveCatalog } from './catalog'
 import { BASIS_ITEMS } from '../app/project/BasisSection'
+import realProject from './realProjectData.json'
+
+export const REAL_STORM_PROJECT_NAME = realProject.project.name
 
 /**
  * One-click storm demo that seeds a WHOLE ready project — not just the network
  * — so the user can open the finished result (the full sheet set) and see the
  * gaps in one place. It fills every panel: inflow sources, the trunk network,
- * geology (summary + demo boreholes for the cross-section), seismicity, norms,
+ * geology (the report summary), seismicity, norms,
  * the land-allocation corridor, and the permitting-documents checklist.
  *
- * The real object's source PDFs/DWG are private and must not ship inside the
- * public JavaScript bundle, so the checklist is seeded with the exact file
- * manifest and reviewable derived facts — the binary files stay in private
- * project storage when the owner attaches them; every
+ * The binary PDFs/DWG remain in private project storage. The bundle contains
+ * only compact, reviewable facts extracted from them: drawing coordinates and
+ * elevations, the right-of-way ring, design flows, geology and specification.
+ * Every
  * step runs independently so a missing migration for one table never blocks
  * the rest, and the count of seeded sections is returned.
  */
 
 /** Names of the reference input documents (no binaries), for the checklist. */
-const BASIS_DEMO_FILES: Record<string, string> = {
-  assignment: 'ТЗ — требуется прикрепить оригинал',
+const BASIS_DEMO_FILES: Partial<Record<string, string>> = {
   apz: 'АПЗ исправленный 22,10.pdf',
-  pdp: 'ПДП — требуется прикрепить оригинал',
-  route_act: 'Акт выбора трассы — требуется прикрепить оригинал',
   genplan_scheme: 'Схема ЛК от Генплан с диаметрами..pdf',
   topo: 'Топо Водосбрсной общий 15,10.pdf',
   geology: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
-  vertical: 'Вертикальная планировка — требуется прикрепить оригинал',
-  tu: 'Технические условия — требуется прикрепить оригинал',
 }
 
 /** Every file supplied for verification; names only, never bundled binaries. */
@@ -62,26 +61,94 @@ export const STORM_REFERENCE_FILES = [
 
 export async function seedBasisDemo(projectId: string): Promise<void> {
   const files: Record<string, string> = {}
-  for (const item of BASIS_ITEMS) files[item.id] = BASIS_DEMO_FILES[item.id] ?? `${item.id} (демо)`
+  for (const item of BASIS_ITEMS) {
+    const file = BASIS_DEMO_FILES[item.id]
+    if (file) files[item.id] = file
+  }
   await saveDataset(projectId, 'basis', {
     files,
     referenceFiles: [...STORM_REFERENCE_FILES],
     mode: 'demo-derived',
+    project: realProject.project,
+    designSchedule: realProject.designSchedule,
+    provenance: {
+      apz: 'АПЗ №145200 от 22.10.2025',
+      drawing: 'ТОО Аква Д.большой Талдыколь общий.dwg',
+      geology: 'Арх. №17-08/25',
+      finalAlbum: '2024-51-НК, том 2, альбом 1, листы 1–3 спецификации',
+    },
   })
 }
 
-/** Two demo boreholes so the geology cross-section draws on the profile. */
-function demoBoreholes(y0: number, y1: number): Borehole[] {
-  const layers = [
-    { igeCode: '1', soilName: 'насыпной суглинок', topDepthM: 0, bottomDepthM: 2.5, frictionAngleDeg: 21, cohesionKpa: 24, deformationModulusMpa: 14, filtrationMDay: 0.1 },
-    { igeCode: '3', soilName: 'песок средней крупности, насыщенный водой', topDepthM: 2.5, bottomDepthM: 8, frictionAngleDeg: 32, cohesionKpa: 2, deformationModulusMpa: 28, filtrationMDay: 5 },
-  ]
-  return [
-    { label: 'С-1', x: 60, y: y0, mouthElevationM: 100, layers: [...layers], water: { depthM: 0.5, aggressivenessSteel: 'high', aggressivenessConcrete: 'medium', aggressivenessPe: 'low' } },
-    { label: 'С-2', x: 60, y: (y0 + y1) / 2, mouthElevationM: 96, layers: [...layers], water: { depthM: 1.2, aggressivenessSteel: 'high' } },
-    { label: 'С-3', x: 60, y: y1, mouthElevationM: 92.1, layers: [...layers], water: { depthM: 2.4, aggressivenessSteel: 'high' } },
-  ]
+function nearestElevation(x: number, y: number): number {
+  let best = Number.POSITIVE_INFINITY
+  let elevation = 340
+  for (const point of realProject.surveyPoints) {
+    if (point.z < 300 || point.z > 400) continue
+    const distance = (point.x - x) ** 2 + (point.y - y) ** 2
+    if (distance < best) {
+      best = distance
+      elevation = point.z
+    }
+  }
+  return elevation
 }
+
+function realNetwork(buildingIdByLabel: Map<string, string>): TracedNetwork {
+  const nodes: TracedNetwork['nodes'] = realProject.route.map((point, index) => ({
+    id: `К2-${index}`,
+    kind: index === 0 ? 'source' : 'junction',
+    x: point.x,
+    y: point.y,
+    groundElevation: nearestElevation(point.x, point.y),
+  }))
+  const pipes: TracedNetwork['pipes'] = realProject.route.slice(1).map((point, index) => {
+    const previous = realProject.route[index]
+    return {
+      id: `К2-${index + 1}`,
+      kind: 'main',
+      fromNode: `К2-${index + 1}`,
+      toNode: `К2-${index}`,
+      lengthM: Math.hypot(point.x - previous.x, point.y - previous.y),
+    }
+  })
+  for (const [index, inflow] of realProject.inflows.entries()) {
+    let routeIndex = 0
+    let best = Number.POSITIVE_INFINITY
+    realProject.route.forEach((point, candidate) => {
+      const distance = (point.x - inflow.x) ** 2 + (point.y - inflow.y) ** 2
+      if (distance < best) { best = distance; routeIndex = candidate }
+    })
+    const nodeId = `ОС-${index + 1}`
+    nodes.push({
+      id: nodeId,
+      kind: 'building',
+      x: inflow.x,
+      y: inflow.y,
+      groundElevation: nearestElevation(inflow.x, inflow.y),
+      buildingId: buildingIdByLabel.get(inflow.label) ?? nodeId,
+    })
+    pipes.push({
+      id: `Подключение-${index + 1}`,
+      kind: 'service',
+      fromNode: nodeId,
+      toNode: `К2-${routeIndex}`,
+      lengthM: Math.max(1, Math.sqrt(best)),
+    })
+  }
+  return { nodes, pipes, totalLengthM: pipes.reduce((sum, pipe) => sum + pipe.lengthM, 0) }
+}
+
+const REAL_CATALOG: CatalogItem[] = [
+  { itemType: 'pipe', material: 'Железобетон, ТС 200.25-4', standard: 'ГОСТ 6482-2011', dn: 2000 },
+  { itemType: 'pipe', material: 'Железобетон, ТС 200.25-5', standard: 'ГОСТ 6482-2011', dn: 2000 },
+  { itemType: 'pipe', material: 'Железобетон, ТС 160.25-4', standard: 'ГОСТ 6482-2011', dn: 1600 },
+  { itemType: 'pipe', material: 'Железобетон, ТС 120.25-4', standard: 'ГОСТ 6482-2011', dn: 1200 },
+  { itemType: 'pipe', material: 'Полимерная спиральновитая SN12', standard: 'СТ РК 33813-2022', dn: 2000 },
+  { itemType: 'pipe', material: 'ПЭ100 SDR17', standard: 'ГОСТ 18599-2001', dn: 800, outerMm: 800, wallMm: 47.4, sdr: 17 },
+  { itemType: 'pipe', material: 'ПЭ100 SDR17', standard: 'ГОСТ 18599-2001', dn: 560, outerMm: 560, sdr: 17 },
+  { itemType: 'pipe', material: 'Сталь, футляр 2500×20', standard: 'ГОСТ 10704-91', dn: 2500, outerMm: 2500, wallMm: 20 },
+]
 
 export interface StormDemoResult {
   seededSections: number
@@ -89,7 +156,6 @@ export interface StormDemoResult {
 }
 
 export async function seedStormProject(projectId: string): Promise<StormDemoResult> {
-  const demo = buildStormDemo()
   const failures: string[] = []
   let seeded = 0
   const step = async (name: string, fn: () => Promise<void>) => {
@@ -101,34 +167,29 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
     }
   }
 
-  const ys = demo.network.nodes.filter((n) => n.kind !== 'building').map((n) => n.y)
-  const y0 = Math.min(...ys)
-  const y1 = Math.max(...ys)
-
-  // Survey/profile points and the downstream outlet are derived from the
-  // benchmark route so all input panels are usable immediately.
+  // Real drawing points. The DWG contains 3193 points on layer «точки»;
+  // a deterministic 1:5 sample is bundled to keep the web payload reasonable.
   await step('topography', () => {
-    const points = demo.network.nodes
-      .filter((node) => node.kind !== 'building')
-      .map((node) => ({ x: node.x, y: node.y, z: node.groundElevation }))
+    const points = realProject.surveyPoints.filter((point) => point.z >= 300 && point.z <= 400)
     const z = points.map((point) => point.z)
     return saveDataset(projectId, 'topography', { points }, {
-      total: points.length,
+      total: realProject.sourceSurveyPointCount,
       accepted: points.length,
       zMin: Math.min(...z),
       zMax: Math.max(...z),
+      sampledEvery: 5,
+      coordinateSystem: 'локальные координаты исходного DWG',
       derivedFrom: ['Топо Водосбрсной общий 15,10.pdf', 'ТОО Аква Д.большой Талдыколь общий.dwg'],
-    }, 'демо: производные точки трассы')
+    }, 'ТОО Аква Д.большой Талдыколь общий.dwg')
   })
   await step('outlet', () => {
-    const outlet = demo.network.nodes.find((node) => node.kind === 'source')
-    if (!outlet) throw new Error('demo outlet missing')
     return saveDataset(projectId, 'source', {
-      x: outlet.x,
-      y: outlet.y,
-      groundElevation: outlet.groundElevation,
+      x: realProject.outlet.x,
+      y: realProject.outlet.y,
+      groundElevation: nearestElevation(realProject.outlet.x, realProject.outlet.y),
       availableHead: 0,
-    }, { derivedFrom: 'Схема ЛК от Генплан с диаметрами..pdf' })
+      label: realProject.outlet.label,
+    }, { derivedFrom: ['Схема ЛК от Генплан с диаметрами..pdf', 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf'] })
   })
   await step('region', () => saveDataset(projectId, 'region', {
     regionId: 'astana',
@@ -139,60 +200,70 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
     hazards: ['high_groundwater'],
   }))
 
-  // 1. Inflow sources (ОС) + network.
+  // Inflow sources and route geometry. Exact decimal design flow is stored in
+  // specific_demand_lpd because the legacy residents column is integer.
   await step('sources', async () => {
     await supabase.from('buildings').delete().eq('project_id', projectId)
     const { data: inserted, error } = await supabase
       .from('buildings')
-      .insert(demo.sources.map((s) => ({ project_id: projectId, label: s.label, x: s.x, y: s.y, floors: 1, residents: s.flowLps })))
+      .insert(realProject.inflows.map((source) => ({
+        project_id: projectId,
+        label: source.label,
+        x: source.x,
+        y: source.y,
+        floors: 1,
+        residents: Math.round(source.flowLps),
+        specific_demand_lpd: source.flowLps,
+      })))
       .select('id,label')
     if (error) throw error
     const idByLabel = new Map((inserted ?? []).map((r: { id: string; label: string }) => [r.label, r.id]))
-    const network = {
-      ...demo.network,
-      nodes: demo.network.nodes.map((n) =>
-        n.kind === 'building' ? { ...n, buildingId: idByLabel.get(`ОС-${n.id.slice(2)}`) ?? n.buildingId } : n,
-      ),
-    }
-    await replaceNetwork(projectId, network)
+    await replaceNetwork(projectId, realNetwork(idByLabel))
   })
 
-  // 2. Geology: summary + demo boreholes.
+  // Geology is a report-level summary. The supplied XLSX is only a template,
+  // so its sample С-1/С-2 rows must never be presented as real boreholes.
   await step('geology', () =>
     saveDataset(projectId, 'geology', {
       soilType: 'clay',
-      groundwaterDepthM: 0.5,
-      corrosivity: 'high',
-      freezingDepthM: 2.53,
+      groundwaterDepthM: realProject.geology.groundwaterDepthM.min,
+      groundwaterRangeM: realProject.geology.groundwaterDepthM,
+      groundwaterElevationM: realProject.geology.groundwaterElevationM,
+      groundwaterDesignRiseM: realProject.geology.designRiseM,
+      corrosivity: realProject.geology.corrosivity,
+      freezingDepthM: realProject.geology.freezingDepthM,
       subsidenceType: null,
-      heaving: true,
-      swelling: true,
+      heaving: false,
+      swelling: false,
+      reportIge: realProject.geology.ige,
+      sourceFile: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
+      sourceArchiveNumber: '17-08/25',
     }),
   )
-  await step('boreholes', () => replaceGeology(projectId, demoBoreholes(y0, y1)))
+  await step('boreholes', () => replaceGeology(projectId, []))
 
   // 3. Seismicity and norms.
   await step('seismic', () => saveDataset(projectId, 'seismic', { siteIntensityPoints: 6 }))
   await step('norms', () => saveDataset(projectId, 'normative', { ...NORMATIVE_DEFAULTS }))
 
-  // 4. Land allocation: a parcel and the right-of-way corridor.
+  // The actual closed right-of-way polyline from the DWG, simplified at 8 m.
   await step('parcels', async () => {
     await supabase.from('parcels').delete().eq('project_id', projectId)
-    await insertParcel(projectId, 'right_of_way', [
-      { x: -40, y: y0 - 40 },
-      { x: 40, y: y0 - 40 },
-      { x: 40, y: y1 + 40 },
-      { x: -40, y: y1 + 40 },
-    ], 'Полоса отвода (демо)')
-    await insertParcel(projectId, 'parcel', [
-      { x: 40, y: y0 - 20 },
-      { x: 120, y: y0 - 20 },
-      { x: 120, y: y0 + 60 },
-      { x: 40, y: y0 + 60 },
-    ], 'Участок ОС-1 (демо)')
+    await insertParcel(projectId, 'right_of_way', realProject.corridor, 'Коридор инженерных сетей из исходного DWG')
   })
 
-  // 5. Permitting documents checklist (names only — binaries stay local).
+  await step('catalog', async () => {
+    for (const catalog of await fetchCatalogs(projectId)) await deleteCatalog(projectId, catalog.id)
+    const catalogId = await saveCatalog(
+      projectId,
+      '2024-51-НК.С — спецификация листы 1–3',
+      'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf',
+      REAL_CATALOG,
+    )
+    await setActiveCatalog(projectId, catalogId)
+  })
+
+  // Permitting checklist + exact schedule and project card.
   await step('basis', () => seedBasisDemo(projectId))
 
   return { seededSections: seeded, failures }

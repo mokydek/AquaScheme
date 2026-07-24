@@ -87,7 +87,7 @@ export function CatalogSection({
   }
 
   return (
-    <Panel title={t('project.catalog.title')} status="default">
+    <Panel title={t('project.catalog.title')} status={activeCatalogId ? 'filled' : 'default'}>
       <p className="hint">{t('project.catalog.hint')}</p>
       <div className="section-actions">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>
@@ -111,6 +111,7 @@ export function CatalogSection({
               <span className="row-name">{c.name}</span>
             </label>
             <div className="row-actions">
+              <span className="row-meta">{c.source_file ?? ''}</span>
               <button type="button" className="link-btn" onClick={() => void remove(c.id)}>
                 {t('project.catalog.delete')}
               </button>

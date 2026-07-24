@@ -39,20 +39,27 @@ export function ParcelsSection({
     setUploadMessage(null)
     try {
       const routed = await routeUpload(file, ['dxf', 'geojson'])
-      let rings: Vec2[][] = []
+      let rings: Array<{ ring: Vec2[]; kind: 'parcel' | 'right_of_way'; label: string | null }> = []
       if (routed.kind === 'dxf') {
         const { parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
         const data = parseDxfNetwork(routed.text ?? '')
         rings = data.segments
-          .filter((s) => (s.layer ?? '').toUpperCase() === 'PARCELS')
-          .map((s) => s.points)
-          .filter((pts) => pts.length >= 4)
+          .filter((segment) => {
+            const layer = (segment.layer ?? '').toLowerCase()
+            return segment.closed === true && (layer === 'parcels' || layer.includes('коридор_инженерных_сетей'))
+          })
+          .map((segment) => ({
+            ring: segment.points,
+            kind: (segment.layer ?? '').toLowerCase().includes('коридор_инженерных_сетей') ? 'right_of_way' as const : 'parcel' as const,
+            label: segment.layer ?? null,
+          }))
+          .filter((item) => item.ring.length >= 4)
       } else {
         const parsed = JSON.parse(routed.text ?? '') as { features?: Array<{ geometry?: { type?: string; coordinates?: number[][][] } }> }
         for (const feature of parsed.features ?? []) {
           const g = feature.geometry
           if (g?.type === 'Polygon' && Array.isArray(g.coordinates?.[0])) {
-            rings.push(g.coordinates[0].map((c) => ({ x: c[0], y: c[1] })))
+            rings.push({ ring: g.coordinates[0].map((c) => ({ x: c[0], y: c[1] })), kind: 'parcel', label: null })
           }
         }
       }
@@ -60,7 +67,7 @@ export function ParcelsSection({
         setNotice('invalid')
         return
       }
-      for (const ring of rings) await insertParcel(projectId, 'parcel', ring, null)
+      for (const item of rings) await insertParcel(projectId, item.kind, item.ring, item.label)
       setNotice('imported')
       await onChanged()
     } catch (error) {

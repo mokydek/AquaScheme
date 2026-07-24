@@ -7,6 +7,7 @@ import type { DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { replaceNetwork } from '../../shared/network'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import type { BuildingRow } from '../../shared/datasets'
+import type { PipeRow } from '../../shared/network'
 import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 
@@ -24,12 +25,16 @@ export function ImportSection({
   buildings,
   source,
   points,
+  existingNodes,
+  existingPipes,
   onChanged,
 }: {
   projectId: string
   buildings: BuildingRow[]
   source: SourceData | null
   points: SurveyPoint[]
+  existingNodes: number
+  existingPipes: PipeRow[]
   onChanged: () => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -162,10 +167,17 @@ export function ImportSection({
   const setCpField = (key: CpKey) => (e: ChangeEvent<HTMLInputElement>) =>
     setCp((prev) => ({ ...prev, [key]: e.target.value }))
 
+  const persistedLengthM = existingPipes.reduce((sum, pipe) => sum + (pipe.length_m ?? 0), 0)
+
   return (
-    <Panel title={t('project.import.title')} status={report && notice === 'done' ? 'filled' : 'empty'}>
+    <Panel title={t('project.import.title')} status={(report && notice === 'done') || existingPipes.length > 0 ? 'filled' : 'empty'}>
       <p className="hint">{t('project.import.hint')}</p>
       {!canImport && <p className="stat-line warn">{t('project.import.needSource')}</p>}
+      {existingPipes.length > 0 && !report && (
+        <p className="stat-line ok">
+          Загружена трасса: {existingNodes} узлов, {existingPipes.length} участков, {Math.round(persistedLengthM)} м
+        </p>
+      )}
       <div className="section-actions">
         <input
           className="file-input"

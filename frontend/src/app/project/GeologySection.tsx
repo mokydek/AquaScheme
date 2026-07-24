@@ -33,6 +33,12 @@ interface GeologyContent {
   subsidenceType?: 'I' | 'II' | null
   heaving?: boolean
   swelling?: boolean
+  reportIge?: Array<{ code: string; name: string; openingDepthM?: string; thicknessM?: string }>
+  groundwaterRangeM?: { min: number; max: number }
+  groundwaterElevationM?: { min: number; max: number }
+  groundwaterDesignRiseM?: number
+  sourceFile?: string
+  sourceArchiveNumber?: string
 }
 
 const AGGRESSIVENESS_LABEL: Record<Aggressiveness, string> = { low: 'low', medium: 'medium', high: 'high' }
@@ -200,6 +206,7 @@ export function GeologySection({
     setNotice(null)
     try {
       await saveDataset(projectId, 'geology', {
+        ...content,
         soilType,
         groundwaterDepthM: gw,
         corrosivity,
@@ -240,6 +247,51 @@ export function GeologySection({
       {notice === 'pdfError' && <p className="notice error">{t('project.geology.pdf.error')}</p>}
       {notice === 'prose' && <p className="notice warn">{t('project.geology.pdf.prose')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
+
+      {content?.reportIge && content.reportIge.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <p className="stat-line ok">
+            Источник: {content.sourceFile ?? 'инженерно-геологический отчёт'}
+            {content.sourceArchiveNumber ? ` · арх. №${content.sourceArchiveNumber}` : ''}
+          </p>
+          <div className="kv-list" style={{ marginTop: 8 }}>
+            <div className="kv">
+              <span className="kv-label">УГВ, глубина</span>
+              <span className="kv-value">
+                {content.groundwaterRangeM ? `${content.groundwaterRangeM.min}–${content.groundwaterRangeM.max} м` : '—'}
+              </span>
+            </div>
+            <div className="kv">
+              <span className="kv-label">Абсолютные отметки УГВ</span>
+              <span className="kv-value">
+                {content.groundwaterElevationM ? `${content.groundwaterElevationM.min.toFixed(2)}–${content.groundwaterElevationM.max.toFixed(2)} м` : '—'}
+              </span>
+            </div>
+            <div className="kv">
+              <span className="kv-label">Расчётное повышение</span>
+              <span className="kv-value">{content.groundwaterDesignRiseM ?? '—'} м</span>
+            </div>
+          </div>
+          <div className="table-wrap" style={{ marginTop: 12 }}>
+            <table className="data-table">
+              <thead><tr><th>ИГЭ</th><th>Грунт</th><th>Вскрыт с глубины, м</th><th>Мощность, м</th></tr></thead>
+              <tbody>
+                {content.reportIge.map((layer) => (
+                  <tr key={layer.code}>
+                    <td className="mono">{layer.code}</td>
+                    <td>{layer.name}</td>
+                    <td className="num">{layer.openingDepthM ?? '—'}</td>
+                    <td className="num">{layer.thicknessM ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="hint" style={{ marginTop: 8 }}>
+            Скважинные колонки не подменяются строками из XLSX: приложенный XLSX является незаполненным шаблоном с демонстрационными примерами.
+          </p>
+        </div>
+      )}
 
       {pdfReport && (
         <div className="kv-list" style={{ marginTop: 12 }}>

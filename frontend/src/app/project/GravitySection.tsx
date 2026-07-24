@@ -121,7 +121,7 @@ export function GravitySection({
     if (systemType === 'storm') {
       // Storm inflows are catchment/treatment-plant flows entered directly,
       // not domestic demand: the residents field holds the inflow in L/s.
-      for (const b of buildings) buildingFlowLps.set(b.id, b.residents ?? 0)
+      for (const b of buildings) buildingFlowLps.set(b.id, b.specific_demand_lpd ?? b.residents ?? 0)
     } else {
       const demand = computeNetworkDemand(
         buildings.map((b) => ({

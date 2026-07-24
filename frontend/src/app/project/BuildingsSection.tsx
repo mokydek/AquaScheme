@@ -109,6 +109,7 @@ export function BuildingsSection({
         y,
         floors,
         residents: Math.round(residents),
+        specific_demand_lpd: inflow ? residents : null,
       })
       if (error) throw error
       setDraft(EMPTY_DRAFT)
@@ -163,7 +164,7 @@ export function BuildingsSection({
                     <td className="num">{b.x}</td>
                     <td className="num">{b.y}</td>
                     {!inflow && <td className="num">{b.floors}</td>}
-                    <td className="num">{b.residents ?? ''}</td>
+                    <td className="num">{inflow ? (b.specific_demand_lpd ?? b.residents ?? '') : (b.residents ?? '')}</td>
                     <td>
                       <button
                         type="button"

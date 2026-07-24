@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { createDemoDataset, NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
 import type { SurveyPoint } from '@aquascheme/engine'
 import { supabase } from '../shared/supabase'
-import { saveDataset } from '../shared/datasets'
 import type { BuildingRow, DatasetKind, DatasetRow, SourceData } from '../shared/datasets'
 import type { NodeRow, PipeRow } from '../shared/network'
 import { runFullPipeline } from '../shared/pipeline'
@@ -41,7 +40,7 @@ import type { ViolationPipe } from '@aquascheme/engine'
 import { autoAssignParcels, fetchParcels, parcelPolygons } from '../shared/parcels'
 import type { ParcelRow } from '../shared/parcels'
 import type { SizingResult } from '@aquascheme/engine/sizing'
-import { seedBasisDemo, seedStormProject } from '../shared/stormDemo'
+import { REAL_STORM_PROJECT_NAME, seedStormProject } from '../shared/stormDemo'
 
 interface ProjectInfo {
   id: string
@@ -66,6 +65,7 @@ export function ProjectPage() {
   const [state, setState] = useState<'loading' | 'ready' | 'notFound'>('loading')
   const [demoBusy, setDemoBusy] = useState(false)
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
+  const [demoFailures, setDemoFailures] = useState<string[]>([])
   const [pipelineBusy, setPipelineBusy] = useState(false)
   const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
   const [parcels, setParcels] = useState<ParcelRow[]>([])
@@ -155,47 +155,21 @@ export function ProjectPage() {
     if (!id || demoBusy) return false
     setDemoBusy(true)
     setDemoNotice(null)
+    setDemoFailures([])
     try {
-      if (project?.system_type === 'storm') {
-        const result = await seedStormProject(id)
-        if (result.failures.length > 0) throw new Error(`demo sections: ${result.failures.join(', ')}`)
-        setDemoNotice('demoDone')
-        await load()
-        return true
-      }
-      const demo = createDemoDataset()
-      const zs = demo.surveyPoints.map((p) => p.z)
-      await saveDataset(
-        id,
-        'topography',
-        { points: demo.surveyPoints },
-        {
-          total: demo.surveyPoints.length,
-          accepted: demo.surveyPoints.length,
-          zMin: Math.min(...zs),
-          zMax: Math.max(...zs),
-        },
-        'demo',
-      )
-      await supabase.from('buildings').delete().eq('project_id', id)
-      const { error: insertError } = await supabase.from('buildings').insert(
-        demo.buildings.map((b) => ({
-          project_id: id,
-          label: b.label,
-          x: b.x,
-          y: b.y,
-          floors: b.floors,
-          residents: b.residents,
-        })),
-      )
-      if (insertError) throw insertError
-      await saveDataset(id, 'source', demo.source)
-      await saveDataset(id, 'geology', demo.geology)
-      await saveDataset(id, 'seismic', demo.seismicity)
-      await saveDataset(id, 'normative', { ...NORMATIVE_DEFAULTS })
-      await seedBasisDemo(id)
-      setDemoNotice('demoDone')
+      const update = await supabase
+        .from('projects')
+        .update({ name: REAL_STORM_PROJECT_NAME, system_type: 'storm', work_type: 'new' })
+        .eq('id', id)
+      if (update.error) throw update.error
+      const result = await seedStormProject(id)
       await load()
+      if (result.failures.length > 0) {
+        setDemoFailures(result.failures)
+        setDemoNotice('demoError')
+        return false
+      }
+      setDemoNotice('demoDone')
       return true
     } catch {
       setDemoNotice('demoError')
@@ -366,16 +340,31 @@ export function ProjectPage() {
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
+              className={`btn btn-ghost btn-sm${demoBusy ? ' is-loading' : ''}`}
               disabled={demoBusy || pipelineBusy}
+              aria-busy={demoBusy}
               onClick={() => void loadDemo()}
             >
-              {t('project.demo')}
+              {demoBusy && <span className="button-spinner" aria-hidden="true" />}
+              {demoBusy ? 'Загрузка проекта…' : t('project.demo')}
             </button>
           </div>
         </div>
         <p className="hint">{t('project.pipeline.hint')}</p>
+        {demoBusy && (
+          <div className="export-progress" role="status" aria-live="polite">
+            <span className="export-progress-spinner" aria-hidden="true" />
+            <div className="export-progress-copy">
+              <strong>Загружаются данные проекта 2024-51-НК</strong>
+              <span>Координаты и отметки DWG, трасса, ОС, геология, коридор и спецификация</span>
+            </div>
+            <span className="export-progress-bar" aria-hidden="true"><i /></span>
+          </div>
+        )}
         {demoNotice === 'demoError' && <p className="notice error">{t('project.demoError')}</p>}
+        {demoFailures.length > 0 && (
+          <p className="notice error">Не загрузились разделы: {demoFailures.join(', ')}</p>
+        )}
         {pipelineNotice && (
           <p className={`notice ${pipelineNotice === 'done' ? 'info' : 'error'}`}>
             {t(`project.pipeline.${pipelineNotice}`)}
@@ -407,6 +396,8 @@ export function ProjectPage() {
                 buildings={buildings}
                 source={sourceData}
                 points={topoPoints}
+                existingNodes={nodes.length}
+                existingPipes={pipes}
                 onChanged={load}
               />
               <TraceSection
@@ -475,6 +466,8 @@ export function ProjectPage() {
                 buildings={buildings}
                 source={sourceData}
                 points={topoPoints}
+                existingNodes={nodes.length}
+                existingPipes={pipes}
                 onChanged={load}
               />
               <TraceSection
@@ -529,6 +522,14 @@ export function ProjectPage() {
             </>
           )}
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
+          {!isWater && (
+            <CatalogSection
+              projectId={project.id}
+              catalogs={catalogs}
+              activeCatalogId={project.active_catalog_id ?? null}
+              onChanged={load}
+            />
+          )}
           <BuildingsSection
             projectId={project.id}
             buildings={buildings}

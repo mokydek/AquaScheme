@@ -20,6 +20,8 @@ export interface ImportPoint {
 export interface ImportSegment {
   points: ImportPoint[]
   layer?: string
+  /** True when the source entity is a closed polygon (DXF flag 70 / GeoJSON ring). */
+  closed?: boolean
 }
 
 export interface ImportBuildingInput {
