@@ -58,6 +58,7 @@ app.post('/convert', upload.single('file'), async (req, res) => {
     res.send(output)
   } catch (error) {
     res.removeHeader('Content-Disposition')
+    res.type('json')
     res.status(500).json({ error: String(error instanceof Error ? error.message : error) })
   }
 })

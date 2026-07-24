@@ -35,9 +35,19 @@ export function odaProvider() {
       // ODA args: inputDir outputDir version filetype recurse audit filter
       const args = [...prefixArgs, inDir, outDir, version, to.toUpperCase(), '0', '1', `*.${from}`]
       await new Promise((resolve, reject) => {
-        const proc = spawn(bin, args, { stdio: 'ignore' })
+        const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+        let output = ''
+        proc.stdout.on('data', (chunk) => { output += chunk.toString() })
+        proc.stderr.on('data', (chunk) => { output += chunk.toString() })
         proc.on('error', reject)
-        proc.on('exit', (code) => (code === 0 ? resolve(undefined) : reject(new Error(`ODA exit ${code}`))))
+        proc.on('exit', (code) => {
+          if (code === 0) {
+            resolve(undefined)
+            return
+          }
+          const details = output.trim().slice(-2000)
+          reject(new Error(`ODA exit ${code}${details ? `: ${details}` : ''}`))
+        })
       })
       const output = await readFile(join(outDir, `drawing.${to}`))
       await rm(work, { recursive: true, force: true }).catch(() => {})
