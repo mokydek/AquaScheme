@@ -41,6 +41,7 @@ import type { ViolationPipe } from '@aquascheme/engine'
 import { autoAssignParcels, fetchParcels, parcelPolygons } from '../shared/parcels'
 import type { ParcelRow } from '../shared/parcels'
 import type { SizingResult } from '@aquascheme/engine/sizing'
+import { seedBasisDemo, seedStormProject } from '../shared/stormDemo'
 
 interface ProjectInfo {
   id: string
@@ -155,6 +156,13 @@ export function ProjectPage() {
     setDemoBusy(true)
     setDemoNotice(null)
     try {
+      if (project?.system_type === 'storm') {
+        const result = await seedStormProject(id)
+        if (result.failures.length > 0) throw new Error(`demo sections: ${result.failures.join(', ')}`)
+        setDemoNotice('demoDone')
+        await load()
+        return true
+      }
       const demo = createDemoDataset()
       const zs = demo.surveyPoints.map((p) => p.z)
       await saveDataset(
@@ -185,6 +193,7 @@ export function ProjectPage() {
       await saveDataset(id, 'geology', demo.geology)
       await saveDataset(id, 'seismic', demo.seismicity)
       await saveDataset(id, 'normative', { ...NORMATIVE_DEFAULTS })
+      await seedBasisDemo(id)
       setDemoNotice('demoDone')
       await load()
       return true
@@ -251,7 +260,7 @@ export function ProjectPage() {
 
   const demoAndRun = async (): Promise<void> => {
     const ok = await loadDemo()
-    if (ok) await runPipeline()
+    if (ok && project?.system_type === 'water') await runPipeline()
   }
 
   const topoPoints = useMemo<SurveyPoint[]>(() => {

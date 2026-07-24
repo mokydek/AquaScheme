@@ -86,6 +86,7 @@ export function ExportSection({
   const hasConverter = CONVERTER_URL !== ''
   const [busy, setBusy] = useState<Job | null>(null)
   const [notice, setNotice] = useState<'done' | 'error' | 'converterError' | null>(null)
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [withDxf, setWithDxf] = useState(true)
   // DWG is the default drawing format (requirements update 3, change 2) as
   // soon as the converter service is configured.
@@ -171,6 +172,11 @@ export function ExportSection({
 
   const slug = slugify(projectName)
 
+  const fail = (error: unknown): void => {
+    setErrorDetail(error instanceof Error ? error.message : String(error))
+    setNotice('error')
+  }
+
   /** DXF text plus, if selected and configured, a converted DWG blob. */
   const buildDrawings = async (input: ExportInput) => {
     const dxf = await generateDxf(input)
@@ -189,6 +195,7 @@ export function ExportSection({
   const exportDrawing = async () => {
     setBusy('drawing')
     setNotice(null)
+    setErrorDetail(null)
     try {
       const input = assemble()
       const { dxf, dwg, converterFailed } = await buildDrawings(input)
@@ -199,8 +206,8 @@ export function ExportSection({
       }
       if (dwg) downloadBlob(`${slug}_В1.dwg`, dwg)
       setNotice(converterFailed ? 'converterError' : 'done')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      fail(error)
     } finally {
       setBusy(null)
     }
@@ -209,14 +216,15 @@ export function ExportSection({
   const exportSpec = async () => {
     setBusy('spec')
     setNotice(null)
+    setErrorDetail(null)
     try {
       const bytes = await generateSpecXlsx(assemble())
       const blob = new Blob([bytes], { type: XLSX_TYPE })
       downloadBlob(`${slug}_спецификация.xlsx`, blob)
       await archive('spec_xlsx', `${slug}_спецификация.xlsx`, blob, XLSX_TYPE)
       setNotice('done')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      fail(error)
     } finally {
       setBusy(null)
     }
@@ -225,13 +233,14 @@ export function ExportSection({
   const exportPdf = async () => {
     setBusy('pdf')
     setNotice(null)
+    setErrorDetail(null)
     try {
       const blob = await generatePdf(assemble())
       downloadBlob(`${slug}_записка.pdf`, blob)
       await archive('pdf_note', `${slug}_записка.pdf`, blob, 'application/pdf')
       setNotice('done')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      fail(error)
     } finally {
       setBusy(null)
     }
@@ -240,6 +249,7 @@ export function ExportSection({
   const exportSituation = async () => {
     setBusy('situation')
     setNotice(null)
+    setErrorDetail(null)
     try {
       const input = assemble()
       const dxf = await generateSituationDxf({
@@ -253,8 +263,8 @@ export function ExportSection({
       const blob = new Blob([dxf], { type: 'application/dxf' })
       downloadBlob(`${slug}_ситуационная_схема.dxf`, blob)
       setNotice('done')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      fail(error)
     } finally {
       setBusy(null)
     }
@@ -263,12 +273,13 @@ export function ExportSection({
   const exportActs = async () => {
     setBusy('acts')
     setNotice(null)
+    setErrorDetail(null)
     try {
       const blob = await generateActFormsPdf(assemble())
       downloadBlob(`${slug}_формы_актов.pdf`, blob)
       setNotice('done')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      fail(error)
     } finally {
       setBusy(null)
     }
@@ -277,12 +288,13 @@ export function ExportSection({
   const exportDocs = async () => {
     setBusy('docs')
     setNotice(null)
+    setErrorDetail(null)
     try {
       const blob = await generateProjectDocsPdf(assemble())
       downloadBlob(`${slug}_проектные_документы.pdf`, blob)
       setNotice('done')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      fail(error)
     } finally {
       setBusy(null)
     }
@@ -291,6 +303,7 @@ export function ExportSection({
   const exportBundle = async () => {
     setBusy('bundle')
     setNotice(null)
+    setErrorDetail(null)
     try {
       const input = assemble()
       const [{ dxf, dwg, converterFailed }, generalDxf, specDxf, pdf, xlsx, actsPdf, docsPdf, situationDxf] =
@@ -341,8 +354,8 @@ export function ExportSection({
       const zip = await zipBundle(files)
       downloadBlob(`${slug}_комплект.zip`, zip)
       setNotice(converterFailed || sheetConvertFailed ? 'converterError' : 'done')
-    } catch {
-      setNotice('error')
+    } catch (error) {
+      fail(error)
     } finally {
       setBusy(null)
     }
@@ -399,7 +412,11 @@ export function ExportSection({
 
       {notice === 'done' && <p className="stat-line ok">{t('project.export.done')}</p>}
       {notice === 'converterError' && <p className="notice error">{t('project.export.converterError')}</p>}
-      {notice === 'error' && <p className="notice error">{t('project.export.error')}</p>}
+      {notice === 'error' && (
+        <p className="notice error">
+          {t('project.export.error')}{errorDetail ? `: ${errorDetail}` : ''}
+        </p>
+      )}
     </Panel>
   )
 }

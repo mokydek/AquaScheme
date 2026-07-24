@@ -14,24 +14,60 @@ import { BASIS_ITEMS } from '../app/project/BasisSection'
  * geology (summary + demo boreholes for the cross-section), seismicity, norms,
  * the land-allocation corridor, and the permitting-documents checklist.
  *
- * The real object's source PDFs (ТЗ, АПЗ, ПДП, …) are confidential and must
- * not ship in the public repo, so the checklist is seeded with the document
- * NAMES marked «(демо)» — the binary files stay the user's to attach; every
+ * The real object's source PDFs/DWG are private and must not ship inside the
+ * public JavaScript bundle, so the checklist is seeded with the exact file
+ * manifest and reviewable derived facts — the binary files stay in private
+ * project storage when the owner attaches them; every
  * step runs independently so a missing migration for one table never blocks
  * the rest, and the count of seeded sections is returned.
  */
 
 /** Names of the reference input documents (no binaries), for the checklist. */
 const BASIS_DEMO_FILES: Record<string, string> = {
-  assignment: 'ТЗ_водосбросной_коллектор (демо).pdf',
-  apz: 'АПЗ_№145200 (демо).pdf',
-  pdp: 'ПДП_водосбросной_2025 (демо).pdf',
-  route_act: 'Акт_выбора_трассы_2025 (демо).pdf',
-  genplan_scheme: 'Схема_ЛК_с_диаметрами (демо).pdf',
-  topo: 'Топосъёмка_М1-500 (демо).pdf',
-  geology: 'Отчёт_ИГИ (демо).pdf',
-  vertical: 'Вертикальная_планировка (демо).pdf',
-  tu: 'Технические_условия (демо).pdf',
+  assignment: 'ТЗ — требуется прикрепить оригинал',
+  apz: 'АПЗ исправленный 22,10.pdf',
+  pdp: 'ПДП — требуется прикрепить оригинал',
+  route_act: 'Акт выбора трассы — требуется прикрепить оригинал',
+  genplan_scheme: 'Схема ЛК от Генплан с диаметрами..pdf',
+  topo: 'Топо Водосбрсной общий 15,10.pdf',
+  geology: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
+  vertical: 'Вертикальная планировка — требуется прикрепить оригинал',
+  tu: 'Технические условия — требуется прикрепить оригинал',
+}
+
+/** Every file supplied for verification; names only, never bundled binaries. */
+export const STORM_REFERENCE_FILES = [
+  'АПЗ исправленный 22,10.pdf',
+  'Схема ЛК от Генплан с диаметрами..pdf',
+  'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
+  'ТОО Аква Д.большой Талдыколь общий.dwg',
+  'Топо Водосбрсной общий 15,10.pdf',
+  'aquascheme_geology_template.xlsx',
+  'Земельный кодекс.pdf',
+  '_Экологический кодекс РК 09.01.2026.pdf',
+  '_Строительный кодекс РК 09.01.2026.pdf',
+  '_Водный кодекс РК 12.03.2026.pdf',
+  '4_СН РК 4.01_03_2013 Водоотведение. Наружные сети и сооружения. (с изм. от 07.11.2019г) (1).pdf',
+  '4_СН РК 4.01_03_2013 Водоотведение. Наружные сети и сооружения. (с изм. от 07.11.2019г).pdf',
+  '4_01_03_2011.pdf',
+  'SP_RK_4.01-103-2013.pdf',
+  'СН_РК_1.02-03-2022 (с изм 2025) (1).pdf',
+  'СН_РК_1.02-03-2022 (с изм 2025).pdf',
+  'ГОСТ 21.704-2011 Правила выполнения ПСД НВК.pdf',
+  'ГОСТ 21.101-2020. Основные требования к проектной и рабочей документации.pdf',
+  'ГОСТ 21.110-2013 спецификации.pdf',
+  'АГСК 3 RU (по состоянию на 3 апреля 2026 года).pdf',
+  'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf',
+] as const
+
+export async function seedBasisDemo(projectId: string): Promise<void> {
+  const files: Record<string, string> = {}
+  for (const item of BASIS_ITEMS) files[item.id] = BASIS_DEMO_FILES[item.id] ?? `${item.id} (демо)`
+  await saveDataset(projectId, 'basis', {
+    files,
+    referenceFiles: [...STORM_REFERENCE_FILES],
+    mode: 'demo-derived',
+  })
 }
 
 /** Two demo boreholes so the geology cross-section draws on the profile. */
@@ -69,6 +105,40 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
   const y0 = Math.min(...ys)
   const y1 = Math.max(...ys)
 
+  // Survey/profile points and the downstream outlet are derived from the
+  // benchmark route so all input panels are usable immediately.
+  await step('topography', () => {
+    const points = demo.network.nodes
+      .filter((node) => node.kind !== 'building')
+      .map((node) => ({ x: node.x, y: node.y, z: node.groundElevation }))
+    const z = points.map((point) => point.z)
+    return saveDataset(projectId, 'topography', { points }, {
+      total: points.length,
+      accepted: points.length,
+      zMin: Math.min(...z),
+      zMax: Math.max(...z),
+      derivedFrom: ['Топо Водосбрсной общий 15,10.pdf', 'ТОО Аква Д.большой Талдыколь общий.dwg'],
+    }, 'демо: производные точки трассы')
+  })
+  await step('outlet', () => {
+    const outlet = demo.network.nodes.find((node) => node.kind === 'source')
+    if (!outlet) throw new Error('demo outlet missing')
+    return saveDataset(projectId, 'source', {
+      x: outlet.x,
+      y: outlet.y,
+      groundElevation: outlet.groundElevation,
+      availableHead: 0,
+    }, { derivedFrom: 'Схема ЛК от Генплан с диаметрами..pdf' })
+  })
+  await step('region', () => saveDataset(projectId, 'region', {
+    regionId: 'astana',
+    name: 'г. Астана',
+    source: 'manual',
+    seismicPoints: 6,
+    freezingDepthM: 2.53,
+    hazards: ['high_groundwater'],
+  }))
+
   // 1. Inflow sources (ОС) + network.
   await step('sources', async () => {
     await supabase.from('buildings').delete().eq('project_id', projectId)
@@ -93,7 +163,7 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
       soilType: 'clay',
       groundwaterDepthM: 0.5,
       corrosivity: 'high',
-      freezingDepthM: 2.2,
+      freezingDepthM: 2.53,
       subsidenceType: null,
       heaving: true,
       swelling: true,
@@ -123,11 +193,7 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
   })
 
   // 5. Permitting documents checklist (names only — binaries stay local).
-  await step('basis', () => {
-    const files: Record<string, string> = {}
-    for (const item of BASIS_ITEMS) files[item.id] = BASIS_DEMO_FILES[item.id] ?? `${item.id} (демо)`
-    return saveDataset(projectId, 'basis', { files })
-  })
+  await step('basis', () => seedBasisDemo(projectId))
 
   return { seededSections: seeded, failures }
 }

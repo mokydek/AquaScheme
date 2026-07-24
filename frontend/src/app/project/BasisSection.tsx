@@ -27,7 +27,7 @@ export const BASIS_ITEMS = [
   { id: 'tu', label: 'Технические условия (ТУ)' },
 ] as const
 
-type BasisContent = { files: Record<string, string> }
+type BasisContent = { files: Record<string, string>; referenceFiles?: string[]; mode?: 'demo-derived' }
 
 export function BasisSection({
   projectId,
@@ -43,7 +43,9 @@ export function BasisSection({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notice, setNotice] = useState<'saved' | 'error' | 'migrationNeeded' | 'bucketMissing' | null>(null)
 
-  const files = ((dataset?.content ?? { files: {} }) as BasisContent).files ?? {}
+  const content = (dataset?.content ?? { files: {} }) as BasisContent
+  const files = content.files ?? {}
+  const referenceFiles = content.referenceFiles ?? []
   const uploadedCount = BASIS_ITEMS.filter((i) => files[i.id]).length
 
   const onFile = async (itemId: string, event: ChangeEvent<HTMLInputElement>) => {
@@ -65,7 +67,7 @@ export function BasisSection({
         .from('source-files')
         .upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
       if (upload.error) throw upload.error
-      await saveDataset(projectId, 'basis', { files: { ...files, [itemId]: file.name } })
+      await saveDataset(projectId, 'basis', { ...content, files: { ...files, [itemId]: file.name } })
       setNotice('saved')
       await onSaved()
     } catch (error) {
@@ -112,6 +114,15 @@ export function BasisSection({
           </tbody>
         </table>
       </div>
+      {referenceFiles.length > 0 && (
+        <details style={{ marginTop: 12 }}>
+          <summary>{t('project.basis.references', { count: referenceFiles.length })}</summary>
+          <ul className="mono" style={{ fontSize: 11, lineHeight: 1.6 }}>
+            {referenceFiles.map((name) => <li key={name}>{name}</li>)}
+          </ul>
+          <p className="hint">{t('project.basis.referencesHint')}</p>
+        </details>
+      )}
       {notice === 'saved' && <p className="stat-line ok">{t('project.basis.saved')}</p>}
       {notice === 'migrationNeeded' && <p className="notice error">{t('project.basis.migrationNeeded')}</p>}
       {notice === 'bucketMissing' && <p className="notice error">{t('project.basis.bucketMissing')}</p>}

@@ -30,7 +30,12 @@ function sniffFormat(buffer, name) {
 }
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, provider: selectProvider().name, directions: ['dxf>dwg', 'dwg>dxf'] })
+  res.json({
+    ok: true,
+    provider: selectProvider().name,
+    directions: ['dxf>dwg', 'dwg>dxf'],
+    commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? null,
+  })
 })
 
 app.post('/convert', upload.single('file'), async (req, res) => {

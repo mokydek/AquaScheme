@@ -472,6 +472,8 @@ export const en = {
         title: 'Initial permitting documents',
         hint: 'The input document set the project rests on (as in the reference object: design task, APZ, detailed plan, route selection act, master plan scheme, survey, geology report, vertical planning, technical conditions). Uploaded files are stored with the project',
         progress: 'Uploaded: {{count}} of {{total}}',
+        references: 'Demo reference package: {{count}} files',
+        referencesHint: 'The demo stores names and derived engineering data. Confidential PDF/DWG binaries are not published in the site JavaScript; the owner attaches originals to private project storage.',
         thDoc: 'Document',
         thFile: 'File',
         missing: 'not uploaded',

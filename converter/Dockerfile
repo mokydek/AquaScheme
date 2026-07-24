@@ -30,6 +30,7 @@ RUN npm install --omit=dev
 COPY src ./src
 
 ENV ODA_CONVERTER_PATH="xvfb-run -a ODAFileConverter"
+ENV QT_DEBUG_PLUGINS=1
 ENV PORT=8080
 EXPOSE 8080
 CMD ["npm", "start"]
