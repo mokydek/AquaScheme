@@ -215,6 +215,33 @@ export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> 
   return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
 }
 
+export interface ReferencePipeScheduleRow {
+  system: string
+  designation: string
+  standard: string
+  diameterMm: number
+  lengthM: number
+}
+
+/** Exact pipe schedule transcribed from the approved/reference album. */
+export async function generateReferencePipeScheduleXlsx(
+  rows: ReferencePipeScheduleRow[],
+): Promise<Uint8Array> {
+  const XLSX = await import('xlsx')
+  const sheet = XLSX.utils.json_to_sheet(rows.map((row, index) => ({
+    'Поз.': index + 1,
+    'Система': row.system,
+    'Наименование и техническая характеристика': row.designation,
+    'Стандарт': row.standard,
+    'Ø, мм': row.diameterMm,
+    'Длина, м': row.lengthM,
+  })))
+  sheet['!cols'] = [{ wch: 7 }, { wch: 39 }, { wch: 64 }, { wch: 22 }, { wch: 11 }, { wch: 13 }]
+  const book = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(book, sheet, '2024-51-НК.С')
+  return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
+}
+
 function xlsxBytes(output: unknown): Uint8Array {
   if (output instanceof Uint8Array) return output
   if (output instanceof ArrayBuffer) return new Uint8Array(output)

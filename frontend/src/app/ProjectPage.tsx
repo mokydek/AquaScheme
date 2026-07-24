@@ -430,6 +430,7 @@ export function ProjectPage() {
                 pipes={pipes}
                 normsDataset={datasets.normative}
                 geologyDataset={datasets.geology}
+                basisDataset={datasets.basis}
                 parcels={parcels}
                 onChanged={load}
               />
@@ -445,6 +446,7 @@ export function ProjectPage() {
               pipes={pipes}
               normsDataset={datasets.normative}
               geologyDataset={datasets.geology}
+              basisDataset={datasets.basis}
               parcels={parcels}
               onChanged={load}
             />

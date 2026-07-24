@@ -25,6 +25,7 @@ import {
   generateSewerNotePdf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
+  generateReferencePipeScheduleXlsx,
   generateSewerSpecSheetDxf,
   generateSewerSpecXlsx,
   generateSewerScheduleXlsx,
@@ -65,6 +66,7 @@ export function GravitySection({
   pipes,
   normsDataset,
   geologyDataset,
+  basisDataset,
   parcels,
   onChanged,
 }: {
@@ -76,6 +78,7 @@ export function GravitySection({
   pipes: PipeRow[]
   normsDataset?: DatasetRow
   geologyDataset?: DatasetRow
+  basisDataset?: DatasetRow
   /** Project parcels; kind 'right_of_way' rings form the corridor to check. */
   parcels?: ParcelRow[]
   /** Reload the project data after the demo seeding. */
@@ -145,6 +148,10 @@ export function GravitySection({
   }, [result])
 
   const schedule = useMemo(() => (result ? buildSewerSchedule(result) : null), [result])
+  const referenceSchedule = useMemo(() => {
+    const content = basisDataset?.content as { designSchedule?: Array<{ system: string; designation: string; standard: string; diameterMm: number; lengthM: number }> } | null
+    return content?.designSchedule ?? []
+  }, [basisDataset])
 
   // The full К1 sheet set, mirroring the professional НК album: общие данные,
   // ситуационная схема, план, продольный профиль, ведомость колодцев и труб.
@@ -171,7 +178,7 @@ export function GravitySection({
         liftStation: assessLiftStationNeed(result.profile.stations.map((s) => s.depthM)).needed.value,
         highGroundwater: groundwaterDepthM !== undefined && groundwaterDepthM < result.profile.maxDepthM,
       })
-      const [general, situation, plan, profile, xlsx, specSheet, specXlsx, planSheets, profileSheets, manholeSheets] = await Promise.all([
+      const [general, situation, plan, profile, xlsx, referenceXlsx, specSheet, specXlsx, planSheets, profileSheets, manholeSheets] = await Promise.all([
         generateSewerGeneralDataDxf({
           projectName,
           schedule,
@@ -188,6 +195,7 @@ export function GravitySection({
         generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels }),
         generateSewerProfileDxf({ projectName, profile: result.profile }),
         generateSewerScheduleXlsx(schedule),
+        referenceSchedule.length > 0 ? generateReferencePipeScheduleXlsx(referenceSchedule) : Promise.resolve(null),
         generateSewerSpecSheetDxf(projectName, specItems),
         generateSewerSpecXlsx(specItems),
         mainPath.length >= 2
@@ -205,6 +213,7 @@ export function GravitySection({
         [`${slug}_06_спецификация_НК.dxf`]: specSheet,
         [`${slug}_06_спецификация_НК.xlsx`]: specXlsx,
       }
+      if (referenceXlsx) files[`${slug}_05А_проектная_спецификация_2024-51-НК.С.xlsx`] = referenceXlsx
       // Per-picket sheets follow the summary sheets, numbered like the album.
       let sheetNo = 7
       const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.()]+/g, '_')
@@ -310,6 +319,25 @@ export function GravitySection({
       const a = document.createElement('a')
       a.href = url
       a.download = `${slug}_ведомость_К1.xlsx`
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const exportReferenceSchedule = async () => {
+    if (referenceSchedule.length === 0) return
+    setExporting(true)
+    try {
+      const bytes = await generateReferencePipeScheduleXlsx(referenceSchedule)
+      const blob = new Blob([bytes], { type: XLSX_TYPE })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slug}_проектная_спецификация_2024-51-НК.С.xlsx`
       document.body.append(a)
       a.click()
       a.remove()
@@ -582,6 +610,24 @@ export function GravitySection({
               <p className="stat-line">{t('project.gravity.pipeTotal', { value: schedule.totalPipeLengthM })}</p>
               <p className="hint">{t('project.gravity.agskNote')}</p>
               <p className="hint">{t('project.gravity.scheduleNote')}</p>
+              {referenceSchedule.length > 0 && (
+                <>
+                  <h4 className="subhead" style={{ marginTop: 16 }}>Проектная спецификация 2024-51-НК.С</h4>
+                  <p className="hint">Контрольные количества из листов 1–3 итогового альбома; они не заменяются результатом автоматического подбора.</p>
+                  <div className="table-wrap" style={{ marginTop: 8 }}>
+                    <table className="data-table">
+                      <thead><tr><th>Система</th><th>Наименование</th><th>Стандарт</th><th className="num">Ø, мм</th><th className="num">Длина, м</th></tr></thead>
+                      <tbody>
+                        {referenceSchedule.map((item, index) => (
+                          <tr key={`${item.designation}-${index}`}><td>{item.system}</td><td>{item.designation}</td><td>{item.standard}</td><td className="num">{item.diameterMm}</td><td className="num">{item.lengthM}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="stat-line">Итого по проектной спецификации: {referenceSchedule.reduce((sum, item) => sum + item.lengthM, 0).toLocaleString('ru-RU')} м</p>
+                  <div className="section-actions"><button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportReferenceSchedule()}>Скачать проектную спецификацию XLSX</button></div>
+                </>
+              )}
               <div className="section-actions" style={{ marginTop: 12 }}>
                 <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSchedule()}>
                   {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSchedule')}
