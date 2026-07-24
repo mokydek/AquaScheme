@@ -458,6 +458,7 @@ export function ProjectPage() {
               nodes={nodes}
               pipes={pipes}
               geologyDataset={datasets.geology}
+              basisDataset={datasets.basis}
               parcels={parcels}
             />
           )}

@@ -21,6 +21,7 @@ import {
   generateSewerGeneralDataDxf,
   generateManholeSheetsDxf,
   generatePlanSheetSetDxf,
+  generateProjectAlbumPdf,
   generateProfileSheetSetDxf,
   generateSewerNotePdf,
   generateSewerPlanDxf,
@@ -35,6 +36,7 @@ import {
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
+import { AlbumSheetSet } from './AlbumSheetSet'
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -86,6 +88,9 @@ export function GravitySection({
 }) {
   const { t } = useTranslation()
   const [exporting, setExporting] = useState(false)
+  const [albumExporting, setAlbumExporting] = useState(false)
+  const [albumError, setAlbumError] = useState<string | null>(null)
+  const [bundleError, setBundleError] = useState<string | null>(null)
   // Design criterion: minBurial is what professional flat-terrain trunks use
   // (registry sewer.design.minBurial); minDiameter is the economical default.
   const [strategy, setStrategy] = useState<'minDiameter' | 'minBurial'>('minBurial')
@@ -152,12 +157,17 @@ export function GravitySection({
     const content = basisDataset?.content as { designSchedule?: Array<{ system: string; designation: string; standard: string; diameterMm: number; lengthM: number }> } | null
     return content?.designSchedule ?? []
   }, [basisDataset])
+  const referenceProject = useMemo(() => {
+    const content = basisDataset?.content as { project?: { code?: string } } | null
+    return content?.project
+  }, [basisDataset])
 
   // The full К1 sheet set, mirroring the professional НК album: общие данные,
   // ситуационная схема, план, продольный профиль, ведомость колодцев и труб.
   const exportBundle = async () => {
     if (!result?.profile || !schedule) return
     setExporting(true)
+    setBundleError(null)
     try {
       const network = networkFromRows(nodes, pipes)
       const pipeDiameterMm = new Map(result.pipes.map((p) => [p.id, p.diameterMm]))
@@ -231,6 +241,8 @@ export function GravitySection({
       a.click()
       a.remove()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      setBundleError(error instanceof Error ? `Не удалось сформировать рабочий комплект: ${error.message}` : 'Не удалось сформировать рабочий комплект')
     } finally {
       setExporting(false)
     }
@@ -342,6 +354,8 @@ export function GravitySection({
       a.click()
       a.remove()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      setBundleError(error instanceof Error ? `Не удалось сформировать рабочий комплект: ${error.message}` : 'Не удалось сформировать рабочий комплект')
     } finally {
       setExporting(false)
     }
@@ -403,6 +417,41 @@ export function GravitySection({
       downloadText(`${slug}_ситуационная_схема.dxf`, dxf, 'application/dxf')
     } finally {
       setExporting(false)
+    }
+  }
+
+  const exportAlbum = async () => {
+    if (!result?.profile || !schedule) return
+    setAlbumExporting(true)
+    setAlbumError(null)
+    try {
+      // Allow the busy indicator to paint before pdfmake starts its CPU-heavy layout pass.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      const network = networkFromRows(nodes, pipes)
+      const pipeDiameterMm = new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm]))
+      const blob = await generateProjectAlbumPdf({
+        projectName,
+        projectCode: referenceProject?.code ?? 'НК',
+        system: systemType,
+        network,
+        profile: result.profile,
+        schedule,
+        pipeDiameterMm,
+        outletFlowLps: result.outletFlowLps,
+        designSchedule: referenceSchedule,
+      })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${slug}_${referenceProject?.code ?? 'НК'}_альбом_61_лист.pdf`
+      document.body.append(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      setAlbumError(error instanceof Error ? `Не удалось сформировать альбом: ${error.message}` : 'Не удалось сформировать альбом')
+    } finally {
+      setAlbumExporting(false)
     }
   }
 
@@ -511,6 +560,16 @@ export function GravitySection({
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
             </button>
           </div>
+
+          {result.profile && schedule && (
+            <AlbumSheetSet
+              pdfBusy={albumExporting}
+              zipBusy={exporting}
+              onPdf={() => void exportAlbum()}
+              onZip={() => void exportBundle()}
+              error={albumError ?? bundleError}
+            />
+          )}
 
           {result.profile && result.profile.stations.length > 0 && (
             <>
