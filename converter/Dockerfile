@@ -5,8 +5,11 @@ FROM node:20-bookworm-slim
 
 # Runtime libraries the ODA File Converter needs, plus a virtual display.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb xauth libxcb1 libxcb-util1 libx11-6 libxext6 libxrender1 \
-    libxkbcommon0 libgl1 libfontconfig1 libdbus-1-3 ca-certificates wget \
+    xvfb xauth libxcb1 libxcb-util1 libxcb-cursor0 libxcb-icccm4 \
+    libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
+    libxkbcommon0 libxkbcommon-x11-0 libx11-6 libxext6 libxrender1 \
+    libsm6 libice6 libgl1 libegl1 libfontconfig1 libdbus-1-3 \
+    ca-certificates wget \
   && ln -sf /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 \
       /usr/lib/x86_64-linux-gnu/libxcb-util.so.0 \
   && rm -rf /var/lib/apt/lists/*

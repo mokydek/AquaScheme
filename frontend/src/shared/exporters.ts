@@ -92,20 +92,33 @@ export async function generateSewerNotePdf(
     import('pdfmake/build/vfs_fonts'),
   ])
   const pdfMake = (pdfMakeMod as { default?: unknown }).default ?? pdfMakeMod
-  const fonts = pdfFontsMod as unknown as {
-    pdfMake?: { vfs: Record<string, string> }
-    default?: { pdfMake?: { vfs: Record<string, string> }; vfs?: Record<string, string> }
-    vfs?: Record<string, string>
-  }
-  const vfs = fonts.pdfMake?.vfs ?? fonts.default?.pdfMake?.vfs ?? fonts.default?.vfs ?? fonts.vfs
+  const vfs = pdfFontVfs(pdfFontsMod)
   const maker = pdfMake as {
     vfs?: unknown
+    addVirtualFileSystem?: (files: Record<string, string>) => void
     createPdf: (doc: unknown) => { getBlob: (cb: (b: Blob) => void) => void }
   }
-  maker.vfs = vfs
+  if (maker.addVirtualFileSystem) maker.addVirtualFileSystem(vfs)
+  else maker.vfs = vfs
   return new Promise((resolve) => {
     maker.createPdf(buildSewerNoteDoc(input) as Record<string, unknown>).getBlob(resolve)
   })
+}
+
+/** pdfmake 0.3 exports the VFS object directly; 0.2 used nested wrappers. */
+function pdfFontVfs(module: unknown): Record<string, string> {
+  const fonts = module as {
+    pdfMake?: { vfs?: Record<string, string> }
+    default?: Record<string, unknown> & { pdfMake?: { vfs?: Record<string, string> }; vfs?: Record<string, string> }
+    vfs?: Record<string, string>
+  }
+  const nested = fonts.pdfMake?.vfs ?? fonts.default?.pdfMake?.vfs ?? fonts.default?.vfs ?? fonts.vfs
+  if (nested) return nested
+  const direct = fonts.default
+  if (direct && Object.values(direct).every((value) => typeof value === 'string')) {
+    return direct as Record<string, string>
+  }
+  throw new Error('pdfmake font VFS is unavailable')
 }
 
 /** Per-manhole material table sheets + the protective grille sheet. */
@@ -195,17 +208,14 @@ async function renderPdfDoc(doc: unknown): Promise<Blob> {
     import('pdfmake/build/vfs_fonts'),
   ])
   const pdfMake = (pdfMakeMod as { default?: unknown }).default ?? pdfMakeMod
-  const fonts = pdfFontsMod as unknown as {
-    pdfMake?: { vfs: Record<string, string> }
-    default?: { pdfMake?: { vfs: Record<string, string> }; vfs?: Record<string, string> }
-    vfs?: Record<string, string>
-  }
-  const vfs = fonts.pdfMake?.vfs ?? fonts.default?.pdfMake?.vfs ?? fonts.default?.vfs ?? fonts.vfs
+  const vfs = pdfFontVfs(pdfFontsMod)
   const maker = pdfMake as {
     vfs?: unknown
+    addVirtualFileSystem?: (files: Record<string, string>) => void
     createPdf: (doc: unknown) => { getBlob: (cb: (b: Blob) => void) => void }
   }
-  maker.vfs = vfs
+  if (maker.addVirtualFileSystem) maker.addVirtualFileSystem(vfs)
+  else maker.vfs = vfs
   return new Promise((resolve) => {
     maker.createPdf(doc).getBlob(resolve)
   })
