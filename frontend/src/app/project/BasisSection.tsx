@@ -35,6 +35,18 @@ type BasisContent = {
   designSchedule?: Array<{ system: string; designation: string; standard: string; diameterMm: number; lengthM: number }>
 }
 
+const DEMO_DERIVED_BASIS: Record<string, string> = {
+  assignment: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — общие данные и основание проектирования',
+  apz: 'АПЗ исправленный 22,10.pdf',
+  pdp: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — планы трассы, листы 3–31',
+  route_act: 'ТОО Аква Д.большой Талдыколь общий.dwg — геометрия принятой трассы',
+  genplan_scheme: 'Схема ЛК от Генплан с диаметрами..pdf',
+  topo: 'Топо Водосбрсной общий 15,10.pdf',
+  geology: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
+  vertical: 'Топо Водосбрсной общий 15,10.pdf + DWG — высотные отметки',
+  tu: 'АПЗ исправленный 22,10.pdf — исходные технические требования',
+}
+
 export function BasisSection({
   projectId,
   dataset,
@@ -50,7 +62,9 @@ export function BasisSection({
   const [notice, setNotice] = useState<'saved' | 'error' | 'migrationNeeded' | 'bucketMissing' | null>(null)
 
   const content = (dataset?.content ?? { files: {} }) as BasisContent
-  const files = content.files ?? {}
+  const files = content.mode === 'demo-derived'
+    ? { ...DEMO_DERIVED_BASIS, ...(content.files ?? {}) }
+    : content.files ?? {}
   const referenceFiles = content.referenceFiles ?? []
   const uploadedCount = BASIS_ITEMS.filter((i) => files[i.id]).length
 
@@ -91,6 +105,9 @@ export function BasisSection({
     <Panel title={t('project.basis.title')} status={uploadedCount === BASIS_ITEMS.length ? 'filled' : uploadedCount > 0 ? 'default' : 'empty'}>
       <p className="hint">{t('project.basis.hint')}</p>
       <p className="stat-line">{t('project.basis.progress', { count: uploadedCount, total: BASIS_ITEMS.length })}</p>
+      {content.mode === 'demo-derived' && (
+        <p className="hint">Строки без отдельного исходного файла заполнены подтверждёнными разделами PDF/DWG и помечены названием документа-источника; программа не выдаёт их за отдельные загруженные бинарные файлы.</p>
+      )}
       {content.project && (
         <div className="kv-list" style={{ marginTop: 12 }}>
           <div className="kv"><span className="kv-label">Объект</span><span className="kv-value">{content.project.name}</span></div>

@@ -15,10 +15,12 @@ export function ReferenceSituationView() {
           <strong>Ситуационная схема</strong>
           <span>2024-51-НК · исходный альбом · лист 2</span>
         </figcaption>
-        <img
-          src="/reference/2024-51-situation.png"
-          alt="Ситуационная схема коллектора 2024-51-НК из исходного проектного альбома"
-        />
+        <ZoomPanSurface label="Масштабируемая ситуационная схема из исходного альбома">
+          <img
+            src="/reference/2024-51-situation.png"
+            alt="Ситуационная схема коллектора 2024-51-НК из исходного проектного альбома"
+          />
+        </ZoomPanSurface>
       </figure>
       <ol className="reference-situation-facts">
         {SOURCE_FACTS.map(([title, text], index) => (
@@ -31,3 +33,4 @@ export function ReferenceSituationView() {
     </div>
   )
 }
+import { ZoomPanSurface } from './ZoomPanSurface'

@@ -8,6 +8,7 @@ import type { ParcelRow } from '../../shared/parcels'
 import { SchemeBuilder } from './SchemeBuilder'
 import { Panel } from './Panel'
 import { ReferenceSituationView } from './ReferenceSituationView'
+import { PipeCalculationsView } from './PipeCalculationsView'
 
 /**
  * Standalone «Ситуационная схема» category: the scheme is built here on its own
@@ -36,14 +37,14 @@ export function SituationSchemeSection({
   const { t } = useTranslation()
   const basisContent = (basisDataset?.content ?? {}) as { mode?: string; project?: { code?: string } }
   const hasReferenceSheet = basisContent.mode === 'demo-derived' || basisContent.project?.code === '2024-51-НК'
-  const [view, setView] = useState<'reference' | 'calculated'>(hasReferenceSheet ? 'reference' : 'calculated')
+  const [view, setView] = useState<'reference' | 'calculated' | 'calculations'>(hasReferenceSheet ? 'reference' : 'calculated')
 
   const model = useMemo(() => {
     if (pipes.length === 0) return null
     const network = networkFromRows(nodes, pipes)
     const flows = new Map<string, number>()
     if (systemType === 'storm') {
-      for (const b of buildings) flows.set(b.id, b.residents ?? 0)
+      for (const b of buildings) flows.set(b.id, b.specific_demand_lpd ?? b.residents ?? 0)
     } else {
       for (const b of buildings) flows.set(b.id, b.residents ?? 0)
     }
@@ -58,6 +59,7 @@ export function SituationSchemeSection({
     return {
       network,
       pipeDiameterMm: new Map(result.pipes.map((p) => [p.id, p.diameterMm])),
+      calculatedPipes: result.pipes,
       outletFlowLps: result.outletFlowLps,
     }
   }, [systemType, buildings, nodes, pipes, geologyDataset])
@@ -71,6 +73,15 @@ export function SituationSchemeSection({
     [parcels],
   )
 
+  const nodeLabel = useMemo(() => {
+    const buildingById = new Map(buildings.map((building) => [building.id, building.label ?? building.id]))
+    const labels = new Map(nodes.map((node, index) => [
+      node.label ?? node.id,
+      node.building_id ? buildingById.get(node.building_id) ?? `ОС-${index + 1}` : node.kind === 'source' ? 'Оголовок' : `К-${index + 1}`,
+    ]))
+    return (nodeId: string) => labels.get(nodeId) ?? nodeId
+  }, [buildings, nodes])
+
   return (
     <Panel title={t('project.scheme.title')} status={model ? 'filled' : 'empty'}>
       <p className="hint">{t('project.scheme.hint')}</p>
@@ -78,18 +89,23 @@ export function SituationSchemeSection({
         <p className="stat-line warn">{t('project.scheme.needNetwork')}</p>
       ) : (
         <>
-          {hasReferenceSheet && (
-            <div className="scheme-view-tabs" role="tablist" aria-label="Вид ситуационной схемы">
+          <div className="scheme-view-tabs" role="tablist" aria-label="Вид ситуационной схемы">
+              {hasReferenceSheet && (
               <button type="button" className={view === 'reference' ? 'active' : ''} onClick={() => setView('reference')}>
                 Конечная схема из проекта
               </button>
+              )}
               <button type="button" className={view === 'calculated' ? 'active' : ''} onClick={() => setView('calculated')}>
                 Расчётная схема
               </button>
-            </div>
-          )}
+              <button type="button" className={view === 'calculations' ? 'active' : ''} onClick={() => setView('calculations')}>
+                Расчёты труб и диаметры
+              </button>
+          </div>
           {hasReferenceSheet && view === 'reference' ? (
             <ReferenceSituationView />
+          ) : view === 'calculations' ? (
+            <PipeCalculationsView pipes={model.calculatedPipes} nodeLabel={nodeLabel} />
           ) : (
             <SchemeBuilder
               scheme={{
@@ -99,6 +115,7 @@ export function SituationSchemeSection({
                 pipeDiameterMm: model.pipeDiameterMm,
                 outletFlowLps: model.outletFlowLps,
                 corridorRings,
+                backgroundImageUrl: hasReferenceSheet ? '/reference/2024-51-situation.png' : undefined,
               }}
               steps={{
                 network: model.network,

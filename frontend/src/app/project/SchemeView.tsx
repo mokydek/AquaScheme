@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { TracedNetwork } from '@aquascheme/engine'
+import { ZoomPanSurface } from './ZoomPanSurface'
 
 /**
  * Visual network scheme in the style of the генплановская «Схема ливневой
@@ -26,6 +27,8 @@ export interface SchemeViewProps {
   outletLabel?: string
   /** Corridor (полоса отвода) rings in local coordinates, drawn dashed. */
   corridorRings?: Array<Array<{ x: number; y: number }>>
+  /** Project map/base drawing displayed below the calculated vector layers. */
+  backgroundImageUrl?: string
   /**
    * Step ids currently visible (see buildSituationSteps). Absent — everything
    * is drawn at once (the static sheet). Layers fade in as steps arrive.
@@ -33,7 +36,7 @@ export interface SchemeViewProps {
   visibleSteps?: Set<string>
 }
 
-export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFlowLps, outletLabel, corridorRings, visibleSteps }: SchemeViewProps) {
+export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFlowLps, outletLabel, corridorRings, backgroundImageUrl, visibleSteps }: SchemeViewProps) {
   const model = useMemo(() => {
     const ringPts = (corridorRings ?? []).flat()
     const pts = [...network.nodes.map((n) => ({ x: n.x, y: n.y })), ...buildings, ...ringPts]
@@ -90,12 +93,20 @@ export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFl
   })
 
   return (
-    <svg
+    <ZoomPanSurface label="Масштабируемая расчётная ситуационная схема">
+      <svg
       viewBox={`0 0 ${W} ${H}`}
       style={{ width: '100%', height: 'auto', background: '#ffffff', border: '1px solid var(--border, #d9d9d9)' }}
       role="img"
       aria-label={title}
-    >
+      >
+      {backgroundImageUrl && (
+        <g style={layerStyle('context')}>
+          <rect width={W} height={H} fill="#fff" />
+          <image href={backgroundImageUrl} x={0} y={0} width={W} height={H} preserveAspectRatio="xMidYMid meet" opacity={0.62} />
+          <rect width={W} height={H} fill="#fff" opacity={0.18} />
+        </g>
+      )}
       {/* Title */}
       <text x={W / 2} y={30} textAnchor="middle" fontSize={20} fill={INK} fontWeight={600}>
         {title}
@@ -181,6 +192,7 @@ export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFl
         <line x1={0} y1={60} x2={34} y2={60} stroke={ROUTE} strokeWidth={1} strokeDasharray="6 4" />
         <text x={42} y={64}>полоса отвода (красные линии)</text>
       </g>
-    </svg>
+      </svg>
+    </ZoomPanSurface>
   )
 }

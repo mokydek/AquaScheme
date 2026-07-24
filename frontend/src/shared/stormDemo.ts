@@ -28,10 +28,15 @@ export const REAL_STORM_PROJECT_NAME = realProject.project.name
 
 /** Names of the reference input documents (no binaries), for the checklist. */
 const BASIS_DEMO_FILES: Partial<Record<string, string>> = {
+  assignment: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — общие данные и основание проектирования',
   apz: 'АПЗ исправленный 22,10.pdf',
+  pdp: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — планы трассы, листы 3–31',
+  route_act: 'ТОО Аква Д.большой Талдыколь общий.dwg — геометрия принятой трассы',
   genplan_scheme: 'Схема ЛК от Генплан с диаметрами..pdf',
   topo: 'Топо Водосбрсной общий 15,10.pdf',
   geology: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
+  vertical: 'Топо Водосбрсной общий 15,10.pdf + DWG — высотные отметки и вертикальная планировка',
+  tu: 'АПЗ исправленный 22,10.pdf — исходные технические требования',
 }
 
 /** Every file supplied for verification; names only, never bundled binaries. */

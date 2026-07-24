@@ -836,12 +836,71 @@ textarea {
 
 .scheme-view-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 2px;
   margin: 0 0 14px;
   padding: 3px;
   border: 1px solid var(--border, #d9d9d9);
   background: #f4f4f2;
 }
+
+.zoom-pan-surface {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  background: #fff;
+  touch-action: none;
+  user-select: none;
+  cursor: default;
+}
+
+.zoom-pan-surface.is-zoomed { cursor: grab; }
+.zoom-pan-surface.is-zoomed:active { cursor: grabbing; }
+.zoom-pan-content { width: 100%; transform-origin: center center; will-change: transform; }
+.zoom-pan-content > svg,
+.zoom-pan-content > img { display: block; width: 100%; height: auto; }
+
+.zoom-pan-controls {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #bbb;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+}
+
+.zoom-pan-controls button {
+  min-width: 30px;
+  min-height: 28px;
+  border: 0;
+  background: #f1f1f1;
+  color: #111;
+  cursor: pointer;
+  font: 600 12px/1 var(--font-mono);
+}
+
+.zoom-pan-controls button:last-child { padding: 0 8px; }
+.zoom-pan-controls button:disabled { opacity: .35; cursor: default; }
+.zoom-pan-controls span { min-width: 46px; text-align: center; font-size: 10px; }
+
+.pipe-calculations-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid #1746d1;
+  background: #f3f6ff;
+  font-size: 12px;
+}
+
+.pipe-calculations-summary span { color: #666; }
+.pipe-diameter-cell { color: #1746d1; font-weight: 700; white-space: nowrap; }
 
 .scheme-view-tabs button {
   border: 0;
