@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'
 import { AuthProvider } from './shared/auth'
 import { ErrorBoundary } from './shared/ErrorBoundary'
+import { UpdateNotice } from './shared/UpdateNotice'
 import { router } from './router'
 import './i18n'
 import './styles/global.css'
@@ -24,6 +25,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <AuthProvider>
+        <UpdateNotice />
         <RouterProvider router={router} />
       </AuthProvider>
     </ErrorBoundary>

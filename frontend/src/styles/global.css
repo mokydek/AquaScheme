@@ -234,6 +234,33 @@ textarea {
   color: var(--ink-soft);
 }
 
+.update-notice {
+  position: fixed;
+  z-index: 10000;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--ink);
+  color: #ffffff;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
+  font-size: 13px;
+}
+
+.update-notice button {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid #ffffff;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
 /* ------------------------------------------------------------
  * Controls
  * ---------------------------------------------------------- */
@@ -765,6 +792,12 @@ textarea {
 .export-progress-copy span {
   color: var(--ink-soft);
   font-size: 12px;
+}
+
+.export-progress-copy .export-progress-time {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .export-progress-bar {

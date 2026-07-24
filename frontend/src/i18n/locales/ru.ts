@@ -2,6 +2,8 @@ export const ru = {
   translation: {
     nav: {
       app: 'Приложение',
+      updateAvailable: 'Доступна новая версия AquaScheme. Обновите страницу, чтобы применить исправления.',
+      update: 'Обновить',
     },
     landing: {
       kicker: 'Наружные сети водоснабжения',
@@ -606,6 +608,7 @@ export const ru = {
         generating: 'Формирование',
         progress: 'Формируется: {{name}}',
         progressHint: 'Не закрывайте страницу — загрузка начнётся автоматически',
+        progressTime: 'Выполняется: {{seconds}} с',
         done: 'Файл сформирован',
         error: 'Не удалось сформировать файл',
       },

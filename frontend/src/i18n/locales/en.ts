@@ -2,6 +2,8 @@ export const en = {
   translation: {
     nav: {
       app: 'Application',
+      updateAvailable: 'A new AquaScheme version is available. Refresh to apply the fixes.',
+      update: 'Refresh',
     },
     landing: {
       kicker: 'Outdoor water supply networks',
@@ -606,6 +608,7 @@ export const en = {
         generating: 'Generating',
         progress: 'Generating: {{name}}',
         progressHint: 'Keep this page open — the download will start automatically',
+        progressTime: 'Elapsed: {{seconds}} s',
         done: 'File generated',
         error: 'Failed to generate the file',
       },

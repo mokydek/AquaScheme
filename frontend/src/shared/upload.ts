@@ -46,13 +46,20 @@ export async function convertDrawing(data: Blob | string, to: 'dwg' | 'dxf'): Pr
   const form = new FormData()
   form.append('file', blob, `drawing.${from}`)
   let response: Response
+  const controller = new AbortController()
+  // Render's free instance may need about a minute to wake up. Three minutes
+  // still leaves enough headroom while guaranteeing that the UI can recover.
+  const timeout = window.setTimeout(() => controller.abort(), 180_000)
   try {
     response = await fetch(`${CONVERTER_URL}/convert?to=${to}&version=ACAD2018`, {
       method: 'POST',
       body: form,
+      signal: controller.signal,
     })
   } catch {
     throw new UploadError('converterFailed', from)
+  } finally {
+    window.clearTimeout(timeout)
   }
   if (!response.ok) throw new UploadError('converterFailed', from)
   return response.blob()

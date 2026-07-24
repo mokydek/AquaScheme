@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   computeNetworkDemand,
@@ -58,6 +58,22 @@ function slugify(name: string): string {
   return name.trim().replace(/\s+/g, '_').replace(/[^\w.-]/g, '').slice(0, 40) || 'project'
 }
 
+/** Give React and the browser a real paint opportunity before CPU-heavy export work starts. */
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      resolve()
+    }
+    // requestAnimationFrame can be throttled in a background tab, so the timer
+    // prevents the export from being held indefinitely there.
+    setTimeout(finish, 120)
+    requestAnimationFrame(() => requestAnimationFrame(finish))
+  })
+}
+
 export function ExportSection({
   projectId,
   projectName,
@@ -85,12 +101,26 @@ export function ExportSection({
   const { session } = useAuth()
   const hasConverter = CONVERTER_URL !== ''
   const [busy, setBusy] = useState<Job | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [notice, setNotice] = useState<'done' | 'error' | 'converterError' | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [withDxf, setWithDxf] = useState(true)
   // DWG is the default drawing format (requirements update 3, change 2) as
   // soon as the converter service is configured.
   const [withDwg, setWithDwg] = useState(hasConverter)
+
+  useEffect(() => {
+    if (!busy) {
+      setElapsedSeconds(0)
+      return
+    }
+    const startedAt = Date.now()
+    setElapsedSeconds(0)
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [busy])
 
   const equipment = datasets.equipment?.content as
     | { material: MaterialSelection; fittings: FittingsPlan }
@@ -177,6 +207,24 @@ export function ExportSection({
     setNotice('error')
   }
 
+  const beginJob = async (job: Job): Promise<void> => {
+    setBusy(job)
+    setNotice(null)
+    setErrorDetail(null)
+    await waitForPaint()
+  }
+
+  // Saving a copy to Supabase is useful, but it must never keep the download
+  // button blocked when storage is slow or unavailable.
+  const archiveInBackground = (
+    kind: 'dxf_plan' | 'pdf_note' | 'spec_xlsx',
+    fileName: string,
+    blob: Blob,
+    contentType: string,
+  ): void => {
+    void archive(kind, fileName, blob, contentType).catch(() => undefined)
+  }
+
   /** DXF text plus, if selected and configured, a converted DWG blob. */
   const buildDrawings = async (input: ExportInput) => {
     const dxf = await generateDxf(input)
@@ -193,16 +241,14 @@ export function ExportSection({
   }
 
   const exportDrawing = async () => {
-    setBusy('drawing')
-    setNotice(null)
-    setErrorDetail(null)
+    await beginJob('drawing')
     try {
       const input = assemble()
       const { dxf, dwg, converterFailed } = await buildDrawings(input)
       if (withDxf || !dwg) {
         const blob = new Blob([dxf], { type: 'application/dxf' })
         downloadBlob(`${slug}_В1.dxf`, blob)
-        await archive('dxf_plan', `${slug}_В1.dxf`, blob, 'application/dxf')
+        archiveInBackground('dxf_plan', `${slug}_В1.dxf`, blob, 'application/dxf')
       }
       if (dwg) downloadBlob(`${slug}_В1.dwg`, dwg)
       setNotice(converterFailed ? 'converterError' : 'done')
@@ -214,14 +260,12 @@ export function ExportSection({
   }
 
   const exportSpec = async () => {
-    setBusy('spec')
-    setNotice(null)
-    setErrorDetail(null)
+    await beginJob('spec')
     try {
       const bytes = await generateSpecXlsx(assemble())
       const blob = new Blob([bytes], { type: XLSX_TYPE })
       downloadBlob(`${slug}_спецификация.xlsx`, blob)
-      await archive('spec_xlsx', `${slug}_спецификация.xlsx`, blob, XLSX_TYPE)
+      archiveInBackground('spec_xlsx', `${slug}_спецификация.xlsx`, blob, XLSX_TYPE)
       setNotice('done')
     } catch (error) {
       fail(error)
@@ -231,13 +275,11 @@ export function ExportSection({
   }
 
   const exportPdf = async () => {
-    setBusy('pdf')
-    setNotice(null)
-    setErrorDetail(null)
+    await beginJob('pdf')
     try {
       const blob = await generatePdf(assemble())
       downloadBlob(`${slug}_записка.pdf`, blob)
-      await archive('pdf_note', `${slug}_записка.pdf`, blob, 'application/pdf')
+      archiveInBackground('pdf_note', `${slug}_записка.pdf`, blob, 'application/pdf')
       setNotice('done')
     } catch (error) {
       fail(error)
@@ -247,9 +289,7 @@ export function ExportSection({
   }
 
   const exportSituation = async () => {
-    setBusy('situation')
-    setNotice(null)
-    setErrorDetail(null)
+    await beginJob('situation')
     try {
       const input = assemble()
       const dxf = await generateSituationDxf({
@@ -271,9 +311,7 @@ export function ExportSection({
   }
 
   const exportActs = async () => {
-    setBusy('acts')
-    setNotice(null)
-    setErrorDetail(null)
+    await beginJob('acts')
     try {
       const blob = await generateActFormsPdf(assemble())
       downloadBlob(`${slug}_формы_актов.pdf`, blob)
@@ -286,9 +324,7 @@ export function ExportSection({
   }
 
   const exportDocs = async () => {
-    setBusy('docs')
-    setNotice(null)
-    setErrorDetail(null)
+    await beginJob('docs')
     try {
       const blob = await generateProjectDocsPdf(assemble())
       downloadBlob(`${slug}_проектные_документы.pdf`, blob)
@@ -301,9 +337,7 @@ export function ExportSection({
   }
 
   const exportBundle = async () => {
-    setBusy('bundle')
-    setNotice(null)
-    setErrorDetail(null)
+    await beginJob('bundle')
     try {
       const input = assemble()
       const [{ dxf, dwg, converterFailed }, generalDxf, specDxf, pdf, xlsx, actsPdf, docsPdf, situationDxf] =
@@ -430,6 +464,7 @@ export function ExportSection({
           <div className="export-progress-copy">
             <strong>{t('project.export.progress', { name: t(jobLabels[busy]) })}</strong>
             <span>{t('project.export.progressHint')}</span>
+            <span className="export-progress-time">{t('project.export.progressTime', { seconds: elapsedSeconds })}</span>
           </div>
           <span className="export-progress-bar" aria-hidden="true"><i /></span>
         </div>

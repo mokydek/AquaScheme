@@ -2,6 +2,8 @@ export const kk = {
   translation: {
     nav: {
       app: 'Қосымша',
+      updateAvailable: 'AquaScheme жаңа нұсқасы қолжетімді. Түзетулерді қолдану үшін бетті жаңартыңыз.',
+      update: 'Жаңарту',
     },
     landing: {
       kicker: 'Сумен жабдықтаудың сыртқы желілері',
@@ -606,6 +608,7 @@ export const kk = {
         generating: 'Қалыптастыру',
         progress: 'Қалыптастырылуда: {{name}}',
         progressHint: 'Бетті жаппаңыз — жүктеу автоматты түрде басталады',
+        progressTime: 'Орындалуда: {{seconds}} с',
         done: 'Файл қалыптастырылды',
         error: 'Файлды қалыптастыру мүмкін болмады',
       },
