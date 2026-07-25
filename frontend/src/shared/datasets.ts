@@ -72,7 +72,7 @@ export async function saveDataset(
       .insert({ project_id: projectId, kind, content, meta, file_name: fileName })
     if (error) throw error
   }
-  if (['topography', 'buildings', 'source', 'geology', 'basis', 'route_constraints'].includes(kind)) {
+  if (['topography', 'buildings', 'source', 'geology', 'basis', 'route_constraints', 'route_audit'].includes(kind)) {
     // Best effort for installations that have not applied migration 0012 yet.
     await supabase.from('projects').update({ route_status: 'stale' }).eq('id', projectId)
   }

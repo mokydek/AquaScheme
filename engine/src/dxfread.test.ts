@@ -100,6 +100,27 @@ describe('classifyDxfConstraints', () => {
     expect(data.surveyPoints).toEqual([{ x: 2, y: 2, z: 351.2 }])
     expect(data.rejectedSurveyPoints).toBe(0)
   })
+
+  it('honours an explicit per-layer role and leaves unknown layers unresolved', () => {
+    const source = {
+      ok: true,
+      points: [],
+      layers: [
+        { name: 'AXIS-CUSTOM', segments: 1, points: 0 },
+        { name: 'MYSTERY', segments: 1, points: 0 },
+      ],
+      segments: [
+        { layer: 'AXIS-CUSTOM', points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] },
+        { layer: 'MYSTERY', points: [{ x: 0, y: 10 }, { x: 100, y: 10 }] },
+      ],
+    }
+    const automatic = classifyDxfConstraints(source)
+    expect(automatic.roles.MYSTERY).toBe('unknown')
+
+    const reviewed = classifyDxfConstraints(source, { 'AXIS-CUSTOM': 'guideAxis', MYSTERY: 'ignore' })
+    expect(reviewed.guideAxis).toHaveLength(1)
+    expect(reviewed.roles.MYSTERY).toBe('ignore')
+  })
 })
 
 function surveyFixture(zs: Array<number | null>): string {

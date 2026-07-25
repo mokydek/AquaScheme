@@ -28,6 +28,7 @@ describe('constrained routing', () => {
     expect(result.report.outsideCorridorSegments).toBe(0)
     expect(result.network.pipes.length).toBeGreaterThan(10)
     expect(result.network.pipes.length).toBeLessThan(100)
+    expect(result.network.pipes.every((pipe) => pipe.dataSource?.includes('corridor=validated'))).toBe(true)
 
     const southernBranch = result.paths.find((path) => path.terminalId === 'T4')
     expect(southernBranch).toBeDefined()
@@ -105,6 +106,45 @@ describe('constrained routing', () => {
     )
     expect(accepted.report.ok).toBe(true)
     expect(accepted.report.waterCrossings).toBeGreaterThan(0)
+  })
+
+  it('does not let simplification replace a guide-axis route with a direct chord', () => {
+    const result = traceConstrainedNetwork(
+      [{ id: 'A', x: 10, y: 20 }],
+      { x: 90, y: 20 },
+      {
+        corridorRings: [[{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]],
+        guideLines: [{ points: [{ x: 5, y: 80 }, { x: 95, y: 80 }] }],
+      },
+      { gridSizeM: 5, boundaryPenalty: 0, guideDistancePenalty: 20, guideAttractionM: 60, turnPenalty: 0 },
+    )
+    expect(result.report.ok).toBe(true)
+    expect(result.paths[0].points.length).toBeGreaterThan(2)
+    expect(Math.max(...result.paths[0].points.map((point) => point.y))).toBeGreaterThanOrEqual(55)
+  })
+
+  it('treats a protection zone as a hard barrier outside an approved crossing', () => {
+    const corridorRings = [[{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]]
+    const protectionZoneRings = [[{ x: 40, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 100 }, { x: 40, y: 100 }]]
+    const blocked = traceConstrainedNetwork(
+      [{ id: 'A', x: 10, y: 50 }],
+      { x: 90, y: 50 },
+      { corridorRings, protectionZoneRings },
+      { gridSizeM: 5 },
+    )
+    expect(blocked.report.ok).toBe(false)
+
+    const approved = traceConstrainedNetwork(
+      [{ id: 'A', x: 10, y: 50 }],
+      { x: 90, y: 50 },
+      {
+        corridorRings,
+        protectionZoneRings,
+        approvedCrossingRings: [[{ x: 35, y: 45 }, { x: 65, y: 45 }, { x: 65, y: 55 }, { x: 35, y: 55 }]],
+      },
+      { gridSizeM: 5 },
+    )
+    expect(approved.report.ok).toBe(true)
   })
 
   it('is deterministic for identical engineering inputs', () => {

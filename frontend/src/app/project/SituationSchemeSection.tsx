@@ -117,7 +117,7 @@ export function SituationSchemeSection({
   }, [activeCatalogId])
 
   const model = useMemo(() => {
-    if (pipes.length === 0) return null
+    if (routeState.status === 'blocked' || routeState.status === 'stale' || pipes.length === 0) return null
     const network = networkFromRows(nodes, pipes)
     const flows = new Map<string, number>()
     for (const building of buildings) {
@@ -161,7 +161,7 @@ export function SituationSchemeSection({
       ]),
       outletFlowLps: totalFlow,
     }
-  }, [systemType, buildings, nodes, pipes, geologyDataset, activeCatalogId, catalogDiameters, constraints])
+  }, [systemType, buildings, nodes, pipes, geologyDataset, activeCatalogId, catalogDiameters, constraints, routeState.status])
 
   const corridorRings = useMemo(() => {
     if (constraints?.corridorRings?.length) return constraints.corridorRings
@@ -214,7 +214,6 @@ export function SituationSchemeSection({
       cancelRef.current = running.cancel
       const route = await running.promise
       await paint('Проверка связности, пересечений и гидравлических систем…')
-      if (route.network.pipes.length === 0) throw new Error(route.blockers.map((blocker) => blocker.message).join(' '))
       const hash = await routeInputHash({ buildings, source, constraints: { ...constraints, surveyPoints } })
       await paint('Атомарное сохранение новой версии сети…')
       await replaceNetwork(projectId, route.network, {
@@ -234,7 +233,12 @@ export function SituationSchemeSection({
         },
       })
       await onChanged()
-      setStage('Пересчёт завершён.')
+      if (route.status === 'blocked') {
+        setRecalcError(route.blockers.map((blocker) => blocker.message).join(' '))
+        setStage('Расчёт остановлен: проектная геометрия очищена.')
+      } else {
+        setStage('Пересчёт завершён.')
+      }
     } catch (error) {
       setRecalcError(error instanceof Error ? error.message : 'Не удалось пересчитать трассу.')
     } finally {
@@ -327,7 +331,9 @@ export function SituationSchemeSection({
         </div>
       )}
 
-      {view === 'route' && (model ? (
+      {view === 'route' && (routeState.status === 'blocked' || routeState.status === 'stale' ? (
+        <p className="notice error">{routeState.status === 'stale' ? 'Трасса скрыта: после изменения исходных данных требуется повторный расчёт.' : 'Трасса не показана: исходные данные имеют блокирующие пробелы. Откройте вкладку «Блокеры» и устраните их.'}</p>
+      ) : model ? (
         <LiveSituationMap
           network={model.network}
           buildings={buildings.map((building) => ({ x: building.x, y: building.y, label: building.label }))}

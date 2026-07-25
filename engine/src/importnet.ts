@@ -22,6 +22,10 @@ export interface ImportSegment {
   layer?: string
   /** True when the source entity is a closed polygon (DXF flag 70 / GeoJSON ring). */
   closed?: boolean
+  sourceType?: string
+  sourceHandle?: string
+  colorNumber?: number
+  lineType?: string
 }
 
 export interface ImportBuildingInput {

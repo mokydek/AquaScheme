@@ -8,7 +8,7 @@ import type {
 } from './constrained-route'
 import type { NetworkNode, NetworkPipe, TracedNetwork } from './trace'
 
-export const ROUTE_ALGORITHM_VERSION = '2.1.0-lns-constraints-profile'
+export const ROUTE_ALGORITHM_VERSION = '2.2.0-strict-preflight-guided-route'
 
 export type EngineeringRouteStatus = 'blocked' | 'preliminary' | 'calculated'
 
@@ -107,7 +107,7 @@ function remapPipe(pipe: NetworkPipe, prefix: string, nodeIds: Map<string, strin
     systemType: kind === 'pressure_main' || kind === 'discharge' ? 'pressure' : 'gravity',
     flowDirection: 'from_to',
     calculationStatus: 'unverified',
-    dataSource: 'derived:constrained-route',
+    dataSource: pipe.dataSource ?? 'derived:constrained-route',
     alignment: pipe.alignment?.map((point) => ({ ...point })),
   }
 }
@@ -144,30 +144,85 @@ export function buildEngineeringRoute(input: {
       scope: 'input',
     })
   }
-  const constraintGroups = [
-    input.constraints.redLines,
-    input.constraints.utilityLines,
-    input.constraints.roadLines,
-    input.constraints.waterLines,
-    [...(input.constraints.hardObstacleRings ?? []), ...(input.constraints.buildingPolygons ?? [])],
-  ]
-  if (constraintGroups.every((group) => !group?.length)) {
+  const unresolvedLayers = input.constraints.unresolvedLayers ?? []
+  if (unresolvedLayers.length > 0) blockers.push({
+    code: 'UNRESOLVED_DWG_LAYERS',
+    message: `Не классифицированы слои DWG (${unresolvedLayers.length}): ${unresolvedLayers.slice(0, 6).join(', ')}${unresolvedLayers.length > 6 ? '…' : ''}. Назначьте роль либо явно отметьте слой как неинженерный.`,
+    scope: 'input',
+  })
+  const declarations = input.constraints.sourceDeclarations ?? {}
+  const requireSource = (
+    key: keyof NonNullable<RouteConstraintInput['sourceDeclarations']>,
+    count: number,
+    code: string,
+    label: string,
+  ) => {
+    if (count > 0 || declarations[key] === 'present' || declarations[key] === 'confirmed_absent') return
     blockers.push({
-      code: 'PARTIAL_DWG_MODEL',
-      message: 'DWG содержит только коридор либо загружен частично: красные линии, коммуникации, дороги, гидрография и сооружения не классифицированы.',
+      code,
+      message: `Не подтверждены данные «${label}»: объекты не распознаны и их отсутствие не подтверждено пользователем.`,
       scope: 'input',
     })
   }
-  if (!(input.constraints.hardObstacleRings?.length || input.constraints.buildingPolygons?.length)) {
-    blockers.push({
-      code: 'NO_HARD_OBSTACLE_MODEL',
-      message: 'Не распознаны замкнутые контуры зданий и сооружений; обход застройки не подтверждён.',
-      scope: 'input',
-    })
-  }
+  requireSource(
+    'buildings',
+    (input.constraints.hardObstacleRings?.length ?? 0) + (input.constraints.buildingPolygons?.length ?? 0),
+    'UNCONFIRMED_BUILDINGS',
+    'здания и сооружения',
+  )
+  requireSource('utilities', input.constraints.utilityLines?.length ?? 0, 'UNCONFIRMED_UTILITIES', 'существующие коммуникации')
+  requireSource('roads', input.constraints.roadLines?.length ?? 0, 'UNCONFIRMED_ROADS', 'автомобильные и железные дороги')
+  requireSource(
+    'hydrography',
+    (input.constraints.waterLines?.length ?? 0) + (input.constraints.waterRings?.length ?? 0),
+    'UNCONFIRMED_HYDROGRAPHY',
+    'водные объекты и гидрография',
+  )
+  requireSource('parcels', input.constraints.parcelRings?.length ?? 0, 'UNCONFIRMED_PARCELS', 'земельные участки и сервитуты')
+  requireSource(
+    'protectionZones',
+    (input.constraints.protectionZoneRings?.length ?? 0) + (input.constraints.protectionZones?.length ?? 0),
+    'UNCONFIRMED_PROTECTION_ZONES',
+    'охранные и запрещённые зоны',
+  )
   const bundledSurvey = input.constraints.surveyPoints?.length ?? 0
   if (input.sourceSurveyPointCount && bundledSurvey < input.sourceSurveyPointCount) {
     warnings.push(`Для расчёта доступно ${bundledSurvey} из ${input.sourceSurveyPointCount} точек топосъёмки; профиль предварительный.`)
+  }
+
+  if (input.pumpHeadM == null) blockers.push({ code: 'NO_PUMP_DUTY', message: 'Нет характеристики насосов ЛНС; напорная гидравлика не может быть окончательной.', scope: 'hydraulics' })
+  const totalInflow = input.facilities.reduce((sum, facility) => sum + facility.designFlowLps, 0)
+  if (input.lns.designFlowLps != null && Math.abs(totalInflow - input.lns.designFlowLps) > Math.max(1, totalInflow * 0.01)) {
+    blockers.push({
+      code: 'FLOW_BALANCE_MISMATCH',
+      message: `Сумма притоков ${totalInflow.toFixed(1)} л/с не равна расчётному расходу ЛНС ${input.lns.designFlowLps.toFixed(1)} л/с; требуется подтверждение состава потоков.`,
+      scope: 'topology',
+    })
+  }
+
+  const fatalInputCodes = new Set([
+    'NO_FACILITIES', 'NO_FACILITY_FLOW', 'NO_CORRIDOR', 'NO_TERRAIN',
+    'UNRESOLVED_DWG_LAYERS', 'UNCONFIRMED_BUILDINGS', 'UNCONFIRMED_UTILITIES',
+    'UNCONFIRMED_ROADS', 'UNCONFIRMED_HYDROGRAPHY', 'UNCONFIRMED_PARCELS',
+    'UNCONFIRMED_PROTECTION_ZONES',
+  ])
+  if (blockers.some((blocker) => fatalInputCodes.has(blocker.code))) {
+    const message = 'Расчёт остановлен предпроверкой исходных данных; проектная геометрия не создавалась.'
+    return {
+      network: { nodes: [], pipes: [], totalLengthM: 0 },
+      status: 'blocked',
+      algorithmVersion: ROUTE_ALGORITHM_VERSION,
+      gravityOutletNodeId: null,
+      pressureInletNodeId: null,
+      reports: { gravity: emptyReport(input.facilities, message), pressure: emptyReport([], message) },
+      paths: { gravity: [], pressure: [] },
+      blockers,
+      warnings,
+      surveyCoverage: {
+        sampledRoutePoints: 0, medianNearestM: 0, p95NearestM: 0,
+        maximumNearestM: 0, gapPoints: 0, gapThresholdM: 75,
+      },
+    }
   }
 
   const gravity = blockers.some((blocker) => blocker.code === 'NO_CORRIDOR')
@@ -206,17 +261,6 @@ export function buildEngineeringRoute(input: {
   if (utilityCrossings > 0) {
     blockers.push({ code: 'UTILITY_LEVEL_CHECK_REQUIRED', message: `Пересечения коммуникаций: ${utilityCrossings}; отсутствует подтверждённая высотная увязка.`, scope: 'approval' })
   }
-  if (input.pumpHeadM == null) blockers.push({ code: 'NO_PUMP_DUTY', message: 'Нет характеристики насосов ЛНС; напорная гидравлика не может быть окончательной.', scope: 'hydraulics' })
-
-  const totalInflow = input.facilities.reduce((sum, facility) => sum + facility.designFlowLps, 0)
-  if (input.lns.designFlowLps != null && Math.abs(totalInflow - input.lns.designFlowLps) > Math.max(1, totalInflow * 0.01)) {
-    blockers.push({
-      code: 'FLOW_BALANCE_MISMATCH',
-      message: `Сумма притоков ${totalInflow.toFixed(1)} л/с не равна расчётному расходу ЛНС ${input.lns.designFlowLps.toFixed(1)} л/с; требуется подтверждение состава потоков.`,
-      scope: 'topology',
-    })
-  }
-
   const nodes: NetworkNode[] = []
   const pipes: NetworkPipe[] = []
   const gravityIds = new Map<string, string>()
@@ -258,7 +302,7 @@ export function buildEngineeringRoute(input: {
 
   warnings.push(...gravity.report.warnings, ...pressure.report.warnings)
   const uniqueWarnings = [...new Set(warnings.filter(Boolean))]
-  const fatalCodes = new Set(['NO_FACILITIES', 'NO_FACILITY_FLOW', 'NO_CORRIDOR', 'NO_TERRAIN', 'GRAVITY_ROUTE_FAILED', 'PRESSURE_ROUTE_FAILED'])
+  const fatalCodes = new Set(['GRAVITY_ROUTE_FAILED', 'PRESSURE_ROUTE_FAILED'])
   const status: EngineeringRouteStatus = blockers.some((blocker) => fatalCodes.has(blocker.code))
     ? 'blocked'
     : blockers.length > 0

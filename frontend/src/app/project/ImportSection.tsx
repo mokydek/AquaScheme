@@ -3,11 +3,12 @@ import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform, traceConstrainedNetwork } from '@aquascheme/engine'
 import type { ConstrainedRouteReport, ImportReport, ImportSegment, SurveyPoint } from '@aquascheme/engine'
-import type { DxfConstraintData, DxfNetworkData } from '@aquascheme/engine/dxfread'
+import type { DxfConstraintData, DxfLayerRole, DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { replaceNetwork, routeInputHash } from '../../shared/network'
 import { replaceRightOfWay } from '../../shared/parcels'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { saveDataset } from '../../shared/datasets'
+import { supabase } from '../../shared/supabase'
 import type { BuildingRow } from '../../shared/datasets'
 import type { PipeRow } from '../../shared/network'
 import type { SourceData } from '../../shared/datasets'
@@ -19,6 +20,28 @@ type Parsed =
   | { kind: 'geojson'; segments: ImportSegment[]; treatedAsLonLat: boolean }
 
 type GeorefMode = 'none' | 'points' | 'proj4'
+type SourceConfirmationKey = 'buildings' | 'utilities' | 'roads' | 'hydrography' | 'parcels' | 'protectionZones'
+
+const ROLE_OPTIONS: Array<{ value: DxfLayerRole; label: string }> = [
+  { value: 'corridor', label: 'Коридор' },
+  { value: 'guideAxis', label: 'Направляющая ось' },
+  { value: 'redLine', label: 'Красная линия' },
+  { value: 'utility', label: 'Существующая коммуникация' },
+  { value: 'road', label: 'Автомобильная дорога' },
+  { value: 'railway', label: 'Железная дорога' },
+  { value: 'hydrography', label: 'Гидрография' },
+  { value: 'terrain', label: 'Высоты/рельеф' },
+  { value: 'terrainBreakline', label: 'Структурная линия рельефа' },
+  { value: 'building', label: 'Здание' },
+  { value: 'structure', label: 'Сооружение' },
+  { value: 'parcel', label: 'Земельный участок' },
+  { value: 'protectionZone', label: 'Охранная зона' },
+  { value: 'forbiddenZone', label: 'Запрещённая зона' },
+  { value: 'approvedCrossing', label: 'Согласованное окно пересечения' },
+  { value: 'candidateRoute', label: 'Готовая ось (только импорт)' },
+  { value: 'ignore', label: 'Проверено: не инженерный слой' },
+  { value: 'unknown', label: 'Не классифицировано' },
+]
 
 const CP_KEYS = ['ax', 'ay', 'AX', 'AY', 'bx', 'by', 'BX', 'BY'] as const
 type CpKey = (typeof CP_KEYS)[number]
@@ -45,6 +68,10 @@ export function ImportSection({
   const { t } = useTranslation()
   const [parsed, setParsed] = useState<Parsed | null>(null)
   const [selectedLayers, setSelectedLayers] = useState<Record<string, boolean>>({})
+  const [layerRoles, setLayerRoles] = useState<Record<string, DxfLayerRole>>({})
+  const [confirmedAbsent, setConfirmedAbsent] = useState<Record<SourceConfirmationKey, boolean>>({
+    buildings: false, utilities: false, roads: false, hydrography: false, parcels: false, protectionZones: false,
+  })
   const [tolerance, setTolerance] = useState('0.5')
   const [georefMode, setGeorefMode] = useState<GeorefMode>('none')
   const [projString, setProjString] = useState('')
@@ -87,6 +114,8 @@ export function ImportSection({
     setRouteBlockers([])
     setParsed(null)
     setFromDwg(false)
+    setLayerRoles({})
+    setConfirmedAbsent({ buildings: false, utilities: false, roads: false, hydrography: false, parcels: false, protectionZones: false })
     try {
       const routed = await routeUpload(file, ['dxf', 'geojson'])
       if (routed.kind === 'dxf') {
@@ -95,8 +124,21 @@ export function ImportSection({
         if (!data.ok || data.segments.length === 0) {
           setNotice('invalid')
         } else {
-          const constraints = classifyDxfConstraints(data)
+          const { data: savedAudit } = await supabase
+            .from('datasets')
+            .select('content')
+            .eq('project_id', projectId)
+            .eq('kind', 'route_audit')
+            .maybeSingle()
+          const rawSavedRoles = ((savedAudit?.content ?? {}) as { roles?: Record<string, string> }).roles ?? {}
+          const allowedRoles = new Set(ROLE_OPTIONS.map((option) => option.value))
+          const savedRoles = Object.fromEntries(Object.entries(rawSavedRoles).map(([name, role]) => [
+            name,
+            allowedRoles.has(role as DxfLayerRole) ? role as DxfLayerRole : 'unknown',
+          ]))
+          const constraints = classifyDxfConstraints(data, savedRoles)
           setParsed({ kind: 'dxf', data, constraints })
+          setLayerRoles(constraints.roles)
           setFromDwg(routed.fromDwg === true)
           const selected: Record<string, boolean> = {}
           for (const layer of data.layers) selected[layer.name] = constraints.roles[layer.name] === 'candidateRoute'
@@ -120,6 +162,30 @@ export function ImportSection({
   }
 
   const num = (value: string): number => Number(value.trim().replace(',', '.'))
+
+  const setLayerRole = async (layer: string, role: DxfLayerRole) => {
+    if (!parsed || parsed.kind !== 'dxf') return
+    const next = { ...layerRoles, [layer]: role }
+    setLayerRoles(next)
+    setSelectedLayers((previous) => ({ ...previous, [layer]: role === 'candidateRoute' }))
+    const { classifyDxfConstraints } = await import('@aquascheme/engine/dxfread')
+    const constraints = classifyDxfConstraints(parsed.data, next)
+    setParsed({ ...parsed, constraints })
+    try {
+      await saveDataset(projectId, 'route_audit', {
+        layers: parsed.data.layers,
+        roles: constraints.roles,
+        mappingStatus: 'in-progress',
+        unresolved: {
+          layers: Object.values(constraints.roles).filter((value) => value === 'unknown').length,
+          names: Object.entries(constraints.roles).filter(([, value]) => value === 'unknown').map(([name]) => name),
+        },
+        drawingMetadata: parsed.data.metadata,
+      }, { source: 'manual-layer-mapping' }, fromDwg ? 'converted-from-dwg.dxf' : 'source.dxf')
+    } catch {
+      setUploadMessage('Роль слоя применена локально, но не удалось сохранить сопоставление в проекте.')
+    }
+  }
 
   const afterPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
@@ -172,6 +238,10 @@ export function ImportSection({
       segments = segments.map((segment) => ({
         layer: segment.layer,
         closed: segment.closed,
+        sourceType: segment.sourceType,
+        sourceHandle: segment.sourceHandle,
+        colorNumber: segment.colorNumber,
+        lineType: segment.lineType,
         points: segment.points.map(transform),
       }))
 
@@ -210,32 +280,46 @@ export function ImportSection({
       const transform = await coordinateTransform()
       if (!transform) return
       const primaryCorridor = parsed.constraints.corridorRings[0]
-      if (!primaryCorridor || buildings.length === 0) {
-        setNotice('error')
-        return
-      }
       const mapSegments = (segments: ImportSegment[]) => segments.map((segment) => ({
         layer: segment.layer,
+        sourceType: segment.sourceType,
+        sourceHandle: segment.sourceHandle,
+        colorNumber: segment.colorNumber,
+        lineType: segment.lineType,
         points: segment.points.map(transform),
       }))
       const dxfSurvey = parsed.constraints.surveyPoints.map((point) => ({ ...transform(point), z: point.z }))
       const corridorRings = parsed.constraints.corridorRings.map((ring) => ring.map(transform))
       const routeConstraints = {
         corridorRings,
+        guideLines: mapSegments(parsed.constraints.guideAxis),
         georeference: georefMode === 'none'
           ? { kind: 'unreferenced' as const, source: 'DWG импортирован без геопривязки' }
           : { kind: 'local_anchor' as const, source: georefMode === 'proj4' ? `proj4: ${projString}` : 'две контрольные точки пользователя' },
         redLines: mapSegments(parsed.constraints.redLines),
         utilityLines: mapSegments(parsed.constraints.utilityLines),
-        roadLines: mapSegments(parsed.constraints.roadLines),
+        roadLines: mapSegments([...parsed.constraints.roadLines, ...parsed.constraints.railwayLines]),
         waterLines: mapSegments(parsed.constraints.hydrography),
         waterRings: parsed.constraints.hydrography
           .filter((segment) => segment.closed && segment.points.length >= 4)
           .map((segment) => segment.points.map(transform)),
         hardObstacleRings: parsed.constraints.buildingFootprints.map((ring) => ring.map(transform)),
+        forbiddenRings: parsed.constraints.forbiddenZoneRings.map((ring) => ring.map(transform)),
         parcelRings: parsed.constraints.parcelRings.map((ring) => ring.map(transform)),
         protectionZoneRings: parsed.constraints.protectionZoneRings.map((ring) => ring.map(transform)),
+        approvedCrossingRings: parsed.constraints.approvedCrossingRings.map((ring) => ring.map(transform)),
         surveyPoints: dxfSurvey.length > 0 ? dxfSurvey : points,
+        unresolvedLayers: Object.entries(parsed.constraints.roles)
+          .filter(([, role]) => role === 'unknown')
+          .map(([name]) => name),
+        sourceDeclarations: {
+          buildings: parsed.constraints.buildingFootprints.length > 0 ? 'present' as const : confirmedAbsent.buildings ? 'confirmed_absent' as const : 'unknown' as const,
+          utilities: parsed.constraints.utilityLines.length > 0 ? 'present' as const : confirmedAbsent.utilities ? 'confirmed_absent' as const : 'unknown' as const,
+          roads: parsed.constraints.roadLines.length + parsed.constraints.railwayLines.length > 0 ? 'present' as const : confirmedAbsent.roads ? 'confirmed_absent' as const : 'unknown' as const,
+          hydrography: parsed.constraints.hydrography.length > 0 ? 'present' as const : confirmedAbsent.hydrography ? 'confirmed_absent' as const : 'unknown' as const,
+          parcels: parsed.constraints.parcelRings.length > 0 ? 'present' as const : confirmedAbsent.parcels ? 'confirmed_absent' as const : 'unknown' as const,
+          protectionZones: parsed.constraints.protectionZoneRings.length + parsed.constraints.forbiddenZoneRings.length > 0 ? 'present' as const : confirmedAbsent.protectionZones ? 'confirmed_absent' as const : 'unknown' as const,
+        },
       }
 
       if (systemType !== 'water') {
@@ -268,11 +352,12 @@ export function ImportSection({
         await saveDataset(projectId, 'route_constraints', {
           ...routeConstraints,
           lns: localLns,
-          completeness: 'full-dxf-classification',
+          completeness: routeConstraints.unresolvedLayers.length > 0 ? 'blocked-unresolved-layers' : 'reviewed-dxf-classification',
         }, {
           roles: parsed.constraints.roles,
           rejectedSurveyPoints: parsed.constraints.rejectedSurveyPoints,
           sourceLayers: parsed.data.layers,
+          drawingMetadata: parsed.data.metadata,
         }, fromDwg ? 'converted-from-dwg.dxf' : 'source.dxf')
         await saveDataset(projectId, 'route_audit', {
           layers: parsed.data.layers,
@@ -285,21 +370,24 @@ export function ImportSection({
             hydrography: routeConstraints.waterLines.length,
             buildings: routeConstraints.hardObstacleRings.length,
             protectionZones: routeConstraints.protectionZoneRings.length,
+            approvedCrossings: routeConstraints.approvedCrossingRings.length,
             parcels: routeConstraints.parcelRings.length,
             surveyPoints: routeConstraints.surveyPoints.length,
           },
+          unresolved: {
+            layers: routeConstraints.unresolvedLayers.length,
+            names: routeConstraints.unresolvedLayers,
+            reason: routeConstraints.unresolvedLayers.length > 0 ? 'Требуется ручное сопоставление роли либо явное подтверждение, что слой не инженерный.' : null,
+          },
+          drawingMetadata: parsed.data.metadata,
         })
-        if (engineering.network.pipes.length === 0) {
-          setNotice('error')
-          return
-        }
         const inputHash = await routeInputHash({
           facilities: buildings.map(({ id, x, y, design_flow_lps }) => ({ id, x, y, design_flow_lps })),
           lns: localLns,
           outlet: source,
           constraints: routeConstraints,
         })
-        await replaceRightOfWay(projectId, primaryCorridor.map(transform), 'Инженерный коридор из загруженного DWG')
+        if (primaryCorridor) await replaceRightOfWay(projectId, primaryCorridor.map(transform), 'Инженерный коридор из загруженного DWG')
         await replaceNetwork(projectId, engineering.network, {
           status: engineering.status,
           algorithmVersion: engineering.algorithmVersion,
@@ -337,7 +425,7 @@ export function ImportSection({
         return
       }
       await replaceNetwork(projectId, route.network)
-      await replaceRightOfWay(projectId, primaryCorridor.map(transform), 'Инженерный коридор из загруженного DWG')
+      if (primaryCorridor) await replaceRightOfWay(projectId, primaryCorridor.map(transform), 'Инженерный коридор из загруженного DWG')
       setNotice('done')
       await onChanged()
     } catch {
@@ -384,16 +472,49 @@ export function ImportSection({
             {' '}здания/сооружения: {parsed.constraints.buildingFootprints.length} · охранные зоны: {parsed.constraints.protectionZoneRings.length} ·
             {' '}высотные точки: {parsed.constraints.surveyPoints.length}
           </p>
+          <p className="stat-line">
+            Единицы DWG: {parsed.data.metadata?.insertionUnits ?? 'не указаны'} ·
+            {' '}нераспознанных слоёв: {Object.values(parsed.constraints.roles).filter((role) => role === 'unknown').length}.
+          </p>
+          <details open={Object.values(parsed.constraints.roles).some((role) => role === 'unknown')} style={{ marginTop: 12 }}>
+            <summary className="field-label">Сопоставление всех слоёв DWG</summary>
+            <p className="hint">Каждому неизвестному слою назначьте инженерную роль либо явно выберите «не инженерный слой». Пока остаются неизвестные слои, расчёт будет BLOCKED.</p>
+            <div className="table-wrap" style={{ maxHeight: 360 }}><table className="data-table"><thead><tr><th>Слой</th><th>Роль</th><th className="num">Линий</th><th className="num">Точек</th><th>Признаки</th></tr></thead><tbody>
+              {parsed.data.layers.map((layer) => <tr key={layer.name}>
+                <td className="mono">{layer.name}</td>
+                <td><select className="input input-sm" value={layerRoles[layer.name] ?? parsed.constraints.roles[layer.name] ?? 'unknown'} onChange={(event) => void setLayerRole(layer.name, event.target.value as DxfLayerRole)}>{ROLE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></td>
+                <td className="num">{layer.segments}</td><td className="num">{layer.points}</td>
+                <td>{[
+                  ...Object.entries(layer.entityTypes ?? {}).map(([kind, count]) => `${kind}: ${count}`),
+                  ...(layer.textSamples ?? []).slice(0, 3).map((sample) => `«${sample}»`),
+                  ...(layer.lineTypes ?? []).map((lineType) => `линия ${lineType}`),
+                  ...(layer.colorNumbers ?? []).map((color) => `цвет ${color}`),
+                ].join(', ') || '—'}</td>
+              </tr>)}
+            </tbody></table></div>
+          </details>
+          <details style={{ marginTop: 12 }}>
+            <summary className="field-label">Подтверждение отсутствующих групп исходных данных</summary>
+            <p className="hint">Ставьте отметку только после проверки всех слоёв и исходных документов. Это действие записывается в аудит проекта.</p>
+            {([
+              ['buildings', 'Здания и сооружения', parsed.constraints.buildingFootprints.length],
+              ['utilities', 'Существующие коммуникации', parsed.constraints.utilityLines.length],
+              ['roads', 'Автомобильные и железные дороги', parsed.constraints.roadLines.length + parsed.constraints.railwayLines.length],
+              ['hydrography', 'Водные объекты и гидрография', parsed.constraints.hydrography.length],
+              ['parcels', 'Земельные участки и сервитуты', parsed.constraints.parcelRings.length],
+              ['protectionZones', 'Охранные и запрещённые зоны', parsed.constraints.protectionZoneRings.length + parsed.constraints.forbiddenZoneRings.length],
+            ] as Array<[SourceConfirmationKey, string, number]>).filter(([, , count]) => count === 0).map(([key, label]) => <label className="check" key={key}><input type="checkbox" checked={confirmedAbsent[key]} onChange={(event) => setConfirmedAbsent((previous) => ({ ...previous, [key]: event.target.checked }))} /><span>Проверено: «{label}» действительно отсутствуют в пределах проектирования</span></label>)}
+          </details>
           {parsed.constraints.rejectedSurveyPoints > 0 && (
             <p className="stat-line warn">Отброшено аномальных высотных отметок: {parsed.constraints.rejectedSurveyPoints}</p>
           )}
           {parsed.constraints.buildingFootprints.length === 0 && (
             <p className="notice error">Стоп-фактор финального выпуска: в DWG не распознаны замкнутые контуры зданий и сооружений. Неизвестные слои сохранены в аудите, но не используются как препятствия автоматически.</p>
           )}
-          {parsed.constraints.corridorRings.length === 0 ? (
+          {parsed.constraints.corridorRings.length === 0 && (
             <p className="notice error">Стоп-фактор: в DWG нет замкнутого слоя инженерного коридора. Автоматическая трасса не строится.</p>
-          ) : (
-            <div className="section-actions">
+          )}
+          <div className="section-actions">
               {systemType !== 'water' && (
                 <div className="form-grid" style={{ width: '100%', marginBottom: 12 }}>
                   <label className="field"><span className="field-label">ЛНС X, м</span><input className="input" inputMode="decimal" value={lnsX} onChange={(event) => setLnsX(event.target.value)} /></label>
@@ -411,14 +532,13 @@ export function ImportSection({
                 {busy ? 'Проверка ограничений и поиск трассы…' : 'Построить трассу по генплану и ограничениям'}
               </button>
               {busy && systemType !== 'water' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => routeCancelRef.current?.()}>Отменить</button>}
-            </div>
-          )}
+          </div>
           <details style={{ marginTop: 16 }}>
             <summary className="field-label">Ручной импорт уже готовой оси по выбранным слоям</summary>
             <p className="hint">Этот режим не проектирует трассу, а переносит готовые полилинии. Слои коридора, рельефа и коммуникаций исключены по умолчанию.</p>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflow: 'auto' }}>
               {parsed.data.layers
-                .filter((layer) => layer.segments > 0 && ['candidateRoute', 'other'].includes(parsed.constraints.roles[layer.name]))
+                .filter((layer) => layer.segments > 0 && ['candidateRoute', 'unknown'].includes(parsed.constraints.roles[layer.name]))
                 .map((layer) => (
                   <label className="check" key={layer.name}>
                     <input

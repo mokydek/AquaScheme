@@ -8,6 +8,15 @@ const constraints = {
   ]],
   roadLines: [{ points: [{ x: 100, y: 0 }, { x: 100, y: 220 }] }],
   hardObstacleRings: [[{ x: 80, y: 180 }, { x: 90, y: 180 }, { x: 90, y: 190 }, { x: 80, y: 190 }]],
+  unresolvedLayers: [],
+  sourceDeclarations: {
+    buildings: 'present' as const,
+    utilities: 'confirmed_absent' as const,
+    roads: 'present' as const,
+    hydrography: 'confirmed_absent' as const,
+    parcels: 'confirmed_absent' as const,
+    protectionZones: 'confirmed_absent' as const,
+  },
   surveyPoints: [0, 50, 100, 150, 200].flatMap((x) =>
     [0, 50, 100, 150, 200].map((y) => ({ x, y, z: 345 - x / 200 - y / 300 })),
   ),
@@ -58,6 +67,39 @@ describe('buildEngineeringRoute', () => {
     })
     expect(result.status).toBe('blocked')
     expect(result.blockers.map((blocker) => blocker.code)).toContain('NO_TERRAIN')
+    expect(result.network.pipes).toHaveLength(0)
+  })
+
+  it('does not generate project geometry while DWG layers remain unresolved', () => {
+    const result = buildEngineeringRoute({
+      facilities: [{ id: 'A', label: 'OS A', x: 20, y: 20, designFlowLps: 40 }],
+      lns: { x: 150, y: 100, designFlowLps: 40 },
+      outlet: { x: 200, y: 100 },
+      constraints: { ...constraints, unresolvedLayers: ['0', 'UNKNOWN-OBJECTS'] },
+      pumpHeadM: 15,
+    })
+    expect(result.status).toBe('blocked')
+    expect(result.blockers.map((blocker) => blocker.code)).toContain('UNRESOLVED_DWG_LAYERS')
+    expect(result.network).toEqual({ nodes: [], pipes: [], totalLengthM: 0 })
+    expect(result.paths.gravity).toHaveLength(0)
+    expect(result.paths.pressure).toHaveLength(0)
+  })
+
+  it('requires explicit confirmation when an obstacle source is empty', () => {
+    const result = buildEngineeringRoute({
+      facilities: [{ id: 'A', label: 'OS A', x: 20, y: 20, designFlowLps: 40 }],
+      lns: { x: 150, y: 100, designFlowLps: 40 },
+      outlet: { x: 200, y: 100 },
+      constraints: {
+        ...constraints,
+        hardObstacleRings: [],
+        sourceDeclarations: { ...constraints.sourceDeclarations, buildings: 'unknown' },
+      },
+      pumpHeadM: 15,
+    })
+    expect(result.status).toBe('blocked')
+    expect(result.blockers.map((blocker) => blocker.code)).toContain('UNCONFIRMED_BUILDINGS')
+    expect(result.network.pipes).toHaveLength(0)
   })
 })
 

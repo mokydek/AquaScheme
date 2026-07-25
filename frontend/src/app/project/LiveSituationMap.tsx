@@ -44,6 +44,31 @@ function diameterColor(diameter: number | undefined): string {
   return '#8a35b5'
 }
 
+function routingExplanationHtml(dataSource: string | undefined): string {
+  if (!dataSource?.startsWith('derived:constrained-route')) return ''
+  const facts = new Map(dataSource.split('|').slice(1).map((token) => {
+    const separator = token.indexOf('=')
+    return separator < 0 ? [token, ''] : [token.slice(0, separator), token.slice(separator + 1)]
+  }))
+  const safe = (value: string | undefined) => (value ?? '—').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+  }[char] ?? char))
+  const choice = facts.get('choice') === 'facility-lead'
+    ? 'подключение объекта к ближайшей допустимой ячейке коридора'
+    : facts.get('choice') === 'outlet-lead'
+      ? 'соединение инженерного коридора с заданным выпуском'
+      : 'участок минимальной суммарной стоимости внутри инженерного коридора'
+  return [
+    '<hr><strong>Почему выбран участок</strong>',
+    `<br>${choice}.`,
+    '<br>Альтернативы: соседние допустимые ячейки инженерного графа, проверенные детерминированным A*.',
+    `<br>До направляющей оси: ${safe(facts.get('guideDistanceM'))} м.`,
+    `<br>Пересечения: коммуникации ${safe(facts.get('utilityCrossings'))}, дороги ${safe(facts.get('roadCrossings'))}, красные линии ${safe(facts.get('redLineCrossings'))}, вода ${safe(facts.get('waterCrossings'))}.`,
+    `<br>Изменение поверхности: ${safe(facts.get('surfaceDeltaM'))} м.`,
+    '<br>После упрощения хорда повторно проверена по коридору, препятствиям и пересечениям.',
+  ].join('')
+}
+
 export function LiveSituationMap({
   network,
   pipeDiameterMm,
@@ -103,11 +128,15 @@ export function LiveSituationMap({
     const bounds = L.latLngBounds([])
     const nodeById = new Map(network.nodes.map((node) => [node.id, node]))
     const corridorLayer = L.layerGroup()
+    const guideLayer = L.layerGroup()
     const redLineLayer = L.layerGroup()
     const utilityLayer = L.layerGroup()
     const roadLayer = L.layerGroup()
     const waterLayer = L.layerGroup()
     const obstacleLayer = L.layerGroup()
+    const parcelLayer = L.layerGroup()
+    const protectionLayer = L.layerGroup()
+    const approvedCrossingLayer = L.layerGroup()
 
     for (const ring of corridorRings) {
       const positions = ring.map(toMapPoint)
@@ -126,11 +155,29 @@ export function LiveSituationMap({
       }
     }
     drawSegments(constraints?.redLines, redLineLayer, '#d11b37', '8 5')
+    drawSegments(constraints?.guideLines, guideLayer, '#7444c5', '10 4')
     drawSegments(constraints?.utilityLines, utilityLayer, '#8b4e18', '3 4')
     drawSegments(constraints?.roadLines, roadLayer, '#6a6a6a')
     drawSegments(constraints?.waterLines, waterLayer, '#1689c7')
-    for (const ring of constraints?.hardObstacleRings ?? []) {
+    for (const ring of constraints?.waterRings ?? []) {
+      if (ring.length < 3) continue
+      L.polygon(ring.map(toMapPoint), { color: '#1689c7', fillColor: '#6fc6ee', fillOpacity: 0.25, weight: 1 }).addTo(waterLayer)
+    }
+    for (const ring of [...(constraints?.hardObstacleRings ?? []), ...(constraints?.buildingPolygons ?? []), ...(constraints?.forbiddenRings ?? [])]) {
+      if (ring.length < 3) continue
       L.polygon(ring.map(toMapPoint), { color: '#7a1a1a', fillColor: '#d84c4c', fillOpacity: 0.25, weight: 1 }).addTo(obstacleLayer)
+    }
+    for (const ring of constraints?.parcelRings ?? []) {
+      if (ring.length < 3) continue
+      L.polyline([...ring, ring[0]].map(toMapPoint), { color: '#6f665a', weight: 1, opacity: 0.75, dashArray: '4 4' }).addTo(parcelLayer)
+    }
+    for (const ring of [...(constraints?.protectionZoneRings ?? []), ...(constraints?.protectionZones ?? [])]) {
+      if (ring.length < 3) continue
+      L.polygon(ring.map(toMapPoint), { color: '#8b2a9f', fillColor: '#c474d2', fillOpacity: 0.18, weight: 2, dashArray: '6 4' }).addTo(protectionLayer)
+    }
+    for (const ring of [...(constraints?.approvedCrossingRings ?? []), ...(constraints?.approvedCrossingZones ?? [])]) {
+      if (ring.length < 3) continue
+      L.polygon(ring.map(toMapPoint), { color: '#16824c', fillColor: '#61c98f', fillOpacity: 0.2, weight: 2 }).addTo(approvedCrossingLayer)
     }
 
     const diameterLabelPoints: LocalPoint[] = []
@@ -157,6 +204,13 @@ export function LiveSituationMap({
         `<strong>${isPressure ? 'Напорный водовод от ЛНС' : isService ? 'Подключение ОС' : 'Самотёчный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м`,
         { sticky: true },
       )
+      const explanation = routingExplanationHtml(pipe.dataSource)
+      if (explanation) {
+        line.bindPopup(
+          `<strong>${isPressure ? 'Напорный водовод от ЛНС' : isService ? 'Подключение ОС' : 'Самотёчный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м${explanation}`,
+          { maxWidth: 420 },
+        )
+      }
       const localMidpoint = localPath[Math.floor(localPath.length / 2)]
       const midpoint = L.latLng(positions[Math.floor(positions.length / 2)])
       // The hydraulic model may contain many short calculation sections.
@@ -220,11 +274,15 @@ export function LiveSituationMap({
       } : {},
       {
         'Полоса отвода (проверочная)': corridorLayer,
+        'Направляющая ось генплана': guideLayer,
         'Красные линии DWG': redLineLayer,
         'Коммуникации DWG': utilityLayer,
         'Дороги DWG': roadLayer,
         'Гидрография DWG': waterLayer,
         'Запретные сооружения': obstacleLayer,
+        'Земельные участки': parcelLayer,
+        'Охранные зоны': protectionLayer,
+        'Согласованные окна пересечений': approvedCrossingLayer,
       },
       { collapsed: false, position: 'topright' },
     ).addTo(map)

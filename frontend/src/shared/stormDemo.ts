@@ -116,6 +116,18 @@ function realRouteInput(buildingIdByLabel: Map<string, string>) {
     constraints: {
       corridorRings: [realProject.corridor],
       surveyPoints,
+      // The bundled public sample deliberately does not contain the complete
+      // classified DWG.  Keep the demo useful for filling the project card,
+      // but never present its sparse geometry as an engineering route.
+      unresolvedLayers: ['PUBLIC_DEMO_REQUIRES_FULL_CLASSIFIED_DWG'],
+      sourceDeclarations: {
+        buildings: 'unknown' as const,
+        utilities: 'unknown' as const,
+        roads: 'unknown' as const,
+        hydrography: 'unknown' as const,
+        parcels: 'unknown' as const,
+        protectionZones: 'unknown' as const,
+      },
     },
     options: { gridSizeM: 15 },
     sourceSurveyPointCount: realProject.sourceSurveyPointCount,
@@ -192,7 +204,16 @@ export async function seedStormProject(projectId: string, callbacks?: {
     corridorRings: [realProject.corridor],
     hardObstacleRings: [],
     lns: realProject.pumpingStation,
-    completeness: 'public-demo-sample',
+    unresolvedLayers: ['PUBLIC_DEMO_REQUIRES_FULL_CLASSIFIED_DWG'],
+    sourceDeclarations: {
+      buildings: 'unknown',
+      utilities: 'unknown',
+      roads: 'unknown',
+      hydrography: 'unknown',
+      parcels: 'unknown',
+      protectionZones: 'unknown',
+    },
+    completeness: 'blocked-public-demo-sample',
   }, {
     warning: 'Демо содержит обезличенный пример коридора и разреженную поверхность. Для инженерного результата загрузите полный DWG/DXF; система сохранит аудит всех слоёв и покажет недостающие ограничения.',
     sourceSurveyPointCount: realProject.sourceSurveyPointCount,
@@ -273,13 +294,13 @@ export async function seedStormProject(projectId: string, callbacks?: {
     const running = runEngineeringRouteInWorker(realRouteInput(idByLabel), callbacks?.onRouteProgress)
     callbacks?.onRouteCancelReady?.(running.cancel)
     const result = await running.promise.finally(() => callbacks?.onRouteCancelReady?.(null))
-    if (result.network.nodes.length === 0) throw new Error(result.blockers.map((item) => item.message).join(' '))
     const inputHash = await routeInputHash({
       inflows: realProject.inflows,
       lns: realProject.pumpingStation,
       outlet: realProject.outlet,
       corridor: realProject.corridor,
       survey: realProject.surveyPoints,
+      completeness: 'blocked-public-demo-sample',
     })
     await replaceNetwork(projectId, result.network, {
       status: result.status,

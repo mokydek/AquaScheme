@@ -21,6 +21,8 @@ export interface DxfLayerInfo {
   zMin?: number
   zMax?: number
   textSamples?: string[]
+  colorNumbers?: number[]
+  lineTypes?: string[]
 }
 
 export interface DxfNetworkData {
@@ -28,34 +30,50 @@ export interface DxfNetworkData {
   points: Array<ImportPoint & { z?: number; layer?: string }>
   layers: DxfLayerInfo[]
   ok: boolean
+  metadata?: {
+    insertionUnitsCode?: number
+    insertionUnits?: string
+    coordinateSystem?: string
+  }
 }
 
 export type DxfLayerRole =
   | 'corridor'
+  | 'guideAxis'
   | 'redLine'
   | 'utility'
   | 'road'
+  | 'railway'
   | 'hydrography'
   | 'terrain'
+  | 'terrainBreakline'
   | 'candidateRoute'
   | 'building'
+  | 'structure'
   | 'protectionZone'
+  | 'forbiddenZone'
+  | 'approvedCrossing'
   | 'parcel'
-  | 'other'
+  | 'ignore'
+  | 'unknown'
 
 export interface DxfConstraintData {
   /** Closed boundaries in which a designed route is allowed to run. */
   corridorRings: ImportPoint[][]
   /** Open linework from the corridor layer, retained for diagnostics only. */
   corridorLinework: ImportSegment[]
+  guideAxis: ImportSegment[]
   redLines: ImportSegment[]
   utilityLines: ImportSegment[]
   roadLines: ImportSegment[]
+  railwayLines: ImportSegment[]
   hydrography: ImportSegment[]
   terrainLines: ImportSegment[]
   candidateRoute: ImportSegment[]
   buildingFootprints: ImportPoint[][]
   protectionZoneRings: ImportPoint[][]
+  forbiddenZoneRings: ImportPoint[][]
+  approvedCrossingRings: ImportPoint[][]
   parcelRings: ImportPoint[][]
   roles: Record<string, DxfLayerRole>
   surveyPoints: SurveyPoint[]
@@ -97,21 +115,34 @@ function simplifyPolyline(points: ImportPoint[], toleranceM: number): ImportPoin
  * separate from parseDxfNetwork: a red line, contour or cable must never be
  * imported as a sewer pipe merely because it is a polyline.
  */
-export function classifyDxfConstraints(data: DxfNetworkData): DxfConstraintData {
+export function classifyDxfConstraints(
+  data: DxfNetworkData,
+  roleOverrides: Partial<Record<string, DxfLayerRole>> = {},
+): DxfConstraintData {
   const roles: Record<string, DxfLayerRole> = {}
+  const layerInfo = new Map(data.layers.map((layer) => [layer.name, layer]))
   const roleOf = (layer: string): DxfLayerRole => {
     const name = normalizedLayer(layer)
+    if (roleOverrides[layer]) return roleOverrides[layer] as DxfLayerRole
+    if (/ось.*коридор|направляющ.*ос|guide.*axis|corridor.*axis/.test(name)) return 'guideAxis'
     if (/коридор.*инженер|инженер.*коридор/.test(name)) return 'corridor'
     if (/красн.*лин|крассн.*лин/.test(name)) return 'redLine'
+    if (/железн.*дорог|ж\/д|rail/.test(name)) return 'railway'
     if (/проезж|тротуар|дорог|улиц|road/.test(name)) return 'road'
     if (/гидрограф|водоем|водоём|река|канал|озер|озёр/.test(name) && !/канализ/.test(name)) return 'hydrography'
+    if (/брейк|структур.*лин|breakline/.test(name)) return 'terrainBreakline'
     if (/рельеф|горизонтал|отметк|grade|elevation|survey|точк.*высот/.test(name)) return 'terrain'
     if (/охран.*зон|санитар.*зон|защит.*зон|protection/.test(name)) return 'protectionZone'
+    if (/разреш.*пересеч|окн.*пересеч|approved.*cross|crossing.*window/.test(name)) return 'approvedCrossing'
+    if (/павильон|камер|эстакад|опор|structure/.test(name)) return 'structure'
     if (/здани|сооруж|строени|контур.*объект|building/.test(name)) return 'building'
+    if (/запрет|недопуст|forbidden/.test(name)) return 'forbiddenZone'
     if (/участ|землеотвод|границ.*зем|parcel/.test(name)) return 'parcel'
     if (/трубопровод|водопровод|канализ|ливнев|дренаж|кабел|газоснаб|теплосет|электро|связи/.test(name)) return 'utility'
     if (/проект.*(трас|осев|коллектор)|(^|[_ -])к2([_ -]|$)/.test(name)) return 'candidateRoute'
-    return 'other'
+    const info = layerInfo.get(layer)
+    if (info && info.points > 0 && Number.isFinite(info.zMin) && Number.isFinite(info.zMax)) return 'terrain'
+    return 'unknown'
   }
 
   for (const layer of data.layers) roles[layer.name] = roleOf(layer.name)
@@ -170,14 +201,18 @@ export function classifyDxfConstraints(data: DxfNetworkData): DxfConstraintData 
   return {
     corridorRings,
     corridorLinework: corridor.filter((segment) => !segment.closed),
+    guideAxis: byRole('guideAxis'),
     redLines: byRole('redLine'),
     utilityLines: byRole('utility'),
     roadLines: byRole('road'),
+    railwayLines: byRole('railway'),
     hydrography: byRole('hydrography'),
-    terrainLines: byRole('terrain'),
+    terrainLines: [...byRole('terrain'), ...byRole('terrainBreakline')],
     candidateRoute: byRole('candidateRoute'),
-    buildingFootprints: closedRings('building'),
+    buildingFootprints: [...closedRings('building'), ...closedRings('structure')],
     protectionZoneRings: closedRings('protectionZone'),
+    forbiddenZoneRings: closedRings('forbiddenZone'),
+    approvedCrossingRings: closedRings('approvedCrossing'),
     parcelRings: closedRings('parcel'),
     roles,
     surveyPoints,
@@ -199,15 +234,39 @@ interface DxfEntity {
   position?: DxfVertex
   text?: string
   name?: string
+  handle?: string
+  colorNumber?: number
+  color?: number
+  lineType?: string
+}
+
+const DXF_UNITS: Record<number, string> = {
+  0: 'unitless', 1: 'inch', 2: 'foot', 3: 'mile', 4: 'millimetre', 5: 'centimetre',
+  6: 'metre', 7: 'kilometre', 8: 'microinch', 9: 'mil', 10: 'yard', 11: 'angstrom',
+  12: 'nanometre', 13: 'micrometre', 14: 'decimetre', 15: 'decametre', 16: 'hectometre',
+  17: 'gigametre', 18: 'astronomical_unit', 19: 'light_year', 20: 'parsec',
 }
 
 export function parseDxfNetwork(text: string): DxfNetworkData {
   const empty: DxfNetworkData = { segments: [], points: [], layers: [], ok: false }
   let entities: DxfEntity[]
+  let metadata: DxfNetworkData['metadata']
   try {
-    const parsed = new DxfParser().parseSync(text) as { entities?: DxfEntity[] } | null
+    const parsed = new DxfParser().parseSync(text) as {
+      entities?: DxfEntity[]
+      header?: Record<string, unknown>
+    } | null
     if (!parsed?.entities) return empty
     entities = parsed.entities
+    const rawUnits = parsed.header?.$INSUNITS
+    const insertionUnitsCode = typeof rawUnits === 'number' ? rawUnits : undefined
+    const coordinateSystem = [parsed.header?.$PROJECTNAME, parsed.header?.$CANNOSCALE]
+      .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    metadata = {
+      insertionUnitsCode,
+      insertionUnits: insertionUnitsCode == null ? undefined : (DXF_UNITS[insertionUnitsCode] ?? `code_${insertionUnitsCode}`),
+      coordinateSystem,
+    }
   } catch {
     return empty
   }
@@ -222,9 +281,11 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
     zMin?: number
     zMax?: number
     textSamples: string[]
+    colorNumbers: number[]
+    lineTypes: string[]
   }>()
   const bump = (layer: string, kind: 'segments' | 'points') => {
-    const entry = stats.get(layer) ?? { segments: 0, points: 0, closedSegments: 0, entityTypes: {}, textSamples: [] }
+    const entry = stats.get(layer) ?? { segments: 0, points: 0, closedSegments: 0, entityTypes: {}, textSamples: [], colorNumbers: [], lineTypes: [] }
     entry[kind]++
     stats.set(layer, entry)
   }
@@ -235,18 +296,28 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
 
   for (const entity of entities) {
     const layer = typeof entity.layer === 'string' && entity.layer !== '' ? entity.layer : '0'
-    const entry = stats.get(layer) ?? { segments: 0, points: 0, closedSegments: 0, entityTypes: {}, textSamples: [] }
+    const entry = stats.get(layer) ?? { segments: 0, points: 0, closedSegments: 0, entityTypes: {}, textSamples: [], colorNumbers: [], lineTypes: [] }
     const entityType = entity.type ?? 'UNKNOWN'
     entry.entityTypes[entityType] = (entry.entityTypes[entityType] ?? 0) + 1
     const text = typeof entity.text === 'string' ? entity.text.trim() : ''
     const blockName = entity.type === 'INSERT' && typeof entity.name === 'string' ? `[BLOCK] ${entity.name}` : ''
     const sample = text || blockName
     if (sample && entry.textSamples.length < 20 && !entry.textSamples.includes(sample)) entry.textSamples.push(sample)
+    const colorNumber = typeof entity.colorNumber === 'number' ? entity.colorNumber : entity.color
+    if (typeof colorNumber === 'number' && !entry.colorNumbers.includes(colorNumber)) entry.colorNumbers.push(colorNumber)
+    if (typeof entity.lineType === 'string' && entity.lineType && !entry.lineTypes.includes(entity.lineType)) entry.lineTypes.push(entity.lineType)
     stats.set(layer, entry)
+    const source = {
+      layer,
+      sourceType: entityType,
+      sourceHandle: entity.handle,
+      colorNumber: typeof colorNumber === 'number' ? colorNumber : undefined,
+      lineType: entity.lineType,
+    }
     if (entity.type === 'LINE') {
       const pts = toPoints(entity.vertices)
       if (pts.length >= 2) {
-        segments.push({ points: pts.slice(0, 2), layer })
+        segments.push({ points: pts.slice(0, 2), ...source })
         bump(layer, 'segments')
       }
     } else if (entity.type === 'LWPOLYLINE' || entity.type === 'POLYLINE') {
@@ -256,7 +327,7 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
         const first = pts[0]
         const last = pts[pts.length - 1]
         const needsClosing = closed && Math.hypot(first.x - last.x, first.y - last.y) > 1e-9
-        segments.push({ points: needsClosing ? [...pts, { ...first }] : pts, layer, closed })
+        segments.push({ points: needsClosing ? [...pts, { ...first }] : pts, closed, ...source })
         bump(layer, 'segments')
         if (closed) (stats.get(layer) as NonNullable<ReturnType<typeof stats.get>>).closedSegments++
       }
@@ -286,10 +357,12 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
       zMin: s.zMin,
       zMax: s.zMax,
       textSamples: s.textSamples,
+      colorNumbers: s.colorNumbers,
+      lineTypes: s.lineTypes,
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  return { segments, points, layers, ok: segments.length > 0 || points.length > 0 }
+  return { segments, points, layers, metadata, ok: segments.length > 0 || points.length > 0 }
 }
 
 /**

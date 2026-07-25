@@ -3,7 +3,14 @@ import { interpolateElevation } from './trace'
 import type { NetworkNode, NetworkPipe, TracedNetwork } from './trace'
 
 export interface RoutePoint { x: number; y: number }
-export interface RouteSegment { points: RoutePoint[]; layer?: string }
+export interface RouteSegment {
+  points: RoutePoint[]
+  layer?: string
+  sourceType?: string
+  sourceHandle?: string
+  colorNumber?: number
+  lineType?: string
+}
 export interface RouteTerminal extends RoutePoint { id: string; buildingId?: string }
 
 export type RouteGeoreference =
@@ -24,13 +31,15 @@ export type RouteGeoreference =
 
 export interface RouteConstraintInput {
   corridorRings: RoutePoint[][]
+  /** Approved or manually confirmed centre/guide lines inside the corridor. */
+  guideLines?: RouteSegment[]
   /** Required for a real basemap overlay; it does not affect route geometry. */
   georeference?: RouteGeoreference
   redLines?: RouteSegment[]
   utilityLines?: RouteSegment[]
   roadLines?: RouteSegment[]
   waterLines?: RouteSegment[]
-  /** Closed water boundaries. They remain passable only as a last resort. */
+  /** Closed water boundaries. They are passable only inside an approved crossing. */
   waterRings?: RoutePoint[][]
   hardObstacles?: RouteSegment[]
   /** Closed building/structure footprints that routing may never enter. */
@@ -41,13 +50,20 @@ export interface RouteConstraintInput {
   parcelRings?: RoutePoint[][]
   /** Additional legally or technically forbidden areas. */
   forbiddenRings?: RoutePoint[][]
-  /** Protective zones are reported and penalised, but not silently ignored. */
+  /** Protective zones are hard barriers outside explicitly approved crossings. */
   protectionZoneRings?: RoutePoint[][]
   protectionZones?: RoutePoint[][]
   /** Explicitly approved crossing windows for water/protected obstacles. */
   approvedCrossingRings?: RoutePoint[][]
   approvedCrossingZones?: RoutePoint[][]
   surveyPoints?: SurveyPoint[]
+  /** Layers that have not yet been classified or explicitly ignored. */
+  unresolvedLayers?: string[]
+  /** An empty source group is safe only when a competent user confirmed absence. */
+  sourceDeclarations?: Partial<Record<
+    'buildings' | 'utilities' | 'roads' | 'hydrography' | 'parcels' | 'protectionZones',
+    'present' | 'confirmed_absent' | 'unknown'
+  >>
 }
 
 export interface ConstrainedRouteOptions {
@@ -64,6 +80,10 @@ export interface ConstrainedRouteOptions {
   /** Cost of one metre of ground rise while travelling towards the outlet. */
   uphillPenaltyPerM?: number
   turnPenalty?: number
+  /** Cost per grid step for moving away from a confirmed master-plan guide. */
+  guideDistancePenalty?: number
+  /** Distance to a guide at which the attraction penalty reaches its cap. */
+  guideAttractionM?: number
   corridorSnapToleranceM?: number
   maxGridCells?: number
   /** When true, a water-line crossing is impossible outside an approved window. */
@@ -112,9 +132,11 @@ const DEFAULTS: Required<ConstrainedRouteOptions> = {
   corridorBoundaryBandM: 45,
   uphillPenaltyPerM: 2.5,
   turnPenalty: 0.35,
+  guideDistancePenalty: 1.5,
+  guideAttractionM: 75,
   corridorSnapToleranceM: 50,
   maxGridCells: 450_000,
-  requireApprovedWaterCrossings: false,
+  requireApprovedWaterCrossings: true,
 }
 
 const round2 = (value: number) => Math.round(value * 100) / 100
@@ -278,6 +300,7 @@ interface GridCell {
   point: RoutePoint
   boundaryDistance: number
   utilityDistance: number
+  guideDistance: number
   surfaceElevation: number
   insideWater: boolean
 }
@@ -313,6 +336,7 @@ export function traceConstrainedNetwork(
   if (cols * rows > opt.maxGridCells) return empty(`Сетка ${cols}×${rows} превышает безопасный предел.`)
 
   const utilities = constraints.utilityLines ?? []
+  const guides = constraints.guideLines ?? []
   const redLines = constraints.redLines ?? []
   const roads = constraints.roadLines ?? []
   const water = constraints.waterLines ?? []
@@ -342,14 +366,28 @@ export function traceConstrainedNetwork(
     pointInRing(point, ring)
       && (!restrictToBoundaryBand || distanceToRings(point, [ring]) <= opt.corridorBoundaryBandM),
   )
+  const isApprovedCrossing = (point: RoutePoint) => approvedCrossings.some((ring) => pointInRing(point, ring))
+  const isForbiddenEnvironmentalPoint = (point: RoutePoint) => {
+    if (isApprovedCrossing(point)) return false
+    return waterRings.some((ring) => pointInRing(point, ring))
+      || protectionRings.some((ring) => pointInRing(point, ring))
+  }
   const segmentIsNavigable = (a: RoutePoint, b: RoutePoint) => {
     const samples = Math.max(1, Math.ceil(distance(a, b) / (opt.gridSizeM * 0.5)))
+    if (opt.requireApprovedWaterCrossings && edgeCrossings(a, b, water) > 0) {
+      const hasApprovedWindow = Array.from({ length: samples + 1 }, (_, index) => {
+        const ratio = index / samples
+        return { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio }
+      }).some(isApprovedCrossing)
+      if (!hasApprovedWindow) return false
+    }
     for (let sample = 1; sample < samples; sample++) {
       const ratio = sample / samples
       const point = { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio }
       if (!isNavigable(point)) return false
       if (hard.length > 0 && distanceToSegments(point, hard) < opt.gridSizeM * 0.55) return false
       if (hardRings.some((ring) => pointInRing(point, ring))) return false
+      if (isForbiddenEnvironmentalPoint(point)) return false
     }
     return true
   }
@@ -366,6 +404,12 @@ export function traceConstrainedNetwork(
     const utilityClearances = utilities.length > 0
       ? points.map((point) => distanceToSegments(point, utilities))
       : points.map(() => Number.POSITIVE_INFINITY)
+    const guideClearances = guides.length > 0
+      ? points.map((point) => distanceToSegments(point, guides))
+      : points.map(() => 0)
+    const surfaceElevations = survey.length > 0
+      ? points.map((point) => interpolateElevation(survey, point.x, point.y))
+      : points.map(() => 0)
     const touchesWater = points.map((point) => waterRings.some((ring) => pointInRing(point, ring)))
     const result = [points[0]]
     let anchor = 0
@@ -392,6 +436,21 @@ export function traceConstrainedNetwork(
           ? Math.min(...candidateSamples.map((point) => distanceToSegments(point, utilities)))
           : Number.POSITIVE_INFINITY
         if (candidateUtilityClearance + 1e-6 < Math.min(nextOriginalUtilityClearance, opt.utilityClearanceM)) break
+        if (guides.length > 0) {
+          const originalGuideMean = guideClearances.slice(anchor, candidateIndex + 1)
+            .reduce((sum, value) => sum + value, 0) / (candidateIndex - anchor + 1)
+          const candidateGuideMean = candidateSamples
+            .reduce((sum, point) => sum + distanceToSegments(point, guides), 0) / candidateSamples.length
+          if (candidateGuideMean > originalGuideMean + opt.gridSizeM * 0.25) break
+        }
+        if (survey.length > 0) {
+          const originalUphill = surfaceElevations.slice(anchor, candidateIndex + 1).slice(1)
+            .reduce((sum, value, index) => sum + Math.max(0, value - surfaceElevations[anchor + index]), 0)
+          const candidateElevations = candidateSamples.map((point) => interpolateElevation(survey, point.x, point.y))
+          const candidateUphill = candidateElevations.slice(1)
+            .reduce((sum, value, index) => sum + Math.max(0, value - candidateElevations[index]), 0)
+          if (candidateUphill > originalUphill + 0.1) break
+        }
         const nextOriginalTouchesWater = originalTouchesWater || touchesWater[candidateIndex]
         const candidateTouchesWater = candidateSamples.some((point) => waterRings.some((ring) => pointInRing(point, ring)))
         if (candidateTouchesWater && !nextOriginalTouchesWater) break
@@ -410,10 +469,12 @@ export function traceConstrainedNetwork(
       if (!isNavigable(point)) continue
       if (hard.length > 0 && distanceToSegments(point, hard) < opt.gridSizeM * 0.55) continue
       if (hardRings.some((ring) => pointInRing(point, ring))) continue
+      if (isForbiddenEnvironmentalPoint(point)) continue
       cells.set(key(col, row), {
         col, row, point,
         boundaryDistance: distanceToRings(point, rings),
         utilityDistance: utilities.length > 0 ? distanceToSegments(point, utilities) : Number.POSITIVE_INFINITY,
+        guideDistance: guides.length > 0 ? distanceToSegments(point, guides) : 0,
         surfaceElevation: survey.length > 0 ? interpolateElevation(survey, point.x, point.y) : 0,
         insideWater: waterRings.some((ring) => pointInRing(point, ring)),
       })
@@ -436,6 +497,9 @@ export function traceConstrainedNetwork(
     return empty(`Выпуск находится в ${Math.round(sourceMatch.distanceM)} м от инженерного коридора; требуется корректная система координат или коридор.`)
   }
   const sourceCell = sourceMatch.cell
+  if (sourceMatch.distanceM > 1e-6 && !segmentIsNavigable(source, sourceCell.point)) {
+    return empty('Выпуск невозможно соединить с инженерным коридором без пересечения запретной зоны или выхода за допустимую область.')
+  }
   const tree = new Set<string>([key(sourceCell.col, sourceCell.row)])
   const treeEdges = new Map<string, [RoutePoint, RoutePoint]>()
   const terminalCellById = new Map<string, string>()
@@ -453,6 +517,10 @@ export function traceConstrainedNetwork(
       continue
     }
     const start = startMatch.cell
+    if (startMatch.distanceM > 1e-6 && !segmentIsNavigable(terminal, start.point)) {
+      unrouted.push(terminal.id)
+      continue
+    }
     const startKey = key(start.col, start.row)
     const open = new Set<string>([startKey])
     const cameFrom = new Map<string, string>()
@@ -493,8 +561,8 @@ export function traceConstrainedNetwork(
         const inApprovedCrossing = approvedCrossings.some((ring) => pointInRing(midpoint, ring))
         const waterEdgeCrossings = edgeCrossings(cell.point, next.point, water)
         if (opt.requireApprovedWaterCrossings && waterEdgeCrossings > 0 && !inApprovedCrossing) continue
-        const protectionCost = protectionRings.some((ring) => pointInRing(next.point, ring))
-          ? opt.redLineCrossingPenalty
+        const guideCost = guides.length > 0
+          ? Math.min(1, next.guideDistance / Math.max(1, opt.guideAttractionM)) * opt.guideDistancePenalty
           : 0
         const waterInteriorCost = next.insideWater ? opt.waterInteriorPenalty : 0
         // Search direction is terminal -> outlet/tree. A rising surface in
@@ -504,7 +572,7 @@ export function traceConstrainedNetwork(
         const uphillCost = Math.max(0, next.surfaceElevation - cell.surfaceElevation) * opt.uphillPenaltyPerM
         const turnCost = heading.get(current) && heading.get(current) !== direction ? opt.turnPenalty : 0
         const tentative = (gScore.get(current) ?? 0) + step + boundaryCost + utilityCost
-          + crossingCost + protectionCost + waterInteriorCost + uphillCost + turnCost
+          + crossingCost + guideCost + waterInteriorCost + uphillCost + turnCost
         if (tentative >= (gScore.get(nextKey) ?? Number.POSITIVE_INFINITY)) continue
         cameFrom.set(nextKey, current)
         gScore.set(nextKey, tentative)
@@ -541,6 +609,22 @@ export function traceConstrainedNetwork(
 
   if (survey.length === 0) warnings.push('Нет высотных отметок топосъёмки: план построен, но продольный профиль и глубины требуют исходных данных.')
   const elevation = (point: RoutePoint) => interpolateElevation(survey, point.x, point.y)
+  const routeDecision = (a: RoutePoint, b: RoutePoint, choice: 'main' | 'facility-lead' | 'outlet-lead') => {
+    const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    return [
+      'derived:constrained-route',
+      `choice=${choice}`,
+      'search=deterministic-a-star',
+      'corridor=validated',
+      `guideDistanceM=${guides.length ? round2(distanceToSegments(midpoint, guides)) : 'none'}`,
+      `utilityCrossings=${edgeCrossings(a, b, utilities)}`,
+      `roadCrossings=${edgeCrossings(a, b, roads)}`,
+      `redLineCrossings=${edgeCrossings(a, b, redLines)}`,
+      `waterCrossings=${edgeCrossings(a, b, water)}`,
+      `surfaceDeltaM=${survey.length ? round2(elevation(b) - elevation(a)) : 'unknown'}`,
+      'simplification=revalidated',
+    ].join('|')
+  }
   const nodes: NetworkNode[] = [{ id: 'SRC', kind: 'source', x: round2(source.x), y: round2(source.y), groundElevation: elevation(source) }]
   const pipes: NetworkPipe[] = []
   const nodeIdByCoord = new Map<string, string>()
@@ -607,19 +691,20 @@ export function traceConstrainedNetwork(
           toNode: to,
           lengthM: round2(distance(engineeringPoints[index - 1], engineeringPoints[index])),
           alignment: [engineeringPoints[index - 1], engineeringPoints[index]],
+          dataSource: routeDecision(engineeringPoints[index - 1], engineeringPoints[index], 'main'),
         })
       }
     }
   }
   const sourceJunction = getNode(sourceCell.point)
-  pipes.push({ id: `P${++pipeSeq}`, kind: 'supply', fromNode: sourceJunction, toNode: 'SRC', lengthM: round2(distance(sourceCell.point, source)), alignment: [sourceCell.point, source] })
+  pipes.push({ id: `P${++pipeSeq}`, kind: 'supply', fromNode: sourceJunction, toNode: 'SRC', lengthM: round2(distance(sourceCell.point, source)), alignment: [sourceCell.point, source], dataSource: routeDecision(sourceCell.point, source, 'outlet-lead') })
   for (const terminal of terminals) {
     const terminalCell = terminalCellById.get(terminal.id)
     if (!terminalCell) continue
     const firstGridPoint = pointByKey.get(terminalCell) ?? sourceCell.point
     const buildingNodeId = `B${nodes.filter((node) => node.kind === 'building').length + 1}`
     nodes.push({ id: buildingNodeId, kind: 'building', x: round2(terminal.x), y: round2(terminal.y), groundElevation: elevation(terminal), buildingId: terminal.buildingId ?? terminal.id })
-    pipes.push({ id: `P${++pipeSeq}`, kind: 'service', fromNode: buildingNodeId, toNode: getNode(firstGridPoint), lengthM: round2(distance(terminal, firstGridPoint)), alignment: [terminal, firstGridPoint] })
+    pipes.push({ id: `P${++pipeSeq}`, kind: 'service', fromNode: buildingNodeId, toNode: getNode(firstGridPoint), lengthM: round2(distance(terminal, firstGridPoint)), alignment: [terminal, firstGridPoint], dataSource: routeDecision(terminal, firstGridPoint, 'facility-lead') })
   }
 
   const redLineCrossings = paths.reduce((sum, path) => sum + countCrossings(path.points, redLines), 0)
