@@ -88,6 +88,7 @@ export function ImportSection({
   const [lnsX, setLnsX] = useState('')
   const [lnsY, setLnsY] = useState('')
   const [lnsFlow, setLnsFlow] = useState('')
+  const [lnsPumpHead, setLnsPumpHead] = useState('')
   const [routingStage, setRoutingStage] = useState<string | null>(null)
   const [routeElapsedSeconds, setRouteElapsedSeconds] = useState(0)
   const routeCancelRef = useRef<(() => void) | null>(null)
@@ -323,9 +324,10 @@ export function ImportSection({
       }
 
       if (systemType !== 'water') {
-        const localLns = { x: num(lnsX), y: num(lnsY), designFlowLps: num(lnsFlow) }
-        if (![localLns.x, localLns.y, localLns.designFlowLps].every(Number.isFinite)) {
-          setRouteBlockers(['Стоп-фактор: задайте координаты X/Y и расчётный расход ЛНС.'])
+        const localLns = { x: num(lnsX), y: num(lnsY), designFlowLps: num(lnsFlow), pumpHeadM: num(lnsPumpHead) }
+        if (![localLns.x, localLns.y, localLns.designFlowLps, localLns.pumpHeadM].every(Number.isFinite)
+          || localLns.designFlowLps <= 0 || localLns.pumpHeadM <= 0) {
+          setRouteBlockers(['Стоп-фактор: задайте координаты X/Y, положительный расчётный расход и доступный напор ЛНС.'])
           setNotice('error')
           return
         }
@@ -343,7 +345,7 @@ export function ImportSection({
           constraints: routeConstraints,
           options: { gridSizeM: 15 },
           sourceSurveyPointCount: parsed.constraints.surveyPoints.length,
-          pumpHeadM: null,
+          pumpHeadM: localLns.pumpHeadM,
         }, setRoutingStage)
         routeCancelRef.current = running.cancel
         const engineering = await running.promise
@@ -520,6 +522,7 @@ export function ImportSection({
                   <label className="field"><span className="field-label">ЛНС X, м</span><input className="input" inputMode="decimal" value={lnsX} onChange={(event) => setLnsX(event.target.value)} /></label>
                   <label className="field"><span className="field-label">ЛНС Y, м</span><input className="input" inputMode="decimal" value={lnsY} onChange={(event) => setLnsY(event.target.value)} /></label>
                   <label className="field"><span className="field-label">Расчётный расход ЛНС, л/с</span><input className="input" inputMode="decimal" value={lnsFlow} onChange={(event) => setLnsFlow(event.target.value)} /></label>
+                  <label className="field"><span className="field-label">Доступный напор ЛНС, м</span><input className="input" inputMode="decimal" value={lnsPumpHead} onChange={(event) => setLnsPumpHead(event.target.value)} /></label>
                 </div>
               )}
               <button
