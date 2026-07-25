@@ -84,14 +84,35 @@ export function SituationSchemeSection({
 
     // Adopted diameters from the supplied 2024-51-НК.С schedule and sheet 2.
     // The automatic hydraulic check remains visible in the calculations tab.
-    for (let index = 1; index <= 17; index += 1) setProjectDiameter(`К2-${index}`, 2000)
-    setProjectDiameter('К2-3', 1200)
-    setProjectDiameter('К2-4', 800, '2×Ø800')
-    setProjectDiameter('Подключение-1', 1200)
-    setProjectDiameter('Подключение-2', 1600)
-    setProjectDiameter('Подключение-3', 1200)
-    setProjectDiameter('Подключение-4', 2000)
-    return { diameterMm, labels }
+    const nodeById = new Map(model.network.nodes.map((node) => [node.id, node]))
+    const isServicePipe = (pipe: (typeof model.network.pipes)[number]) =>
+      pipe.kind === 'service' || Boolean(nodeById.get(pipe.fromNode)?.buildingId || nodeById.get(pipe.toNode)?.buildingId)
+    const mainPipes = model.network.pipes.filter((pipe) => !isServicePipe(pipe))
+    const servicePipes = model.network.pipes.filter(isServicePipe)
+    mainPipes.forEach((pipe) => setProjectDiameter(pipe.id, 2000))
+    if (mainPipes[2]) setProjectDiameter(mainPipes[2].id, 1200)
+    if (mainPipes[3]) setProjectDiameter(mainPipes[3].id, 800, '2×Ø800')
+    const serviceDiameters = [1200, 1600, 1200, 2000]
+    servicePipes.forEach((pipe, index) => setProjectDiameter(pipe.id, serviceDiameters[index] ?? 2000))
+
+    const paths = new Map<string, Array<{ x: number; y: number }>>()
+    const osIII4 = servicePipes[3]
+    if (osIII4) {
+      const from = model.network.nodes.find((node) => node.id === osIII4.fromNode)
+      const to = model.network.nodes.find((node) => node.id === osIII4.toNode)
+      if (from && to) {
+        // The long OS III-4 connection follows the bends evidenced by the
+        // supplied DWG right-of-way, instead of crossing the territory by chord.
+        paths.set(osIII4.id, [
+          from,
+          { x: -5080.5, y: -9326.3 },
+          { x: -5288.6, y: -9336.1 },
+          { x: -5954.1, y: -9797.1 },
+          to,
+        ])
+      }
+    }
+    return { diameterMm, labels, paths }
   }, [hasReferenceSheet, model])
 
   const nodeLabel = useMemo(() => {
@@ -133,6 +154,7 @@ export function SituationSchemeSection({
               buildings={buildings.map((building) => ({ x: building.x, y: building.y, label: building.label }))}
               pipeDiameterMm={projectPipeDisplay?.diameterMm ?? model.pipeDiameterMm}
               pipeDisplayLabel={projectPipeDisplay?.labels}
+              pipePaths={projectPipeDisplay?.paths}
               corridorRings={corridorRings}
               outletFlowLps={model.outletFlowLps}
             />

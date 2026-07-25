@@ -34,6 +34,7 @@ export function LiveSituationMap({
   network,
   pipeDiameterMm,
   pipeDisplayLabel,
+  pipePaths,
   buildings,
   corridorRings,
   outletFlowLps,
@@ -41,6 +42,7 @@ export function LiveSituationMap({
   network: TracedNetwork
   pipeDiameterMm: Map<string, number>
   pipeDisplayLabel?: Map<string, string>
+  pipePaths?: Map<string, LocalPoint[]>
   buildings: Array<{ x: number; y: number; label?: string | null }>
   corridorRings: Array<Array<LocalPoint>>
   outletFlowLps?: number
@@ -91,12 +93,12 @@ export function LiveSituationMap({
       const from = nodeById.get(pipe.fromNode)
       const to = nodeById.get(pipe.toNode)
       if (!from || !to) continue
-      const fromPosition = project202451ToWgs84(from)
-      const toPosition = project202451ToWgs84(to)
+      const localPath = pipePaths?.get(pipe.id) ?? [from, to]
+      const positions = localPath.map(project202451ToWgs84)
       const diameter = pipeDiameterMm.get(pipe.id)
       const diameterLabel = pipeDisplayLabel?.get(pipe.id) ?? (diameter ? `Ø${diameter}` : 'Ø—')
-      const isService = pipe.kind === 'service'
-      const line = L.polyline([fromPosition, toPosition], {
+      const isService = pipe.kind === 'service' || Boolean(from.buildingId || to.buildingId)
+      const line = L.polyline(positions, {
         color: isService ? '#c53364' : diameterColor(diameter),
         weight: isService ? 3 : 6,
         opacity: 0.94,
@@ -106,9 +108,7 @@ export function LiveSituationMap({
         `<strong>${isService ? 'Подключение ОС' : 'Проектный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м`,
         { sticky: true },
       )
-      const a = L.latLng(fromPosition)
-      const b = L.latLng(toPosition)
-      const midpoint = L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2)
+      const midpoint = L.latLng(positions[Math.floor(positions.length / 2)])
       const showDiameterLabel = isService ? pipe.lengthM > 1 : diameterLabel !== previousMainLabel
       if (showDiameterLabel && diameter) {
         L.marker(midpoint, {
@@ -117,8 +117,7 @@ export function LiveSituationMap({
         }).addTo(map)
       }
       if (!isService) previousMainLabel = diameterLabel
-      bounds.extend(fromPosition)
-      bounds.extend(toPosition)
+      positions.forEach((position) => bounds.extend(position))
     }
 
     for (const building of buildings) {
@@ -169,7 +168,7 @@ export function LiveSituationMap({
       map.remove()
       setReady(false)
     }
-  }, [network, pipeDiameterMm, pipeDisplayLabel, buildings, corridorRings, outletFlowLps])
+  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, buildings, corridorRings, outletFlowLps])
 
   return (
     <div className="live-situation-map-wrap">
