@@ -11,7 +11,12 @@ import { selectProvider } from './providers.js'
  */
 
 const app = express()
-app.use(cors())
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean)
+app.use(cors({
+  origin: allowedOrigins.length === 0
+    ? true
+    : (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)),
+}))
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } })
 
 const CONTENT_TYPES = { dwg: 'application/acad', dxf: 'application/dxf' }
@@ -38,6 +43,12 @@ app.get('/health', (_req, res) => {
   })
 })
 
+app.get('/ready', async (_req, res) => {
+  const provider = selectProvider()
+  const readiness = await provider.ready()
+  res.status(readiness.ok ? 200 : 503).json({ ...readiness, provider: provider.name })
+})
+
 app.post('/convert', upload.single('file'), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'no file' })
@@ -49,6 +60,10 @@ app.post('/convert', upload.single('file'), async (req, res) => {
     return
   }
   const version = String(req.query.version || 'ACAD2018')
+  if (!/^ACAD(2000|2004|2007|2010|2013|2018)$/.test(version)) {
+    res.status(400).json({ error: 'unsupported AutoCAD version' })
+    return
+  }
   const from = sniffFormat(req.file.buffer, req.file.originalname || '')
   res.setHeader('Content-Type', CONTENT_TYPES[to])
   res.setHeader('Content-Disposition', `attachment; filename="drawing.${to}"`)
@@ -59,7 +74,16 @@ app.post('/convert', upload.single('file'), async (req, res) => {
   }
   try {
     const provider = selectProvider()
+    const readiness = await provider.ready()
+    if (!readiness.ok) {
+      res.removeHeader('Content-Disposition')
+      res.type('json')
+      res.status(503).json({ error: readiness.reason, code: 'CONVERTER_NOT_READY' })
+      return
+    }
     const output = await provider.convert(req.file.buffer, from, to, version)
+    res.setHeader('X-Converter-Provider', provider.name)
+    res.setHeader('X-Converter-Version', process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? 'local')
     res.send(output)
   } catch (error) {
     res.removeHeader('Content-Disposition')

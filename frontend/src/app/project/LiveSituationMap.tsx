@@ -1,25 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { TracedNetwork } from '@aquascheme/engine'
+import { localToLonLat } from '@aquascheme/engine'
+import type { RouteConstraintInput, RouteGeoreference, TracedNetwork } from '@aquascheme/engine'
 
 type LocalPoint = { x: number; y: number }
 
-/**
- * Project-specific affine georeference for 2024-51-НК. The local DWG frame is
- * anchored to the Bolshoy Taldykol / Nura district map using the outlet in the
- * north, the lake centre and the south-eastern OS III-4 end of the scheme.
- * It is deliberately isolated here: an unrelated project must provide its own
- * coordinate reference instead of silently reusing this transform.
- */
-function project202451ToWgs84(point: LocalPoint): L.LatLngExpression {
-  const westX = -7045
-  const eastX = -3728
-  const northY = 172
-  const southY = -9807
-  const longitude = 71.300 + ((point.x - westX) / (eastX - westX)) * 0.065
-  const latitude = 51.175 - ((northY - point.y) / (northY - southY)) * 0.084
-  return [latitude, longitude]
+function projectionFor(georeference: RouteGeoreference | undefined): {
+  geographic: boolean
+  point: (point: LocalPoint) => L.LatLngExpression
+} {
+  if (georeference?.kind === 'affine_bounds') {
+    return {
+      geographic: true,
+      point: (point) => {
+        const longitude = georeference.westLon
+          + ((point.x - georeference.westX) / (georeference.eastX - georeference.westX))
+          * (georeference.eastLon - georeference.westLon)
+        const latitude = georeference.northLat
+          - ((georeference.northY - point.y) / (georeference.northY - georeference.southY))
+          * (georeference.northLat - georeference.southLat)
+        return [latitude, longitude]
+      },
+    }
+  }
+  if (georeference?.kind === 'local_anchor') {
+    return {
+      geographic: true,
+      point: (point) => {
+        const [longitude, latitude] = localToLonLat(point.x, point.y, georeference.anchor)
+        return [latitude, longitude]
+      },
+    }
+  }
+  return { geographic: false, point: (point) => [point.y, point.x] }
 }
 
 function diameterColor(diameter: number | undefined): string {
@@ -38,6 +52,7 @@ export function LiveSituationMap({
   verifiedProjectGeometryOnly = false,
   buildings,
   corridorRings,
+  constraints,
   outletFlowLps,
 }: {
   network: TracedNetwork
@@ -47,6 +62,7 @@ export function LiveSituationMap({
   verifiedProjectGeometryOnly?: boolean
   buildings: Array<{ x: number; y: number; label?: string | null }>
   corridorRings: Array<Array<LocalPoint>>
+  constraints?: RouteConstraintInput
   outletFlowLps?: number
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -55,7 +71,15 @@ export function LiveSituationMap({
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    const map = L.map(container, { zoomControl: true, preferCanvas: true, minZoom: 10, maxZoom: 19 })
+    const projection = projectionFor(constraints?.georeference)
+    const toMapPoint = projection.point
+    const map = L.map(container, {
+      zoomControl: true,
+      preferCanvas: true,
+      minZoom: projection.geographic ? 10 : -5,
+      maxZoom: projection.geographic ? 19 : 5,
+      crs: projection.geographic ? L.CRS.EPSG3857 : L.CRS.Simple,
+    })
     const streetMap = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       crossOrigin: true,
@@ -74,20 +98,39 @@ export function LiveSituationMap({
       crossOrigin: true,
       attribution: 'Map data &copy; OpenStreetMap contributors, SRTM | Map style &copy; OpenTopoMap',
     })
-    streetMap.addTo(map)
+    if (projection.geographic) streetMap.addTo(map)
 
     const bounds = L.latLngBounds([])
     const nodeById = new Map(network.nodes.map((node) => [node.id, node]))
     const corridorLayer = L.layerGroup()
+    const redLineLayer = L.layerGroup()
+    const utilityLayer = L.layerGroup()
+    const roadLayer = L.layerGroup()
+    const waterLayer = L.layerGroup()
+    const obstacleLayer = L.layerGroup()
 
     for (const ring of corridorRings) {
-      const positions = ring.map(project202451ToWgs84)
+      const positions = ring.map(toMapPoint)
       if (positions.length < 2) continue
       // The DWG corridor is a folded boundary chain, not a safe fill polygon.
       // Filling it creates the large self-intersecting "blue blinds" seen in the UI.
       L.polyline(positions, { color: '#c43131', weight: 2, opacity: 0.9, dashArray: '7 6' })
         .bindTooltip('Проверочный контур полосы отвода (без заливки)')
         .addTo(corridorLayer)
+    }
+
+    const drawSegments = (segments: RouteConstraintInput['redLines'], layer: L.LayerGroup, color: string, dashArray?: string) => {
+      for (const segment of segments ?? []) {
+        if (segment.points.length < 2) continue
+        L.polyline(segment.points.map(toMapPoint), { color, weight: 2, opacity: 0.8, dashArray }).addTo(layer)
+      }
+    }
+    drawSegments(constraints?.redLines, redLineLayer, '#d11b37', '8 5')
+    drawSegments(constraints?.utilityLines, utilityLayer, '#8b4e18', '3 4')
+    drawSegments(constraints?.roadLines, roadLayer, '#6a6a6a')
+    drawSegments(constraints?.waterLines, waterLayer, '#1689c7')
+    for (const ring of constraints?.hardObstacleRings ?? []) {
+      L.polygon(ring.map(toMapPoint), { color: '#7a1a1a', fillColor: '#d84c4c', fillOpacity: 0.25, weight: 1 }).addTo(obstacleLayer)
     }
 
     const diameterLabelPoints: LocalPoint[] = []
@@ -97,20 +140,21 @@ export function LiveSituationMap({
       const from = nodeById.get(pipe.fromNode)
       const to = nodeById.get(pipe.toNode)
       if (!from || !to) continue
-      const localPath = pipePaths?.get(pipe.id) ?? [from, to]
-      const positions = localPath.map(project202451ToWgs84)
+      const localPath = pipePaths?.get(pipe.id) ?? pipe.alignment ?? [from, to]
+      const positions = localPath.map(toMapPoint)
       const diameter = pipeDiameterMm.get(pipe.id)
       const diameterLabel = pipeDisplayLabel?.get(pipe.id) ?? (diameter ? `Ø${diameter}` : 'Ø—')
-      const isService = pipe.kind === 'service' || Boolean(from.buildingId || to.buildingId)
+      const isService = pipe.kind === 'service' || pipe.kind === 'inlet' || pipe.kind === 'facility_connection' || Boolean(from.buildingId || to.buildingId)
+      const isPressure = pipe.kind === 'pressure_main' || pipe.kind === 'discharge' || pipe.systemType === 'pressure'
       if (verifiedProjectGeometryOnly && isService && !pipePaths?.has(pipe.id)) continue
       const line = L.polyline(positions, {
-        color: isService ? '#c53364' : diameterColor(diameter),
+        color: isPressure ? '#e17b16' : isService ? '#c53364' : diameterColor(diameter),
         weight: isService ? 3 : 6,
         opacity: 0.94,
         dashArray: isService ? '7 5' : undefined,
       }).addTo(map)
       line.bindTooltip(
-        `<strong>${isService ? 'Подключение ОС' : 'Проектный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м`,
+        `<strong>${isPressure ? 'Напорный водовод от ЛНС' : isService ? 'Подключение ОС' : 'Самотёчный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м`,
         { sticky: true },
       )
       const localMidpoint = localPath[Math.floor(localPath.length / 2)]
@@ -136,18 +180,26 @@ export function LiveSituationMap({
     }
 
     for (const building of buildings) {
-      const position = project202451ToWgs84(building)
+      const position = toMapPoint(building)
       L.circleMarker(position, { radius: 6, color: '#8d142f', weight: 2, fillColor: '#fff', fillOpacity: 1 })
         .bindTooltip(building.label || 'Очистное сооружение', { permanent: true, direction: 'right', className: 'source-map-label' })
         .addTo(map)
       bounds.extend(position)
     }
 
-    const outlet = network.nodes.find((node) => node.kind === 'source')
+    const outlet = network.nodes.find((node) => node.kind === 'outlet' || node.kind === 'outfall' || node.kind === 'source')
     if (outlet) {
-      const position = project202451ToWgs84(outlet)
+      const position = toMapPoint(outlet)
       L.circleMarker(position, { radius: 7, color: '#111', weight: 2, fillColor: '#173f9f', fillOpacity: 1 })
         .bindTooltip(`Оголовок / выпуск${outletFlowLps == null ? '' : `<br>${outletFlowLps.toFixed(1)} л/с`}`, { permanent: true, direction: 'right' })
+        .addTo(map)
+      bounds.extend(position)
+    }
+    const lns = network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'lns_outlet' || node.kind === 'pumping_station')
+    if (lns) {
+      const position = toMapPoint(lns)
+      L.marker(position, { icon: L.divIcon({ className: 'source-map-label', html: '<strong>ЛНС</strong>', iconSize: [54, 24], iconAnchor: [27, 12] }) })
+        .bindTooltip(`ЛНС${lns.designFlowLps == null ? '' : `<br>${lns.designFlowLps.toFixed(1)} л/с`}`)
         .addTo(map)
       bounds.extend(position)
     }
@@ -155,25 +207,30 @@ export function LiveSituationMap({
     const legend = new L.Control({ position: 'bottomleft' })
     legend.onAdd = () => {
       const element = L.DomUtil.create('div', 'situation-map-legend')
-      element.innerHTML = '<strong>Проектная сеть</strong><span><i class="main"></i>ось коллектора</span><span><i class="service"></i>подключение ОС</span><span><i class="corridor"></i>полоса отвода (опция)</span>'
+      element.innerHTML = '<strong>Проектная сеть</strong><span><i class="main"></i>самотёчный коллектор</span><span><i class="service"></i>подключение ОС</span><span style="color:#e17b16">━━ напорный водовод</span><span><i class="corridor"></i>полоса отвода</span>'
       return element
     }
     legend.addTo(map)
 
     L.control.layers(
-      {
+      projection.geographic ? {
         'Карта OSM': streetMap,
         'Спутник Esri': satelliteMap,
         'Рельеф OpenTopoMap': reliefMap,
-      },
+      } : {},
       {
         'Полоса отвода (проверочная)': corridorLayer,
+        'Красные линии DWG': redLineLayer,
+        'Коммуникации DWG': utilityLayer,
+        'Дороги DWG': roadLayer,
+        'Гидрография DWG': waterLayer,
+        'Запретные сооружения': obstacleLayer,
       },
       { collapsed: false, position: 'topright' },
     ).addTo(map)
 
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [38, 38], maxZoom: 14 })
-    else map.setView([51.12433, 71.33639], 13)
+    else map.setView(projection.geographic ? [51.12433, 71.33639] : [0, 0], projection.geographic ? 13 : 0)
     setReady(true)
 
     const resizeObserver = new ResizeObserver(() => map.invalidateSize({ animate: false }))
@@ -183,15 +240,21 @@ export function LiveSituationMap({
       map.remove()
       setReady(false)
     }
-  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, verifiedProjectGeometryOnly, buildings, corridorRings, outletFlowLps])
+  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, verifiedProjectGeometryOnly, buildings, corridorRings, constraints, outletFlowLps])
 
   return (
     <div className="live-situation-map-wrap">
       {!ready && <div className="live-map-loading"><span className="export-progress-spinner" />Загрузка настоящей карты…</div>}
       <div ref={containerRef} className="live-situation-map" aria-label="Интерактивная карта с проектной трассой коллектора" />
       <p className="reference-source-note">
-        OSM, спутник и обзорный рельеф являются ориентировочными подложками. Синяя ось рассчитана по замкнутому инженерному коридору из DWG; розовые участки — рассчитанные подключения ОС к ближайшей достижимой ветви. Инженерные отметки топосъёмки используются в продольном профиле. Проверочный контур полосы отвода доступен отдельным слоем и не заливается.
+        {constraints?.georeference && constraints.georeference.kind !== 'unreferenced'
+          ? 'OSM, спутник и OpenTopoMap — только ориентировочные подложки. '
+          : ''}
+        Плановая ось строится по структурированным слоям DWG, а инженерные отметки берутся из топосъёмки. Синий цвет — самотёк до ЛНС, оранжевый — отдельная напорная система после ЛНС.
       </p>
+      {!constraints?.georeference || constraints.georeference.kind === 'unreferenced' ? (
+        <p className="notice error">DWG не геопривязан: показана локальная координатная плоскость без OSM. Задайте proj4 либо контрольные точки, чтобы наложение на реальную карту было достоверным.</p>
+      ) : null}
     </div>
   )
 }

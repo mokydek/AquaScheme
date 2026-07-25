@@ -52,6 +52,7 @@ export async function insertParcel(
     geometry: ringToGeometry(ring),
   })
   if (error) throw error
+  if (kind === 'right_of_way') await supabase.from('projects').update({ route_status: 'stale' }).eq('id', projectId)
 }
 
 /** Replaces the active engineering right-of-way after a new master plan is processed. */
@@ -72,6 +73,7 @@ export async function replaceRightOfWay(projectId: string, ring: Vec2[], label: 
   } else {
     await insertParcel(projectId, 'right_of_way', ring, label)
   }
+  await supabase.from('projects').update({ route_status: 'stale' }).eq('id', projectId)
 }
 
 export async function deleteParcel(parcelId: string): Promise<void> {

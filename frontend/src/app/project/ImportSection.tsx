@@ -1,16 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform, traceConstrainedNetwork } from '@aquascheme/engine'
 import type { ConstrainedRouteReport, ImportReport, ImportSegment, SurveyPoint } from '@aquascheme/engine'
 import type { DxfConstraintData, DxfNetworkData } from '@aquascheme/engine/dxfread'
-import { replaceNetwork } from '../../shared/network'
+import { replaceNetwork, routeInputHash } from '../../shared/network'
 import { replaceRightOfWay } from '../../shared/parcels'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
+import { saveDataset } from '../../shared/datasets'
 import type { BuildingRow } from '../../shared/datasets'
 import type { PipeRow } from '../../shared/network'
 import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
+import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
 
 type Parsed =
   | { kind: 'dxf'; data: DxfNetworkData; constraints: DxfConstraintData }
@@ -28,6 +30,7 @@ export function ImportSection({
   points,
   existingNodes,
   existingPipes,
+  systemType = 'water',
   onChanged,
 }: {
   projectId: string
@@ -36,6 +39,7 @@ export function ImportSection({
   points: SurveyPoint[]
   existingNodes: number
   existingPipes: PipeRow[]
+  systemType?: 'water' | 'sewer' | 'storm'
   onChanged: () => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -53,6 +57,23 @@ export function ImportSection({
   const [fromDwg, setFromDwg] = useState(false)
   const [report, setReport] = useState<ImportReport | null>(null)
   const [constraintReport, setConstraintReport] = useState<ConstrainedRouteReport | null>(null)
+  const [routeBlockers, setRouteBlockers] = useState<string[]>([])
+  const [lnsX, setLnsX] = useState('')
+  const [lnsY, setLnsY] = useState('')
+  const [lnsFlow, setLnsFlow] = useState('')
+  const [routingStage, setRoutingStage] = useState<string | null>(null)
+  const [routeElapsedSeconds, setRouteElapsedSeconds] = useState(0)
+  const routeCancelRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (!routingStage) {
+      setRouteElapsedSeconds(0)
+      return
+    }
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => setRouteElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 250)
+    return () => window.clearInterval(timer)
+  }, [routingStage])
 
   const canImport = source !== null
 
@@ -63,6 +84,7 @@ export function ImportSection({
     setUploadMessage(null)
     setReport(null)
     setConstraintReport(null)
+    setRouteBlockers([])
     setParsed(null)
     setFromDwg(false)
     try {
@@ -197,6 +219,107 @@ export function ImportSection({
         points: segment.points.map(transform),
       }))
       const dxfSurvey = parsed.constraints.surveyPoints.map((point) => ({ ...transform(point), z: point.z }))
+      const corridorRings = parsed.constraints.corridorRings.map((ring) => ring.map(transform))
+      const routeConstraints = {
+        corridorRings,
+        georeference: georefMode === 'none'
+          ? { kind: 'unreferenced' as const, source: 'DWG импортирован без геопривязки' }
+          : { kind: 'local_anchor' as const, source: georefMode === 'proj4' ? `proj4: ${projString}` : 'две контрольные точки пользователя' },
+        redLines: mapSegments(parsed.constraints.redLines),
+        utilityLines: mapSegments(parsed.constraints.utilityLines),
+        roadLines: mapSegments(parsed.constraints.roadLines),
+        waterLines: mapSegments(parsed.constraints.hydrography),
+        waterRings: parsed.constraints.hydrography
+          .filter((segment) => segment.closed && segment.points.length >= 4)
+          .map((segment) => segment.points.map(transform)),
+        hardObstacleRings: parsed.constraints.buildingFootprints.map((ring) => ring.map(transform)),
+        parcelRings: parsed.constraints.parcelRings.map((ring) => ring.map(transform)),
+        protectionZoneRings: parsed.constraints.protectionZoneRings.map((ring) => ring.map(transform)),
+        surveyPoints: dxfSurvey.length > 0 ? dxfSurvey : points,
+      }
+
+      if (systemType !== 'water') {
+        const localLns = { x: num(lnsX), y: num(lnsY), designFlowLps: num(lnsFlow) }
+        if (![localLns.x, localLns.y, localLns.designFlowLps].every(Number.isFinite)) {
+          setRouteBlockers(['Стоп-фактор: задайте координаты X/Y и расчётный расход ЛНС.'])
+          setNotice('error')
+          return
+        }
+        const running = runEngineeringRouteInWorker({
+          facilities: buildings.map((building) => ({
+            id: building.label ?? building.id,
+            label: building.label ?? building.id,
+            buildingId: building.id,
+            x: building.x,
+            y: building.y,
+            designFlowLps: building.design_flow_lps ?? building.specific_demand_lpd ?? 0,
+          })),
+          lns: { id: 'LNS', label: 'ЛНС', ...localLns },
+          outlet: { id: 'OUTLET', label: 'Оголовок / выпуск', x: source.x, y: source.y },
+          constraints: routeConstraints,
+          options: { gridSizeM: 15 },
+          sourceSurveyPointCount: parsed.constraints.surveyPoints.length,
+          pumpHeadM: null,
+        }, setRoutingStage)
+        routeCancelRef.current = running.cancel
+        const engineering = await running.promise
+        setConstraintReport(engineering.reports.gravity)
+        setRouteBlockers(engineering.blockers.map((blocker) => blocker.message))
+        await saveDataset(projectId, 'route_constraints', {
+          ...routeConstraints,
+          lns: localLns,
+          completeness: 'full-dxf-classification',
+        }, {
+          roles: parsed.constraints.roles,
+          rejectedSurveyPoints: parsed.constraints.rejectedSurveyPoints,
+          sourceLayers: parsed.data.layers,
+        }, fromDwg ? 'converted-from-dwg.dxf' : 'source.dxf')
+        await saveDataset(projectId, 'route_audit', {
+          layers: parsed.data.layers,
+          roles: parsed.constraints.roles,
+          counts: {
+            corridorRings: corridorRings.length,
+            redLines: routeConstraints.redLines.length,
+            utilities: routeConstraints.utilityLines.length,
+            roads: routeConstraints.roadLines.length,
+            hydrography: routeConstraints.waterLines.length,
+            buildings: routeConstraints.hardObstacleRings.length,
+            protectionZones: routeConstraints.protectionZoneRings.length,
+            parcels: routeConstraints.parcelRings.length,
+            surveyPoints: routeConstraints.surveyPoints.length,
+          },
+        })
+        if (engineering.network.pipes.length === 0) {
+          setNotice('error')
+          return
+        }
+        const inputHash = await routeInputHash({
+          facilities: buildings.map(({ id, x, y, design_flow_lps }) => ({ id, x, y, design_flow_lps })),
+          lns: localLns,
+          outlet: source,
+          constraints: routeConstraints,
+        })
+        await replaceRightOfWay(projectId, primaryCorridor.map(transform), 'Инженерный коридор из загруженного DWG')
+        await replaceNetwork(projectId, engineering.network, {
+          status: engineering.status,
+          algorithmVersion: engineering.algorithmVersion,
+          inputHash,
+          warnings: engineering.warnings,
+          blockers: engineering.blockers,
+          report: {
+            ...engineering.reports,
+            surveyCoverage: engineering.surveyCoverage,
+            quality: {
+              totalLengthM: engineering.network.totalLengthM,
+              routedTerminals: engineering.reports.gravity.routedTerminals + engineering.reports.pressure.routedTerminals,
+              outsideCorridorSegments: engineering.reports.gravity.outsideCorridorSegments + engineering.reports.pressure.outsideCorridorSegments,
+            },
+          },
+        })
+        setNotice(engineering.status === 'blocked' ? 'error' : 'done')
+        await onChanged()
+        return
+      }
       const route = traceConstrainedNetwork(
         buildings.map((building) => ({
           id: building.label ?? building.id,
@@ -205,17 +328,7 @@ export function ImportSection({
           y: building.y,
         })),
         { x: source.x, y: source.y },
-        {
-          corridorRings: [primaryCorridor.map(transform)],
-          redLines: mapSegments(parsed.constraints.redLines),
-          utilityLines: mapSegments(parsed.constraints.utilityLines),
-          roadLines: mapSegments(parsed.constraints.roadLines),
-          waterLines: mapSegments(parsed.constraints.hydrography),
-          waterRings: parsed.constraints.hydrography
-            .filter((segment) => segment.closed && segment.points.length >= 4)
-            .map((segment) => segment.points.map(transform)),
-          surveyPoints: dxfSurvey.length > 0 ? dxfSurvey : points,
-        },
+        routeConstraints,
         { gridSizeM: 15 },
       )
       setConstraintReport(route.report)
@@ -230,6 +343,8 @@ export function ImportSection({
     } catch {
       setNotice('error')
     } finally {
+      routeCancelRef.current = null
+      setRoutingStage(null)
       setBusy(false)
     }
   }
@@ -266,15 +381,26 @@ export function ImportSection({
             Инженерный коридор: {parsed.constraints.corridorRings.length > 0 ? 'найден' : 'не найден'} ·
             {' '}красные линии: {parsed.constraints.redLines.length} · коммуникации: {parsed.constraints.utilityLines.length} ·
             {' '}дороги: {parsed.constraints.roadLines.length} · гидрография: {parsed.constraints.hydrography.length} ·
+            {' '}здания/сооружения: {parsed.constraints.buildingFootprints.length} · охранные зоны: {parsed.constraints.protectionZoneRings.length} ·
             {' '}высотные точки: {parsed.constraints.surveyPoints.length}
           </p>
           {parsed.constraints.rejectedSurveyPoints > 0 && (
             <p className="stat-line warn">Отброшено аномальных высотных отметок: {parsed.constraints.rejectedSurveyPoints}</p>
           )}
+          {parsed.constraints.buildingFootprints.length === 0 && (
+            <p className="notice error">Стоп-фактор финального выпуска: в DWG не распознаны замкнутые контуры зданий и сооружений. Неизвестные слои сохранены в аудите, но не используются как препятствия автоматически.</p>
+          )}
           {parsed.constraints.corridorRings.length === 0 ? (
             <p className="notice error">Стоп-фактор: в DWG нет замкнутого слоя инженерного коридора. Автоматическая трасса не строится.</p>
           ) : (
             <div className="section-actions">
+              {systemType !== 'water' && (
+                <div className="form-grid" style={{ width: '100%', marginBottom: 12 }}>
+                  <label className="field"><span className="field-label">ЛНС X, м</span><input className="input" inputMode="decimal" value={lnsX} onChange={(event) => setLnsX(event.target.value)} /></label>
+                  <label className="field"><span className="field-label">ЛНС Y, м</span><input className="input" inputMode="decimal" value={lnsY} onChange={(event) => setLnsY(event.target.value)} /></label>
+                  <label className="field"><span className="field-label">Расчётный расход ЛНС, л/с</span><input className="input" inputMode="decimal" value={lnsFlow} onChange={(event) => setLnsFlow(event.target.value)} /></label>
+                </div>
+              )}
               <button
                 type="button"
                 className={`btn btn-sm${busy ? ' is-loading' : ''}`}
@@ -284,6 +410,7 @@ export function ImportSection({
                 {busy && <span className="button-spinner" aria-hidden="true" />}
                 {busy ? 'Проверка ограничений и поиск трассы…' : 'Построить трассу по генплану и ограничениям'}
               </button>
+              {busy && systemType !== 'water' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => routeCancelRef.current?.()}>Отменить</button>}
             </div>
           )}
           <details style={{ marginTop: 16 }}>
@@ -407,6 +534,15 @@ export function ImportSection({
             {' '}участки вне коридора — {constraintReport.outsideCorridorSegments}.
           </p>
           {constraintReport.warnings.map((warning) => <p className="stat-line warn" key={warning}>{warning}</p>)}
+        </div>
+      )}
+      {routeBlockers.map((blocker) => <p className="notice error" key={blocker}>{blocker}</p>)}
+      {routingStage && (
+        <div className="export-progress" role="status" aria-live="polite">
+          <span className="export-progress-spinner" aria-hidden="true" />
+          <div className="export-progress-copy"><strong>{routingStage}</strong><span>Прошло {routeElapsedSeconds} с. Расчёт выполняется в отдельном рабочем потоке.</span></div>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => routeCancelRef.current?.()}>Отменить</button>
+          <span className="export-progress-bar" aria-hidden="true"><i /></span>
         </div>
       )}
 

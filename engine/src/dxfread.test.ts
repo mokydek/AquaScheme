@@ -116,10 +116,10 @@ describe('parseTopographyDxf', () => {
   it('reads survey points with elevations from POINT entities', () => {
     const result = parseTopographyDxf(surveyFixture([351.2, 352.8, 0]))
     expect(result.total).toBe(3)
-    expect(result.points).toHaveLength(3)
+    expect(result.points).toHaveLength(2)
     expect(result.points[0]).toEqual({ x: 0, y: 0, z: 351.2 })
     expect(result.points[1].z).toBeCloseTo(352.8)
-    expect(result.issues).toHaveLength(0)
+    expect(result.issues.some((issue) => issue.kind === 'missingZ')).toBe(true)
   })
 
   it('reports missing elevations when every point sits at zero', () => {

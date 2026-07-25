@@ -7,6 +7,7 @@ import { deleteParcel, insertParcel } from '../../shared/parcels'
 import type { ParcelRow } from '../../shared/parcels'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
+import { supabase } from '../../shared/supabase'
 
 export function ParcelsSection({
   projectId,
@@ -82,6 +83,7 @@ export function ParcelsSection({
 
   const remove = async (parcelId: string) => {
     await deleteParcel(parcelId)
+    await supabase.from('projects').update({ route_status: 'stale' }).eq('id', projectId)
     await onChanged()
   }
 

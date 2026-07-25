@@ -41,6 +41,9 @@ export function BuildingsSection({
   const [draft, setDraft] = useState<DraftBuilding>(EMPTY_DRAFT)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'info' | 'error'; text: string } | null>(null)
+  const invalidateRoute = async () => {
+    if (inflow) await supabase.from('projects').update({ route_status: 'stale' }).eq('id', projectId)
+  }
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -63,9 +66,11 @@ export function BuildingsSection({
           y: b.y,
           floors: b.floors,
           residents: b.residents,
+          design_flow_lps: inflow ? b.residents : null,
         })),
       )
       if (error) throw error
+      await invalidateRoute()
       const parts = [tr('replaced', { count: parsed.buildings.length })]
       if (parsed.issues.length > 0) {
         parts.push(tr('issues', { count: parsed.issues.length }))
@@ -86,7 +91,7 @@ export function BuildingsSection({
     setNotice(null)
     const x = Number(draft.x.replace(',', '.'))
     const y = Number(draft.y.replace(',', '.'))
-    // Inflow points have no storeys; the flow is stored in the residents column.
+    // Inflow points have no storeys; L/s is persisted in its own unit-safe field.
     const floors = inflow ? 1 : Number(draft.floors)
     const residents = Number(draft.residents.replace(',', '.'))
     const valid =
@@ -109,9 +114,11 @@ export function BuildingsSection({
         y,
         floors,
         residents: Math.round(residents),
-        specific_demand_lpd: inflow ? residents : null,
+        specific_demand_lpd: null,
+        design_flow_lps: inflow ? residents : null,
       })
       if (error) throw error
+      await invalidateRoute()
       setDraft(EMPTY_DRAFT)
       await onChanged()
     } catch {
@@ -123,6 +130,7 @@ export function BuildingsSection({
 
   const removeBuilding = async (id: string) => {
     await supabase.from('buildings').delete().eq('id', id)
+    await invalidateRoute()
     await onChanged()
   }
 
@@ -164,7 +172,7 @@ export function BuildingsSection({
                     <td className="num">{b.x}</td>
                     <td className="num">{b.y}</td>
                     {!inflow && <td className="num">{b.floors}</td>}
-                    <td className="num">{inflow ? (b.specific_demand_lpd ?? b.residents ?? '') : (b.residents ?? '')}</td>
+                    <td className="num">{inflow ? (b.design_flow_lps ?? b.specific_demand_lpd ?? b.residents ?? '') : (b.residents ?? '')}</td>
                     <td>
                       <button
                         type="button"

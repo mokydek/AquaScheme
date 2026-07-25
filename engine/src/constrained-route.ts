@@ -6,8 +6,26 @@ export interface RoutePoint { x: number; y: number }
 export interface RouteSegment { points: RoutePoint[]; layer?: string }
 export interface RouteTerminal extends RoutePoint { id: string; buildingId?: string }
 
+export type RouteGeoreference =
+  | {
+    kind: 'affine_bounds'
+    westX: number
+    eastX: number
+    northY: number
+    southY: number
+    westLon: number
+    eastLon: number
+    northLat: number
+    southLat: number
+    source: string
+  }
+  | { kind: 'local_anchor'; anchor?: { lon: number; lat: number }; source: string }
+  | { kind: 'unreferenced'; source: string }
+
 export interface RouteConstraintInput {
   corridorRings: RoutePoint[][]
+  /** Required for a real basemap overlay; it does not affect route geometry. */
+  georeference?: RouteGeoreference
   redLines?: RouteSegment[]
   utilityLines?: RouteSegment[]
   roadLines?: RouteSegment[]
@@ -15,6 +33,20 @@ export interface RouteConstraintInput {
   /** Closed water boundaries. They remain passable only as a last resort. */
   waterRings?: RoutePoint[][]
   hardObstacles?: RouteSegment[]
+  /** Closed building/structure footprints that routing may never enter. */
+  hardObstacleRings?: RoutePoint[][]
+  /** Explicit alias used by master-plan importers. */
+  buildingPolygons?: RoutePoint[][]
+  /** Land parcel boundaries retained for audit; access policy is separate. */
+  parcelRings?: RoutePoint[][]
+  /** Additional legally or technically forbidden areas. */
+  forbiddenRings?: RoutePoint[][]
+  /** Protective zones are reported and penalised, but not silently ignored. */
+  protectionZoneRings?: RoutePoint[][]
+  protectionZones?: RoutePoint[][]
+  /** Explicitly approved crossing windows for water/protected obstacles. */
+  approvedCrossingRings?: RoutePoint[][]
+  approvedCrossingZones?: RoutePoint[][]
   surveyPoints?: SurveyPoint[]
 }
 
@@ -34,6 +66,8 @@ export interface ConstrainedRouteOptions {
   turnPenalty?: number
   corridorSnapToleranceM?: number
   maxGridCells?: number
+  /** When true, a water-line crossing is impossible outside an approved window. */
+  requireApprovedWaterCrossings?: boolean
 }
 
 export interface ConstrainedRouteReport {
@@ -58,8 +92,11 @@ export interface ConstrainedRouteResult {
 
 export interface RouteBenchmark {
   referenceCoveragePct: number
+  routeCoveragePct: number
   meanDeviationM: number
   maximumDeviationM: number
+  /** Symmetric sampled Hausdorff distance, m. */
+  hausdorffDeviationM: number
   sampledPoints: number
 }
 
@@ -77,6 +114,7 @@ const DEFAULTS: Required<ConstrainedRouteOptions> = {
   turnPenalty: 0.35,
   corridorSnapToleranceM: 50,
   maxGridCells: 450_000,
+  requireApprovedWaterCrossings: false,
 }
 
 const round2 = (value: number) => Math.round(value * 100) / 100
@@ -141,8 +179,19 @@ function segmentIntersection(a: RoutePoint, b: RoutePoint, c: RoutePoint, d: Rou
   const c2 = cross(a, b, d)
   const c3 = cross(c, d, a)
   const c4 = cross(c, d, b)
-  return ((c1 > 0 && c2 < 0) || (c1 < 0 && c2 > 0))
-    && ((c3 > 0 && c4 < 0) || (c3 < 0 && c4 > 0))
+  const epsilon = 1e-9
+  const opposite = (left: number, right: number) =>
+    (left > epsilon && right < -epsilon) || (left < -epsilon && right > epsilon)
+  if (opposite(c1, c2) && opposite(c3, c4)) return true
+  const onSegment = (p: RoutePoint, q: RoutePoint, r: RoutePoint) =>
+    Math.abs(cross(p, q, r)) <= epsilon
+    && r.x >= Math.min(p.x, q.x) - epsilon
+    && r.x <= Math.max(p.x, q.x) + epsilon
+    && r.y >= Math.min(p.y, q.y) - epsilon
+    && r.y <= Math.max(p.y, q.y) + epsilon
+  // Touching a protected line at a grid vertex is still a crossing candidate;
+  // otherwise A* can bypass an approval rule by stepping exactly onto it.
+  return onSegment(a, b, c) || onSegment(a, b, d) || onSegment(c, d, a) || onSegment(c, d, b)
 }
 
 function countCrossings(path: RoutePoint[], segments: RouteSegment[]): number {
@@ -180,27 +229,45 @@ export function compareRouteToReference(
   const routeSegments = paths.flatMap((path) =>
     path.points.slice(1).map((point, index) => [path.points[index], point] as const),
   )
-  const samples: RoutePoint[] = []
-  for (let index = 1; index < reference.length; index++) {
-    const a = reference[index - 1]
-    const b = reference[index]
-    const count = Math.max(1, Math.ceil(distance(a, b) / sampleStepM))
-    for (let step = 0; step < count; step++) {
-      const ratio = step / count
-      samples.push({ x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio })
+  const sampleLine = (line: RoutePoint[]): RoutePoint[] => {
+    const result: RoutePoint[] = []
+    for (let index = 1; index < line.length; index++) {
+      const a = line[index - 1]
+      const b = line[index]
+      const count = Math.max(1, Math.ceil(distance(a, b) / sampleStepM))
+      for (let step = 0; step < count; step++) {
+        const ratio = step / count
+        result.push({ x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio })
+      }
     }
+    if (line.length > 0) result.push(line[line.length - 1])
+    return result
   }
-  if (reference.length > 0) samples.push(reference[reference.length - 1])
+  const samples = sampleLine(reference)
+  const routeSamples = paths.flatMap((path) => sampleLine(path.points))
+  const referenceSegments = reference.slice(1).map((point, index) => [reference[index], point] as const)
   if (samples.length === 0 || routeSegments.length === 0) {
-    return { referenceCoveragePct: 0, meanDeviationM: Number.POSITIVE_INFINITY, maximumDeviationM: Number.POSITIVE_INFINITY, sampledPoints: samples.length }
+    return {
+      referenceCoveragePct: 0,
+      routeCoveragePct: 0,
+      meanDeviationM: Number.POSITIVE_INFINITY,
+      maximumDeviationM: Number.POSITIVE_INFINITY,
+      hausdorffDeviationM: Number.POSITIVE_INFINITY,
+      sampledPoints: samples.length,
+    }
   }
   const deviations = samples.map((point) =>
     Math.min(...routeSegments.map(([a, b]) => pointSegmentDistance(point, a, b))),
   )
+  const reverseDeviations = referenceSegments.length === 0
+    ? [Number.POSITIVE_INFINITY]
+    : routeSamples.map((point) => Math.min(...referenceSegments.map(([a, b]) => pointSegmentDistance(point, a, b))))
   return {
     referenceCoveragePct: round2(100 * deviations.filter((value) => value <= toleranceM).length / deviations.length),
+    routeCoveragePct: round2(100 * reverseDeviations.filter((value) => value <= toleranceM).length / reverseDeviations.length),
     meanDeviationM: round2(deviations.reduce((sum, value) => sum + value, 0) / deviations.length),
     maximumDeviationM: round2(Math.max(...deviations)),
+    hausdorffDeviationM: round2(Math.max(Math.max(...deviations), Math.max(...reverseDeviations))),
     sampledPoints: samples.length,
   }
 }
@@ -251,6 +318,10 @@ export function traceConstrainedNetwork(
   const water = constraints.waterLines ?? []
   const waterRings = (constraints.waterRings ?? []).filter((ring) => ring.length >= 3)
   const hard = constraints.hardObstacles ?? []
+  const hardRings = [...(constraints.hardObstacleRings ?? []), ...(constraints.buildingPolygons ?? []), ...(constraints.forbiddenRings ?? [])]
+    .filter((ring) => ring.length >= 3)
+  const protectionRings = [...(constraints.protectionZoneRings ?? []), ...(constraints.protectionZones ?? [])].filter((ring) => ring.length >= 3)
+  const approvedCrossings = [...(constraints.approvedCrossingRings ?? []), ...(constraints.approvedCrossingZones ?? [])].filter((ring) => ring.length >= 3)
   const survey = constraints.surveyPoints ?? []
   const cells = new Map<string, GridCell>()
   const key = (col: number, row: number) => `${col}:${row}`
@@ -275,17 +346,59 @@ export function traceConstrainedNetwork(
     const samples = Math.max(1, Math.ceil(distance(a, b) / (opt.gridSizeM * 0.5)))
     for (let sample = 1; sample < samples; sample++) {
       const ratio = sample / samples
-      if (!isNavigable({ x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio })) return false
+      const point = { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio }
+      if (!isNavigable(point)) return false
+      if (hard.length > 0 && distanceToSegments(point, hard) < opt.gridSizeM * 0.55) return false
+      if (hardRings.some((ring) => pointInRing(point, ring))) return false
     }
     return true
   }
   const simplifyNavigablePath = (points: RoutePoint[]) => {
     if (points.length < 3) return points
+    const crossingGroups = [utilities, redLines, roads, water]
+    const crossingPrefixes = crossingGroups.map((segments) => {
+      const prefix = [0]
+      for (let index = 1; index < points.length; index++) {
+        prefix[index] = prefix[index - 1] + edgeCrossings(points[index - 1], points[index], segments)
+      }
+      return prefix
+    })
+    const utilityClearances = utilities.length > 0
+      ? points.map((point) => distanceToSegments(point, utilities))
+      : points.map(() => Number.POSITIVE_INFINITY)
+    const touchesWater = points.map((point) => waterRings.some((ring) => pointInRing(point, ring)))
     const result = [points[0]]
     let anchor = 0
     while (anchor < points.length - 1) {
       let furthest = anchor + 1
-      while (furthest + 1 < points.length && segmentIsNavigable(points[anchor], points[furthest + 1])) furthest++
+      let originalUtilityClearance = Math.min(utilityClearances[anchor], utilityClearances[furthest])
+      let originalTouchesWater = touchesWater[anchor] || touchesWater[furthest]
+      while (furthest + 1 < points.length) {
+        const candidateIndex = furthest + 1
+        const candidate = points[candidateIndex]
+        if (!segmentIsNavigable(points[anchor], candidate)) break
+        const doesNotAddCrossings = crossingGroups.every((segments, groupIndex) =>
+          edgeCrossings(points[anchor], candidate, segments)
+            <= crossingPrefixes[groupIndex][candidateIndex] - crossingPrefixes[groupIndex][anchor],
+        )
+        if (!doesNotAddCrossings) break
+        const nextOriginalUtilityClearance = Math.min(originalUtilityClearance, utilityClearances[candidateIndex])
+        const candidateSampleCount = Math.max(2, Math.ceil(distance(points[anchor], candidate) / opt.gridSizeM))
+        const candidateSamples = Array.from({ length: candidateSampleCount }, (_, index) => {
+          const ratio = index / (candidateSampleCount - 1)
+          return { x: points[anchor].x + (candidate.x - points[anchor].x) * ratio, y: points[anchor].y + (candidate.y - points[anchor].y) * ratio }
+        })
+        const candidateUtilityClearance = utilities.length > 0
+          ? Math.min(...candidateSamples.map((point) => distanceToSegments(point, utilities)))
+          : Number.POSITIVE_INFINITY
+        if (candidateUtilityClearance + 1e-6 < Math.min(nextOriginalUtilityClearance, opt.utilityClearanceM)) break
+        const nextOriginalTouchesWater = originalTouchesWater || touchesWater[candidateIndex]
+        const candidateTouchesWater = candidateSamples.some((point) => waterRings.some((ring) => pointInRing(point, ring)))
+        if (candidateTouchesWater && !nextOriginalTouchesWater) break
+        originalUtilityClearance = nextOriginalUtilityClearance
+        originalTouchesWater = nextOriginalTouchesWater
+        furthest++
+      }
       result.push(points[furthest])
       anchor = furthest
     }
@@ -296,6 +409,7 @@ export function traceConstrainedNetwork(
       const point = { x: minX + col * opt.gridSizeM, y: minY + row * opt.gridSizeM }
       if (!isNavigable(point)) continue
       if (hard.length > 0 && distanceToSegments(point, hard) < opt.gridSizeM * 0.55) continue
+      if (hardRings.some((ring) => pointInRing(point, ring))) continue
       cells.set(key(col, row), {
         col, row, point,
         boundaryDistance: distanceToRings(point, rings),
@@ -375,6 +489,13 @@ export function traceConstrainedNetwork(
           + edgeCrossings(cell.point, next.point, redLines) * opt.redLineCrossingPenalty
           + edgeCrossings(cell.point, next.point, roads) * opt.roadCrossingPenalty
           + edgeCrossings(cell.point, next.point, water) * opt.waterCrossingPenalty
+        const midpoint = { x: (cell.point.x + next.point.x) / 2, y: (cell.point.y + next.point.y) / 2 }
+        const inApprovedCrossing = approvedCrossings.some((ring) => pointInRing(midpoint, ring))
+        const waterEdgeCrossings = edgeCrossings(cell.point, next.point, water)
+        if (opt.requireApprovedWaterCrossings && waterEdgeCrossings > 0 && !inApprovedCrossing) continue
+        const protectionCost = protectionRings.some((ring) => pointInRing(next.point, ring))
+          ? opt.redLineCrossingPenalty
+          : 0
         const waterInteriorCost = next.insideWater ? opt.waterInteriorPenalty : 0
         // Search direction is terminal -> outlet/tree. A rising surface in
         // that direction normally increases excavation depth for a gravity
@@ -383,7 +504,7 @@ export function traceConstrainedNetwork(
         const uphillCost = Math.max(0, next.surfaceElevation - cell.surfaceElevation) * opt.uphillPenaltyPerM
         const turnCost = heading.get(current) && heading.get(current) !== direction ? opt.turnPenalty : 0
         const tentative = (gScore.get(current) ?? 0) + step + boundaryCost + utilityCost
-          + crossingCost + waterInteriorCost + uphillCost + turnCost
+          + crossingCost + protectionCost + waterInteriorCost + uphillCost + turnCost
         if (tentative >= (gScore.get(nextKey) ?? Number.POSITIVE_INFINITY)) continue
         cameFrom.set(nextKey, current)
         gScore.set(nextKey, tentative)
@@ -479,19 +600,26 @@ export function traceConstrainedNetwork(
       for (let index = 1; index < engineeringPoints.length; index++) {
         const from = getNode(engineeringPoints[index - 1])
         const to = getNode(engineeringPoints[index])
-        pipes.push({ id: `P${++pipeSeq}`, kind: 'main', fromNode: from, toNode: to, lengthM: round2(distance(engineeringPoints[index - 1], engineeringPoints[index])) })
+        pipes.push({
+          id: `P${++pipeSeq}`,
+          kind: 'main',
+          fromNode: from,
+          toNode: to,
+          lengthM: round2(distance(engineeringPoints[index - 1], engineeringPoints[index])),
+          alignment: [engineeringPoints[index - 1], engineeringPoints[index]],
+        })
       }
     }
   }
   const sourceJunction = getNode(sourceCell.point)
-  pipes.push({ id: `P${++pipeSeq}`, kind: 'supply', fromNode: sourceJunction, toNode: 'SRC', lengthM: round2(distance(sourceCell.point, source)) })
+  pipes.push({ id: `P${++pipeSeq}`, kind: 'supply', fromNode: sourceJunction, toNode: 'SRC', lengthM: round2(distance(sourceCell.point, source)), alignment: [sourceCell.point, source] })
   for (const terminal of terminals) {
     const terminalCell = terminalCellById.get(terminal.id)
     if (!terminalCell) continue
     const firstGridPoint = pointByKey.get(terminalCell) ?? sourceCell.point
     const buildingNodeId = `B${nodes.filter((node) => node.kind === 'building').length + 1}`
     nodes.push({ id: buildingNodeId, kind: 'building', x: round2(terminal.x), y: round2(terminal.y), groundElevation: elevation(terminal), buildingId: terminal.buildingId ?? terminal.id })
-    pipes.push({ id: `P${++pipeSeq}`, kind: 'service', fromNode: buildingNodeId, toNode: getNode(firstGridPoint), lengthM: round2(distance(terminal, firstGridPoint)) })
+    pipes.push({ id: `P${++pipeSeq}`, kind: 'service', fromNode: buildingNodeId, toNode: getNode(firstGridPoint), lengthM: round2(distance(terminal, firstGridPoint)), alignment: [terminal, firstGridPoint] })
   }
 
   const redLineCrossings = paths.reduce((sum, path) => sum + countCrossings(path.points, redLines), 0)

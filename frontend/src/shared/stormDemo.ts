@@ -1,13 +1,14 @@
-import { NORMATIVE_DEFAULTS, traceConstrainedNetwork } from '@aquascheme/engine'
-import type { CatalogItem, TracedNetwork } from '@aquascheme/engine'
+import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import type { CatalogItem } from '@aquascheme/engine'
 import { supabase } from './supabase'
-import { replaceNetwork } from './network'
+import { replaceNetwork, routeInputHash } from './network'
 import { saveDataset } from './datasets'
 import { insertParcel } from './parcels'
 import { replaceGeology } from './geology'
 import { deleteCatalog, fetchCatalogs, saveCatalog, setActiveCatalog } from './catalog'
 import { BASIS_ITEMS } from '../app/project/BasisSection'
 import realProject from './realProjectData.json'
+import { runEngineeringRouteInWorker } from './routeWorker'
 
 export const REAL_STORM_PROJECT_NAME = realProject.project.name
 
@@ -99,23 +100,27 @@ function nearestElevation(x: number, y: number): number {
   return elevation
 }
 
-function realNetwork(buildingIdByLabel: Map<string, string>): TracedNetwork {
-  const result = traceConstrainedNetwork(
-    realProject.inflows.map((inflow, index) => ({
+function realRouteInput(buildingIdByLabel: Map<string, string>) {
+  const surveyPoints = realProject.surveyPoints.filter((point) => point.z >= 300 && point.z <= 400)
+  return {
+    facilities: realProject.inflows.map((inflow, index) => ({
       id: inflow.label,
+      label: inflow.label,
       buildingId: buildingIdByLabel.get(inflow.label) ?? `ОС-${index + 1}`,
       x: inflow.x,
       y: inflow.y,
+      designFlowLps: inflow.flowLps,
     })),
-    realProject.outlet,
-    {
+    lns: { ...realProject.pumpingStation, id: 'LNS' },
+    outlet: { ...realProject.outlet, id: 'OUTLET' },
+    constraints: {
       corridorRings: [realProject.corridor],
-      surveyPoints: realProject.surveyPoints.filter((point) => point.z >= 300 && point.z <= 400),
+      surveyPoints,
     },
-    { gridSizeM: 15 },
-  )
-  if (!result.report.ok) throw new Error(result.report.warnings.join(' '))
-  return result.network
+    options: { gridSizeM: 15 },
+    sourceSurveyPointCount: realProject.sourceSurveyPointCount,
+    pumpHeadM: null,
+  }
 }
 
 const REAL_CATALOG: CatalogItem[] = [
@@ -134,7 +139,10 @@ export interface StormDemoResult {
   failures: string[]
 }
 
-export async function seedStormProject(projectId: string): Promise<StormDemoResult> {
+export async function seedStormProject(projectId: string, callbacks?: {
+  onRouteProgress?: (stage: string) => void
+  onRouteCancelReady?: (cancel: (() => void) | null) => void
+}): Promise<StormDemoResult> {
   const failures: string[] = []
   let seeded = 0
   const step = async (name: string, fn: () => Promise<void>) => {
@@ -146,8 +154,8 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
     }
   }
 
-  // Real drawing points. The DWG contains 3193 points on layer «точки»;
-  // a deterministic 1:5 sample is bundled to keep the web payload reasonable.
+  // The public demo uses the already-anonymised survey sample bundled with the
+  // repository. A real project receives the complete surface through import.
   await step('topography', () => {
     const points = realProject.surveyPoints.filter((point) => point.z >= 300 && point.z <= 400)
     const z = points.map((point) => point.z)
@@ -179,12 +187,20 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
     hazards: ['high_groundwater'],
   }))
 
-  // Inflow sources. The route is calculated from the DWG engineering corridor,
-  // not copied from the accepted album. Exact decimal design flow is stored in
-  // specific_demand_lpd because the legacy residents column is integer.
+  await step('route constraints', () => saveDataset(projectId, 'route_constraints', {
+    corridorRings: [realProject.corridor],
+    hardObstacleRings: [],
+    lns: realProject.pumpingStation,
+    completeness: 'public-demo-sample',
+  }, {
+    warning: 'Демо содержит обезличенный пример коридора и разреженную поверхность. Для инженерного результата загрузите полный DWG/DXF; система сохранит аудит всех слоёв и покажет недостающие ограничения.',
+    sourceSurveyPointCount: realProject.sourceSurveyPointCount,
+  }))
+
+  // Inflow facilities. L/s has its own field; it is not daily consumption.
   await step('sources', async () => {
     await supabase.from('buildings').delete().eq('project_id', projectId)
-    const { data: inserted, error } = await supabase
+    const { error } = await supabase
       .from('buildings')
       .insert(realProject.inflows.map((source) => ({
         project_id: projectId,
@@ -193,12 +209,10 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
         y: source.y,
         floors: 1,
         residents: Math.round(source.flowLps),
-        specific_demand_lpd: source.flowLps,
+        specific_demand_lpd: null,
+        design_flow_lps: source.flowLps,
       })))
-      .select('id,label')
     if (error) throw error
-    const idByLabel = new Map((inserted ?? []).map((r: { id: string; label: string }) => [r.label, r.id]))
-    await replaceNetwork(projectId, realNetwork(idByLabel))
   })
 
   // Geology is a report-level summary. The supplied XLSX is only a template,
@@ -245,6 +259,44 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
 
   // Permitting checklist + exact schedule and project card.
   await step('basis', () => seedBasisDemo(projectId))
+
+  // Recalculate last, after every route-affecting dataset has invalidated the
+  // previous result. The LNS splits gravity and pressure hydraulics explicitly.
+  await step('engineering route', async () => {
+    const { data, error } = await supabase
+      .from('buildings')
+      .select('id,label')
+      .eq('project_id', projectId)
+    if (error) throw error
+    const idByLabel = new Map((data ?? []).map((row: { id: string; label: string }) => [row.label, row.id]))
+    const running = runEngineeringRouteInWorker(realRouteInput(idByLabel), callbacks?.onRouteProgress)
+    callbacks?.onRouteCancelReady?.(running.cancel)
+    const result = await running.promise.finally(() => callbacks?.onRouteCancelReady?.(null))
+    if (result.network.nodes.length === 0) throw new Error(result.blockers.map((item) => item.message).join(' '))
+    const inputHash = await routeInputHash({
+      inflows: realProject.inflows,
+      lns: realProject.pumpingStation,
+      outlet: realProject.outlet,
+      corridor: realProject.corridor,
+      survey: realProject.surveyPoints,
+    })
+    await replaceNetwork(projectId, result.network, {
+      status: result.status,
+      algorithmVersion: result.algorithmVersion,
+      inputHash,
+      warnings: result.warnings,
+      blockers: result.blockers,
+      report: {
+        ...result.reports,
+        surveyCoverage: result.surveyCoverage,
+        quality: {
+          totalLengthM: result.network.totalLengthM,
+          routedTerminals: result.reports.gravity.routedTerminals + result.reports.pressure.routedTerminals,
+          outsideCorridorSegments: result.reports.gravity.outsideCorridorSegments + result.reports.pressure.outsideCorridorSegments,
+        },
+      },
+    })
+  })
 
   return { seededSections: seeded, failures }
 }

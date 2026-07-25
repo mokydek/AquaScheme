@@ -98,6 +98,16 @@ describe('gravity segment design (СН РК 4.01-03-2013*)', () => {
       expect(d.issues.some((i) => i.code === 'overMaxVelocity')).toBe(true)
     }
   })
+
+  it('never invents a diameter when the active catalogue has no usable position', () => {
+    const empty = designGravitySegment(20, { system: 'storm', level: 'street', allowedDiametersMm: [] })
+    expect(empty.diameterMm).toBe(0)
+    expect(empty.issues.some((issue) => issue.code === 'noSuitableDiameter')).toBe(true)
+
+    const undersized = designGravitySegment(20, { system: 'storm', level: 'street', allowedDiametersMm: [110, 160, 200] })
+    expect(undersized.diameterMm).toBe(110)
+    expect(undersized.issues.some((issue) => issue.code === 'noSuitableDiameter')).toBe(true)
+  })
 })
 
 describe('network flow accumulation', () => {

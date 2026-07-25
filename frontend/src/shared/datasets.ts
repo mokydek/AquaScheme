@@ -11,6 +11,8 @@ export type DatasetKind =
   | 'region'
   | 'drainage'
   | 'basis'
+  | 'route_constraints'
+  | 'route_audit'
 
 export interface DatasetRow {
   id: string
@@ -30,6 +32,8 @@ export interface BuildingRow {
   floors: number
   residents: number | null
   specific_demand_lpd?: number | null
+  /** Explicit engineering inflow. Never store L/s in a consumption-per-day field. */
+  design_flow_lps?: number | null
 }
 
 /** The 'source' dataset content (water source or sewer outlet point). */
@@ -67,5 +71,9 @@ export async function saveDataset(
       .from('datasets')
       .insert({ project_id: projectId, kind, content, meta, file_name: fileName })
     if (error) throw error
+  }
+  if (['topography', 'buildings', 'source', 'geology', 'basis', 'route_constraints'].includes(kind)) {
+    // Best effort for installations that have not applied migration 0012 yet.
+    await supabase.from('projects').update({ route_status: 'stale' }).eq('id', projectId)
   }
 }

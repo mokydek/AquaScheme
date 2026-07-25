@@ -13,12 +13,14 @@ export function AlbumSheetSet({
   onPdf,
   onZip,
   error,
+  disabled = false,
 }: {
   pdfBusy: boolean
   zipBusy: boolean
   onPdf: () => void
   onZip: () => void
   error?: string | null
+  disabled?: boolean
 }) {
   const busy = pdfBusy || zipBusy
   return (
@@ -30,11 +32,11 @@ export function AlbumSheetSet({
           <p>Структура зафиксирована по исходному альбому, а значения на листах формируются из текущего расчёта проекта.</p>
         </div>
         <div className="album-sheet-set-actions">
-          <button type="button" className="btn btn-sm" disabled={busy} onClick={onPdf}>
+          <button type="button" className="btn btn-sm" disabled={busy || disabled} onClick={onPdf}>
             {pdfBusy && <span className="button-spinner" aria-hidden="true" />}
             {pdfBusy ? 'Формируется PDF' : 'Скачать альбом PDF'}
           </button>
-          <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={onZip}>
+          <button type="button" className="btn btn-sm btn-ghost" disabled={busy || disabled} onClick={onZip}>
             {zipBusy && <span className="button-spinner" aria-hidden="true" />}
             {zipBusy ? 'Собирается ZIP' : 'Скачать рабочие DXF/XLSX'}
           </button>
@@ -51,6 +53,7 @@ export function AlbumSheetSet({
         </div>
       )}
       {error && <p className="stat-line warn" role="alert">{error}</p>}
+      {disabled && <p className="notice error">Финальный комплект заблокирован до устранения стоп-факторов трассы.</p>}
       <div className="album-sheet-groups">
         {PROJECT_ALBUM_GROUPS.map((group) => (
           <article key={group.range}>

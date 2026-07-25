@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import { NORMATIVE_DEFAULTS, ROUTE_ALGORITHM_VERSION, resolveRouteFreshness } from '@aquascheme/engine'
 import type { SurveyPoint } from '@aquascheme/engine'
 import { supabase } from '../shared/supabase'
 import type { BuildingRow, DatasetKind, DatasetRow, SourceData } from '../shared/datasets'
@@ -40,7 +40,6 @@ import type { ViolationPipe } from '@aquascheme/engine'
 import { autoAssignParcels, fetchParcels, parcelPolygons } from '../shared/parcels'
 import type { ParcelRow } from '../shared/parcels'
 import type { SizingResult } from '@aquascheme/engine/sizing'
-import { REAL_STORM_PROJECT_NAME, seedStormProject } from '../shared/stormDemo'
 
 interface ProjectInfo {
   id: string
@@ -49,6 +48,20 @@ interface ProjectInfo {
   system_type?: string | null
   active_catalog_id?: string | null
   water_source_project_id?: string | null
+  route_status?: 'stale' | 'blocked' | 'preliminary' | 'calculated' | null
+  route_algorithm_version?: string | null
+  route_input_hash?: string | null
+  route_warnings?: string[] | null
+  route_blockers?: Array<{ code?: string; message?: string; scope?: string }> | null
+  route_report?: RouteStateReport | null
+  route_calculated_at?: string | null
+  network_revision?: number | null
+}
+
+interface RouteStateReport {
+  gravity?: { redLineCrossings?: number; utilityCrossings?: number; roadCrossings?: number; waterCrossings?: number; outsideCorridorSegments?: number }
+  pressure?: { redLineCrossings?: number; utilityCrossings?: number; roadCrossings?: number; waterCrossings?: number; outsideCorridorSegments?: number }
+  quality?: { totalLengthM?: number; routedTerminals?: number; outsideCorridorSegments?: number }
 }
 
 const SYSTEM_MARKS: Record<string, string> = { water: 'В1', sewer: 'К1', storm: 'К2' }
@@ -66,6 +79,9 @@ export function ProjectPage() {
   const [demoBusy, setDemoBusy] = useState(false)
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
   const [demoFailures, setDemoFailures] = useState<string[]>([])
+  const [demoStage, setDemoStage] = useState<string | null>(null)
+  const [demoCanCancel, setDemoCanCancel] = useState(false)
+  const demoCancelRef = useRef<(() => void) | null>(null)
   const [pipelineBusy, setPipelineBusy] = useState(false)
   const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
   const [parcels, setParcels] = useState<ParcelRow[]>([])
@@ -81,17 +97,17 @@ export function ProjectPage() {
       supabase.from('datasets').select('*').eq('project_id', id),
       supabase
         .from('buildings')
-        .select('id,label,x,y,floors,residents,specific_demand_lpd')
+        .select('id,label,x,y,floors,residents,specific_demand_lpd,design_flow_lps')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
       supabase
         .from('nodes')
-        .select('id,kind,label,x,y,ground_elevation,building_id,meta')
+        .select('id,kind,label,x,y,ground_elevation,building_id,design_flow_lps,invert_elevation_m,system_type,source_entity,data_source,meta')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
       supabase
         .from('pipes')
-        .select('id,from_node,to_node,length_m,diameter_mm,material,meta')
+        .select('id,from_node,to_node,length_m,diameter_mm,material,engineering_kind,system_type,parallel_count,alignment,source_layer,source_entity,flow_direction,inner_diameter_mm,sdr,sn,pn,roughness_mm,slope,start_invert_m,end_invert_m,cover_m,design_flow_lps,velocity_mps,filling_ratio,pressure_m,calculation_status,data_source,meta')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
       supabase
@@ -157,12 +173,19 @@ export function ProjectPage() {
     setDemoNotice(null)
     setDemoFailures([])
     try {
+      const { REAL_STORM_PROJECT_NAME, seedStormProject } = await import('../shared/stormDemo')
       const update = await supabase
         .from('projects')
         .update({ name: REAL_STORM_PROJECT_NAME, system_type: 'storm', work_type: 'new' })
         .eq('id', id)
       if (update.error) throw update.error
-      const result = await seedStormProject(id)
+      const result = await seedStormProject(id, {
+        onRouteProgress: setDemoStage,
+        onRouteCancelReady: (cancel) => {
+          demoCancelRef.current = cancel
+          setDemoCanCancel(Boolean(cancel))
+        },
+      })
       await load()
       if (result.failures.length > 0) {
         setDemoFailures(result.failures)
@@ -175,6 +198,9 @@ export function ProjectPage() {
       setDemoNotice('demoError')
       return false
     } finally {
+      demoCancelRef.current = null
+      setDemoCanCancel(false)
+      setDemoStage(null)
       setDemoBusy(false)
     }
   }
@@ -284,6 +310,14 @@ export function ProjectPage() {
   const isWater = systemType === 'water'
   const isSewer = systemType === 'sewer'
   const isStorm = systemType === 'storm'
+  const effectiveRouteStatus = (isSewer || isStorm)
+    ? resolveRouteFreshness({
+      storedStatus: project?.route_status,
+      storedAlgorithmVersion: project?.route_algorithm_version,
+      currentAlgorithmVersion: ROUTE_ALGORITHM_VERSION,
+      storedInputHash: project?.route_input_hash,
+    }).status
+    : project?.route_status ?? 'stale'
   const isReconstruction = workType === 'reconstruction'
 
   if (state === 'loading') return null
@@ -355,9 +389,10 @@ export function ProjectPage() {
           <div className="export-progress" role="status" aria-live="polite">
             <span className="export-progress-spinner" aria-hidden="true" />
             <div className="export-progress-copy">
-              <strong>Загружаются данные проекта 2024-51-НК</strong>
-              <span>Координаты и отметки DWG, трасса, ОС, геология, коридор и спецификация</span>
+              <strong>{demoStage ?? 'Загружаются данные проекта 2024-51-НК'}</strong>
+              <span>Полный набор отметок DWG, ограничения, ОС, ЛНС, геология, каталог и расчётная трасса</span>
             </div>
+            {demoCanCancel && <button type="button" className="btn btn-ghost btn-sm" onClick={() => demoCancelRef.current?.()}>Отменить расчёт</button>}
             <span className="export-progress-bar" aria-hidden="true"><i /></span>
           </div>
         )}
@@ -398,15 +433,7 @@ export function ProjectPage() {
                 points={topoPoints}
                 existingNodes={nodes.length}
                 existingPipes={pipes}
-                onChanged={load}
-              />
-              <TraceSection
-                projectId={project.id}
-                buildings={buildings}
-                source={sourceData}
-                points={topoPoints}
-                nodes={nodes}
-                pipes={pipes}
+                systemType={isStorm ? 'storm' : 'sewer'}
                 onChanged={load}
               />
             </>
@@ -432,6 +459,8 @@ export function ProjectPage() {
                 geologyDataset={datasets.geology}
                 basisDataset={datasets.basis}
                 parcels={parcels}
+                activeCatalogId={project.active_catalog_id ?? null}
+                routeStatus={effectiveRouteStatus}
                 onChanged={load}
               />
             </>
@@ -448,18 +477,37 @@ export function ProjectPage() {
               geologyDataset={datasets.geology}
               basisDataset={datasets.basis}
               parcels={parcels}
+              activeCatalogId={project.active_catalog_id ?? null}
+              routeStatus={effectiveRouteStatus}
               onChanged={load}
             />
           )}
           {(isSewer || isStorm) && (
             <SituationSchemeSection
+              projectId={project.id}
               systemType={isStorm ? 'storm' : 'sewer'}
               buildings={buildings}
               nodes={nodes}
               pipes={pipes}
               geologyDataset={datasets.geology}
               basisDataset={datasets.basis}
+              topographyDataset={datasets.topography}
+              constraintsDataset={datasets.route_constraints}
+              routeAuditDataset={datasets.route_audit}
+              sourceDataset={datasets.source}
               parcels={parcels}
+              activeCatalogId={project.active_catalog_id ?? null}
+              routeState={{
+                status: effectiveRouteStatus,
+                algorithmVersion: project.route_algorithm_version ?? null,
+                inputHash: project.route_input_hash ?? null,
+                calculatedAt: project.route_calculated_at ?? null,
+                blockers: project.route_blockers ?? [],
+                warnings: project.route_warnings ?? [],
+                revision: project.network_revision ?? 0,
+                report: project.route_report ?? undefined,
+              }}
+              onChanged={load}
             />
           )}
           {isWater && (
@@ -471,6 +519,7 @@ export function ProjectPage() {
                 points={topoPoints}
                 existingNodes={nodes.length}
                 existingPipes={pipes}
+                systemType="water"
                 onChanged={load}
               />
               <TraceSection

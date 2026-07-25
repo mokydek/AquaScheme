@@ -42,17 +42,77 @@ export interface TraceOptions {
   crossThresholdM?: number
 }
 
-/** 'junction' nodes and 'main' pipes come from imported routes (importnet). */
-export type NetworkNodeKind = 'source' | 'ring' | 'cross' | 'junction' | 'building'
-export type NetworkPipeKind = 'supply' | 'ring' | 'cross' | 'main' | 'service'
+/**
+ * Persisted engineering node types.
+ *
+ * The first five values are retained for water-network compatibility.  Sewer
+ * and storm projects must use the explicit engineering values: in particular
+ * a facility inflow, an LNS and an outlet are not interchangeable generic
+ * "junctions".
+ */
+export type NetworkNodeKind =
+  | 'source'
+  | 'ring'
+  | 'cross'
+  | 'junction'
+  | 'building'
+  | 'facility_inflow'
+  | 'lns_inlet'
+  | 'lns_outlet'
+  | 'outlet'
+  | 'manhole'
+  | 'terrain_break'
+  | 'treatment_facility'
+  | 'pumping_station'
+  | 'gravity_inlet'
+  | 'pressure_outlet'
+  | 'chamber'
+  | 'outfall'
+  | 'crossing'
+  | 'transition'
+  | 'inspection_node'
+
+/** Explicit hydraulic purpose of a persisted pipe section. */
+export type NetworkPipeKind =
+  | 'supply'
+  | 'ring'
+  | 'cross'
+  | 'main'
+  | 'service'
+  | 'gravity_collector'
+  | 'inlet'
+  | 'pressure_main'
+  | 'discharge'
+  | 'casing'
+  | 'existing'
+  | 'tentative'
+  | 'gravity_main'
+  | 'parallel_pressure_main'
+  | 'facility_connection'
+  | 'crossing_section'
+  | 'temporary_or_optional'
+
+export type HydraulicSystemType = 'gravity' | 'pressure' | 'non_hydraulic'
+
+export interface NetworkCoordinate {
+  x: number
+  y: number
+}
 
 export interface NetworkNode {
   id: string
   kind: NetworkNodeKind
+  label?: string
   x: number
   y: number
   groundElevation: number
   buildingId?: string
+  /** Design inflow entering the system at this node, L/s. */
+  designFlowLps?: number
+  invertElevationM?: number
+  systemType?: HydraulicSystemType
+  sourceEntity?: string
+  dataSource?: string
 }
 
 export interface NetworkPipe {
@@ -61,6 +121,30 @@ export interface NetworkPipe {
   fromNode: string
   toNode: string
   lengthM: number
+  diameterMm?: number
+  material?: string
+  parallelCount?: number
+  systemType?: HydraulicSystemType
+  /** Full plan alignment. Straight endpoints are used when omitted. */
+  alignment?: NetworkCoordinate[]
+  sourceLayer?: string
+  sourceEntity?: string
+  flowDirection?: 'from_to' | 'to_from' | 'unknown'
+  innerDiameterMm?: number
+  sdr?: number
+  sn?: number
+  pn?: number
+  roughnessMm?: number
+  slope?: number
+  startInvertM?: number
+  endInvertM?: number
+  coverM?: number
+  designFlowLps?: number
+  velocityMs?: number
+  fillingRatio?: number
+  pressureM?: number
+  calculationStatus?: 'unverified' | 'preliminary' | 'calculated' | 'blocked'
+  dataSource?: string
 }
 
 export interface TracedNetwork {
@@ -108,10 +192,19 @@ function nearest<T extends Point>(candidates: T[], target: Point): T {
  */
 export function interpolateElevation(points: SurveyPoint[], x: number, y: number, k = 4): number {
   if (points.length === 0) return 0
-  const ranked = points
-    .map((p) => ({ p, d2: (p.x - x) ** 2 + (p.y - y) ** 2 }))
-    .sort((a, b) => a.d2 - b.d2)
-    .slice(0, Math.max(1, k))
+  const limit = Math.max(1, k)
+  const ranked: Array<{ p: SurveyPoint; d2: number }> = []
+  // Keep only the k nearest candidates while scanning. Sorting all 3–5k
+  // survey points for every routing grid cell made a full DWG calculation
+  // take more than a minute; this produces the same stable nearest set in
+  // O(n·k), with k=4 by default.
+  for (const p of points) {
+    const candidate = { p, d2: (p.x - x) ** 2 + (p.y - y) ** 2 }
+    if (ranked.length === limit && candidate.d2 >= ranked[ranked.length - 1].d2) continue
+    const insertion = ranked.findIndex((item) => item.d2 > candidate.d2)
+    ranked.splice(insertion < 0 ? ranked.length : insertion, 0, candidate)
+    if (ranked.length > limit) ranked.pop()
+  }
   if (ranked[0].d2 < 1e-6) return ranked[0].p.z
   let num = 0
   let den = 0

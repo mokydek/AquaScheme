@@ -80,7 +80,7 @@ export async function saveCatalog(
 }
 
 export async function setActiveCatalog(projectId: string, catalogId: string | null): Promise<void> {
-  await supabase.from('projects').update({ active_catalog_id: catalogId }).eq('id', projectId)
+  await supabase.from('projects').update({ active_catalog_id: catalogId, route_status: 'stale' }).eq('id', projectId)
 }
 
 export async function deleteCatalog(projectId: string, catalogId: string): Promise<void> {
@@ -101,4 +101,17 @@ export async function loadActiveCatalogSizes(activeCatalogId: string | null): Pr
     .eq('catalog_id', activeCatalogId)
   if (error || !data) return null
   return toPipeSizeOptions((data as CatalogItemRow[]).map(rowToItem))
+}
+
+/** Nominal gravity-pipe diameters; DN is sufficient for free-surface catalog selection. */
+export async function loadActiveCatalogNominalDiameters(activeCatalogId: string | null): Promise<number[] | null> {
+  if (!activeCatalogId) return null
+  const { data, error } = await supabase
+    .from('catalog_items')
+    .select('dn')
+    .eq('catalog_id', activeCatalogId)
+    .eq('item_type', 'pipe')
+  if (error || !data) return []
+  return [...new Set(data.flatMap((row: { dn: number | null }) => row.dn && row.dn > 0 ? [row.dn] : []))]
+    .sort((a, b) => a - b)
 }

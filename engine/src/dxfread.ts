@@ -16,6 +16,11 @@ export interface DxfLayerInfo {
   name: string
   segments: number
   points: number
+  closedSegments?: number
+  entityTypes?: Record<string, number>
+  zMin?: number
+  zMax?: number
+  textSamples?: string[]
 }
 
 export interface DxfNetworkData {
@@ -33,6 +38,9 @@ export type DxfLayerRole =
   | 'hydrography'
   | 'terrain'
   | 'candidateRoute'
+  | 'building'
+  | 'protectionZone'
+  | 'parcel'
   | 'other'
 
 export interface DxfConstraintData {
@@ -46,6 +54,9 @@ export interface DxfConstraintData {
   hydrography: ImportSegment[]
   terrainLines: ImportSegment[]
   candidateRoute: ImportSegment[]
+  buildingFootprints: ImportPoint[][]
+  protectionZoneRings: ImportPoint[][]
+  parcelRings: ImportPoint[][]
   roles: Record<string, DxfLayerRole>
   surveyPoints: SurveyPoint[]
   rejectedSurveyPoints: number
@@ -95,6 +106,9 @@ export function classifyDxfConstraints(data: DxfNetworkData): DxfConstraintData 
     if (/проезж|тротуар|дорог|улиц|road/.test(name)) return 'road'
     if (/гидрограф|водоем|водоём|река|канал|озер|озёр/.test(name) && !/канализ/.test(name)) return 'hydrography'
     if (/рельеф|горизонтал|отметк|grade|elevation|survey|точк.*высот/.test(name)) return 'terrain'
+    if (/охран.*зон|санитар.*зон|защит.*зон|protection/.test(name)) return 'protectionZone'
+    if (/здани|сооруж|строени|контур.*объект|building/.test(name)) return 'building'
+    if (/участ|землеотвод|границ.*зем|parcel/.test(name)) return 'parcel'
     if (/трубопровод|водопровод|канализ|ливнев|дренаж|кабел|газоснаб|теплосет|электро|связи/.test(name)) return 'utility'
     if (/проект.*(трас|осев|коллектор)|(^|[_ -])к2([_ -]|$)/.test(name)) return 'candidateRoute'
     return 'other'
@@ -102,6 +116,15 @@ export function classifyDxfConstraints(data: DxfNetworkData): DxfConstraintData 
 
   for (const layer of data.layers) roles[layer.name] = roleOf(layer.name)
   const byRole = (role: DxfLayerRole) => data.segments.filter((segment) => roles[segment.layer ?? '0'] === role)
+  const closedRings = (role: DxfLayerRole) => byRole(role)
+    .filter((segment) => segment.closed && segment.points.length >= 4)
+    .map((segment) => {
+      const points = [...segment.points]
+      const first = points[0]
+      const last = points[points.length - 1]
+      if (first.x === last.x && first.y === last.y) points.pop()
+      return simplifyPolyline(points, 0.25)
+    })
   const corridor = byRole('corridor')
   const rawCorridorRings = corridor
     .filter((segment) => segment.closed && segment.points.length >= 4)
@@ -153,6 +176,9 @@ export function classifyDxfConstraints(data: DxfNetworkData): DxfConstraintData 
     hydrography: byRole('hydrography'),
     terrainLines: byRole('terrain'),
     candidateRoute: byRole('candidateRoute'),
+    buildingFootprints: closedRings('building'),
+    protectionZoneRings: closedRings('protectionZone'),
+    parcelRings: closedRings('parcel'),
     roles,
     surveyPoints,
     rejectedSurveyPoints: rawSurveyPoints.length - surveyPoints.length,
@@ -171,6 +197,8 @@ interface DxfEntity {
   shape?: boolean
   vertices?: DxfVertex[]
   position?: DxfVertex
+  text?: string
+  name?: string
 }
 
 export function parseDxfNetwork(text: string): DxfNetworkData {
@@ -186,9 +214,17 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
 
   const segments: ImportSegment[] = []
   const points: Array<ImportPoint & { layer?: string }> = []
-  const stats = new Map<string, { segments: number; points: number }>()
+  const stats = new Map<string, {
+    segments: number
+    points: number
+    closedSegments: number
+    entityTypes: Record<string, number>
+    zMin?: number
+    zMax?: number
+    textSamples: string[]
+  }>()
   const bump = (layer: string, kind: 'segments' | 'points') => {
-    const entry = stats.get(layer) ?? { segments: 0, points: 0 }
+    const entry = stats.get(layer) ?? { segments: 0, points: 0, closedSegments: 0, entityTypes: {}, textSamples: [] }
     entry[kind]++
     stats.set(layer, entry)
   }
@@ -199,6 +235,14 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
 
   for (const entity of entities) {
     const layer = typeof entity.layer === 'string' && entity.layer !== '' ? entity.layer : '0'
+    const entry = stats.get(layer) ?? { segments: 0, points: 0, closedSegments: 0, entityTypes: {}, textSamples: [] }
+    const entityType = entity.type ?? 'UNKNOWN'
+    entry.entityTypes[entityType] = (entry.entityTypes[entityType] ?? 0) + 1
+    const text = typeof entity.text === 'string' ? entity.text.trim() : ''
+    const blockName = entity.type === 'INSERT' && typeof entity.name === 'string' ? `[BLOCK] ${entity.name}` : ''
+    const sample = text || blockName
+    if (sample && entry.textSamples.length < 20 && !entry.textSamples.includes(sample)) entry.textSamples.push(sample)
+    stats.set(layer, entry)
     if (entity.type === 'LINE') {
       const pts = toPoints(entity.vertices)
       if (pts.length >= 2) {
@@ -214,6 +258,7 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
         const needsClosing = closed && Math.hypot(first.x - last.x, first.y - last.y) > 1e-9
         segments.push({ points: needsClosing ? [...pts, { ...first }] : pts, layer, closed })
         bump(layer, 'segments')
+        if (closed) (stats.get(layer) as NonNullable<ReturnType<typeof stats.get>>).closedSegments++
       }
     } else if (entity.type === 'POINT' || entity.type === 'INSERT') {
       const position = entity.position
@@ -222,12 +267,26 @@ export function parseDxfNetwork(text: string): DxfNetworkData {
         if (typeof position.z === 'number' && Number.isFinite(position.z)) marker.z = position.z
         points.push(marker)
         bump(layer, 'points')
+        if (marker.z != null) {
+          const layerStats = stats.get(layer) as NonNullable<ReturnType<typeof stats.get>>
+          layerStats.zMin = Math.min(layerStats.zMin ?? marker.z, marker.z)
+          layerStats.zMax = Math.max(layerStats.zMax ?? marker.z, marker.z)
+        }
       }
     }
   }
 
   const layers: DxfLayerInfo[] = [...stats.entries()]
-    .map(([name, s]) => ({ name, segments: s.segments, points: s.points }))
+    .map(([name, s]) => ({
+      name,
+      segments: s.segments,
+      points: s.points,
+      closedSegments: s.closedSegments,
+      entityTypes: s.entityTypes,
+      zMin: s.zMin,
+      zMax: s.zMax,
+      textSamples: s.textSamples,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   return { segments, points, layers, ok: segments.length > 0 || points.length > 0 }
@@ -247,14 +306,17 @@ export function parseTopographyDxf(text: string): TopoParseResult {
     return { points: [], issues: [{ row: 0, kind: 'invalidFormat' }], total: 0 }
   }
   const hasElevations = data.points.some((p) => typeof p.z === 'number' && p.z !== 0)
-  const points: SurveyPoint[] = []
   const issues: ParseIssue[] = []
-  data.points.forEach((p, index) => {
-    if (!hasElevations) {
-      issues.push({ row: index + 1, kind: 'missingZ' })
-      return
-    }
-    points.push({ x: p.x, y: p.y, z: typeof p.z === 'number' ? p.z : 0 })
+  if (!hasElevations) {
+    data.points.forEach((_point, index) => issues.push({ row: index + 1, kind: 'missingZ' }))
+    return { points: [], issues, total: data.points.length }
+  }
+  const classified = classifyDxfConstraints(data)
+  data.points.forEach((point, index) => {
+    if (typeof point.z !== 'number' || point.z === 0) issues.push({ row: index + 1, kind: 'missingZ' })
   })
-  return { points, issues, total: data.points.length }
+  for (let index = 0; index < classified.rejectedSurveyPoints; index++) {
+    issues.push({ row: data.points.length + index + 1, kind: 'badNumber' })
+  }
+  return { points: classified.surveyPoints, issues, total: data.points.length }
 }

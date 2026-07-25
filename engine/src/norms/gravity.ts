@@ -132,6 +132,8 @@ export interface GravityDesignOptions {
    * decision (registry sewer.design.minBurial).
    */
   strategy?: 'minDiameter' | 'minBurial'
+  /** Project catalogue diameters. The solver must not invent absent sizes. */
+  allowedDiametersMm?: readonly number[]
 }
 
 const SLOPE_CAP = 0.1 // 10% — practical steepness bound before drop structures
@@ -152,7 +154,10 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
   const maxFillR = maxFilling(system).value
   const vMax = maxVelocityMps(system, material).value
 
-  const candidates = GRAVITY_DIAMETERS.filter((d) => d >= minDia)
+  const catalogue = opts.allowedDiametersMm !== undefined
+    ? [...new Set(opts.allowedDiametersMm)].filter(Number.isFinite).sort((a, b) => a - b)
+    : [...GRAVITY_DIAMETERS]
+  const candidates = catalogue.filter((d) => d >= minDia)
   let fallback: GravitySegmentDesign | null = null
 
   if (opts.strategy === 'minBurial') {
@@ -252,7 +257,7 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
         {
           code: 'overMaxFilling',
           refs: ['sewer.filling.max'],
-          message: `Наполнение превышает допустимое ${maxFillR}; требуется больший диаметр, чем ${GRAVITY_DIAMETERS[GRAVITY_DIAMETERS.length - 1]} мм`,
+          message: `Наполнение превышает допустимое ${maxFillR}; требуется больший диаметр, чем ${catalogue[catalogue.length - 1] ?? minDia} мм`,
         },
       ],
     }
@@ -260,7 +265,7 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
 
   return (
     fallback ?? {
-      diameterMm: minDia,
+      diameterMm: catalogue[0] ?? 0,
       slope: 0,
       fillRatio: 0,
       velocityMs: 0,
@@ -301,8 +306,14 @@ export interface GravityNetworkResult {
 export function accumulateGravityFlows(
   network: TracedNetwork,
   buildingFlowLps: Map<string, number>,
+  options: {
+    outletNodeId?: string
+    includePipe?: (pipe: TracedNetwork['pipes'][number]) => boolean
+  } = {},
 ): Map<string, number> {
-  const outlet = network.nodes.find((n) => n.kind === 'source')
+  const outlet = options.outletNodeId
+    ? network.nodes.find((n) => n.id === options.outletNodeId)
+    : network.nodes.find((n) => n.kind === 'source' || n.kind === 'lns_inlet' || n.kind === 'pumping_station' || n.kind === 'outlet' || n.kind === 'outfall')
   const flowByPipe = new Map<string, number>()
   for (const p of network.pipes) flowByPipe.set(p.id, 0)
   if (!outlet) return flowByPipe
@@ -310,6 +321,7 @@ export function accumulateGravityFlows(
   // Undirected adjacency: node -> [{to, pipeId}].
   const adj = new Map<string, Array<{ to: string; pipeId: string }>>()
   for (const p of network.pipes) {
+    if (options.includePipe && !options.includePipe(p)) continue
     if (!adj.has(p.fromNode)) adj.set(p.fromNode, [])
     if (!adj.has(p.toNode)) adj.set(p.toNode, [])
     adj.get(p.fromNode)!.push({ to: p.toNode, pipeId: p.id })
@@ -340,8 +352,8 @@ export function accumulateGravityFlows(
   }
 
   for (const node of network.nodes) {
-    if (node.kind !== 'building' && !node.buildingId) continue
-    const flow = buildingFlowLps.get(node.buildingId ?? node.id) ?? 0
+    if (node.kind !== 'building' && node.kind !== 'facility_inflow' && node.kind !== 'treatment_facility' && !node.buildingId) continue
+    const flow = buildingFlowLps.get(node.buildingId ?? node.id) ?? node.designFlowLps ?? 0
     if (flow <= 0) continue
     let cur = node.id
     const guard = new Set<string>()
@@ -367,12 +379,23 @@ export function solveGravityNetwork(input: {
   freezingDepthM?: number
   /** Design criterion per segment; see GravityDesignOptions.strategy. */
   strategy?: 'minDiameter' | 'minBurial'
+  /** Explicit gravity outlet (normally the LNS inlet), not the final pressure outlet. */
+  outletNodeId?: string
+  /** Project catalogue diameter series. */
+  allowedDiametersMm?: readonly number[]
 }): GravityNetworkResult {
-  const flows = accumulateGravityFlows(input.network, input.buildingFlowLps)
+  const isGravityPipe = (pipe: TracedNetwork['pipes'][number]) =>
+    pipe.systemType !== 'pressure' && pipe.kind !== 'pressure_main' && pipe.kind !== 'discharge'
+  const flows = accumulateGravityFlows(input.network, input.buildingFlowLps, {
+    outletNodeId: input.outletNodeId,
+    includePipe: isGravityPipe,
+  })
   const nodeById = new Map(input.network.nodes.map((n) => [n.id, n]))
-  const outlet = input.network.nodes.find((n) => n.kind === 'source')
+  const outlet = input.outletNodeId
+    ? input.network.nodes.find((n) => n.id === input.outletNodeId)
+    : input.network.nodes.find((n) => n.kind === 'source' || n.kind === 'lns_inlet' || n.kind === 'pumping_station' || n.kind === 'outlet' || n.kind === 'outfall')
 
-  const pipes: GravityPipeResult[] = input.network.pipes.map((p) => {
+  const pipes: GravityPipeResult[] = input.network.pipes.filter(isGravityPipe).map((p) => {
     const from = nodeById.get(p.fromNode)
     const to = nodeById.get(p.toNode)
     const drop = from && to ? Math.abs(from.groundElevation - to.groundElevation) : 0
@@ -383,6 +406,7 @@ export function solveGravityNetwork(input: {
       roughness: input.roughness,
       groundSlope,
       strategy: input.strategy,
+      allowedDiametersMm: input.allowedDiametersMm,
     })
     return { ...design, id: p.id, fromNode: p.fromNode, toNode: p.toNode, lengthM: p.lengthM }
   })
@@ -395,7 +419,11 @@ export function solveGravityNetwork(input: {
 
   const design = new Map(pipes.map((p) => [p.id, { diameterMm: p.diameterMm, slope: p.slope }]))
   const profile = computeGravityProfile({
-    network: input.network,
+    network: {
+      nodes: input.network.nodes.map((node) => node.id === outlet?.id ? { ...node, kind: 'source' as const } : node),
+      pipes: input.network.pipes.filter(isGravityPipe),
+      totalLengthM: input.network.pipes.filter(isGravityPipe).reduce((sum, pipe) => sum + pipe.lengthM, 0),
+    },
     design,
     freezingDepthM: input.freezingDepthM ?? 1.5,
   })

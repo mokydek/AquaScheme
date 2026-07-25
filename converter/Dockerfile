@@ -21,10 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The download requires accepting the ODA license; get the current link from
 # https://www.opendesign.com/guestfiles/oda_file_converter
 ARG ODA_DEB_URL=""
-RUN if [ -n "$ODA_DEB_URL" ]; then \
-      wget -q "$ODA_DEB_URL" -O /tmp/oda.deb && \
-      (dpkg -i /tmp/oda.deb || apt-get install -y -f) && rm /tmp/oda.deb ; \
-    else echo "ODA_DEB_URL not set: build the image with the converter URL"; fi
+RUN test -n "$ODA_DEB_URL" || (echo "ODA_DEB_URL is required; refusing to publish a non-working converter image" >&2; exit 1); \
+    wget -q "$ODA_DEB_URL" -O /tmp/oda.deb && \
+    (dpkg -i /tmp/oda.deb || apt-get install -y -f) && rm /tmp/oda.deb
 
 WORKDIR /app
 COPY package.json ./

@@ -14,14 +14,16 @@ export interface SavedGravityRun {
 }
 
 export async function persistGravity(projectId: string, result: GravityNetworkResult): Promise<void> {
-  const { error } = await supabase.from('calc_runs').insert({
-    project_id: projectId,
-    status: 'done',
-    params: { system: result.systemType, outletFlowLps: result.outletFlowLps },
-    summary: result as unknown as Record<string, unknown>,
-    finished_at: new Date().toISOString(),
+  const { error } = await supabase.rpc('save_gravity_design', {
+    p_project_id: projectId,
+    p_result: result as unknown as Record<string, unknown>,
   })
-  if (error) throw error
+  if (error) {
+    if (/save_gravity_design|schema cache|function/i.test(error.message)) {
+      throw new Error('Требуется применить миграцию backend/migrations/0012_engineering_route.sql в Supabase.')
+    }
+    throw error
+  }
 }
 
 /** The latest calc_run for the project, but only if it is a gravity run. */

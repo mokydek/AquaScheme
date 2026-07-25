@@ -15,7 +15,7 @@ import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
-import { seedStormProject } from '../../shared/stormDemo'
+import { loadActiveCatalogNominalDiameters } from '../../shared/catalog'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
   generateSewerGeneralDataDxf,
@@ -70,6 +70,8 @@ export function GravitySection({
   geologyDataset,
   basisDataset,
   parcels,
+  activeCatalogId,
+  routeStatus = 'stale',
   onChanged,
 }: {
   projectId: string
@@ -83,6 +85,8 @@ export function GravitySection({
   basisDataset?: DatasetRow
   /** Project parcels; kind 'right_of_way' rings form the corridor to check. */
   parcels?: ParcelRow[]
+  activeCatalogId?: string | null
+  routeStatus?: 'stale' | 'blocked' | 'preliminary' | 'calculated'
   /** Reload the project data after the demo seeding. */
   onChanged?: () => Promise<void>
 }) {
@@ -97,6 +101,8 @@ export function GravitySection({
   const [corridorCheck, setCorridorCheck] = useState<CorridorCheck | null>(null)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [catalogDiameters, setCatalogDiameters] = useState<readonly number[] | undefined>(undefined)
+  const finalOutputAllowed = routeStatus === 'calculated' && Boolean(activeCatalogId) && (catalogDiameters?.length ?? 0) > 0
 
   useEffect(() => {
     let active = true
@@ -109,6 +115,18 @@ export function GravitySection({
       active = false
     }
   }, [projectId])
+
+  useEffect(() => {
+    let active = true
+    if (!activeCatalogId) {
+      setCatalogDiameters(undefined)
+      return () => { active = false }
+    }
+    loadActiveCatalogNominalDiameters(activeCatalogId)
+      .then((diameters) => { if (active) setCatalogDiameters(diameters ?? []) })
+      .catch(() => { if (active) setCatalogDiameters([]) })
+    return () => { active = false }
+  }, [activeCatalogId])
 
   const labelOfNode = useMemo(() => {
     const buildingLabelById = new Map(buildings.map((b) => [b.id, b.label ?? '']))
@@ -129,7 +147,7 @@ export function GravitySection({
     if (systemType === 'storm') {
       // Storm inflows are catchment/treatment-plant flows entered directly,
       // not domestic demand: the residents field holds the inflow in L/s.
-      for (const b of buildings) buildingFlowLps.set(b.id, b.specific_demand_lpd ?? b.residents ?? 0)
+      for (const b of buildings) buildingFlowLps.set(b.id, b.design_flow_lps ?? b.specific_demand_lpd ?? b.residents ?? 0)
     } else {
       const demand = computeNetworkDemand(
         buildings.map((b) => ({
@@ -144,8 +162,16 @@ export function GravitySection({
     const network = networkFromRows(nodes, pipes)
     const freezingDepthM =
       ((geologyDataset?.content ?? {}) as { freezingDepthM?: number }).freezingDepthM ?? 1.5
-    return solveGravityNetwork({ network, buildingFlowLps, system: systemType, freezingDepthM, strategy })
-  }, [buildings, nodes, pipes, normsDataset, geologyDataset, systemType, strategy])
+    return solveGravityNetwork({
+      network,
+      buildingFlowLps,
+      system: systemType,
+      freezingDepthM,
+      strategy,
+      outletNodeId: network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'pumping_station')?.id,
+      allowedDiametersMm: activeCatalogId ? catalogDiameters ?? [] : undefined,
+    })
+  }, [buildings, nodes, pipes, normsDataset, geologyDataset, systemType, strategy, activeCatalogId, catalogDiameters])
 
   const rows = useMemo(() => {
     if (!result) return []
@@ -257,6 +283,7 @@ export function GravitySection({
     setSeeding(true)
     setSeedNotice(null)
     try {
+      const { seedStormProject } = await import('../../shared/stormDemo')
       const { seededSections, failures } = await seedStormProject(projectId)
       setSeedNotice(
         failures.length === 0
@@ -459,6 +486,9 @@ export function GravitySection({
   return (
     <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.gravity.hint')}</p>
+      {!finalOutputAllowed && result && (
+        <p className="notice error">Расчёт доступен для проверки, но выпуск финальных файлов заблокирован: статус трассы «{routeStatus}», активный каталог {activeCatalogId && catalogDiameters?.length ? 'загружен' : 'не готов'}.</p>
+      )}
       {!result && (
         <>
           <p className="stat-line warn">{t('project.gravity.needNetwork')}</p>
@@ -536,16 +566,16 @@ export function GravitySection({
                 <option value="minDiameter">{t('project.gravity.strategyMinDiameter')}</option>
               </select>
             </label>
-            <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportPlan()}>
+            <button type="button" className="btn btn-sm" disabled={exporting || !finalOutputAllowed} onClick={() => void exportPlan()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportPlan')}
             </button>
-            <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSituation()}>
+            <button type="button" className="btn btn-sm" disabled={exporting || !finalOutputAllowed} onClick={() => void exportSituation()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSituation')}
             </button>
             <button type="button" className="btn btn-sm" disabled={!result.profile} onClick={runCorridorCheck}>
               {t('project.gravity.corridorRun')}
             </button>
-            <button type="button" className="btn btn-sm" disabled={exporting || !result.profile} onClick={() => void exportNote()}>
+            <button type="button" className="btn btn-sm" disabled={exporting || !result.profile || !finalOutputAllowed} onClick={() => void exportNote()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportNote')}
             </button>
             {corridorCheck && (
@@ -557,7 +587,7 @@ export function GravitySection({
                     : t('project.gravity.corridorViolations', { count: corridorCheck.violations.length })}
               </span>
             )}
-            <button type="button" className="btn btn-sm" disabled={exporting || !result.profile} onClick={() => void exportBundle()}>
+            <button type="button" className="btn btn-sm" disabled={exporting || !result.profile || !finalOutputAllowed} onClick={() => void exportBundle()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
             </button>
           </div>
@@ -569,6 +599,7 @@ export function GravitySection({
               onPdf={() => void exportAlbum()}
               onZip={() => void exportBundle()}
               error={albumError ?? bundleError}
+              disabled={!finalOutputAllowed}
             />
           )}
 
@@ -608,7 +639,7 @@ export function GravitySection({
                 <NormBadge refs={['sewer.depth.min']} />
               </div>
               <div className="section-actions" style={{ marginTop: 12 }}>
-                <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportProfile()}>
+                <button type="button" className="btn btn-sm" disabled={exporting || !finalOutputAllowed} onClick={() => void exportProfile()}>
                   {exporting ? t('project.gravity.exporting') : t('project.gravity.exportProfile')}
                 </button>
               </div>
@@ -689,7 +720,7 @@ export function GravitySection({
                 </>
               )}
               <div className="section-actions" style={{ marginTop: 12 }}>
-                <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportSchedule()}>
+                <button type="button" className="btn btn-sm" disabled={exporting || !finalOutputAllowed} onClick={() => void exportSchedule()}>
                   {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSchedule')}
                 </button>
               </div>

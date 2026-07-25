@@ -10,7 +10,8 @@
 
 ## Endpoints
 
-- `GET /health` — статус, активный провайдер и направления конвертации.
+- `GET /health` — liveness процесса.
+- `GET /ready` — реальная готовность провайдера; возвращает HTTP 503, если ODA не установлен.
 - `POST /convert?to=dwg&version=ACAD2018` — multipart поле `file` (DXF) → DWG.
   Используется фронтендом при экспорте чертежей.
 - `POST /convert?to=dxf` — multipart поле `file` (DWG) → DXF. Используется
@@ -39,8 +40,8 @@ npm start   # http://localhost:8080/health
 2. Render → New → Web Service → выберите репозиторий, Root Directory `converter`,
    Environment `Docker`.
 3. В Build настройках добавьте Build Arg `ODA_DEB_URL` со ссылкой из п.1.
-4. Env: `CONVERT_PROVIDER=oda`.
-5. Deploy. Проверьте `https://<service>.onrender.com/health`.
+4. Env: `CONVERT_PROVIDER=oda`, `ALLOWED_ORIGINS=https://<ваш-домен>.vercel.app`.
+5. Deploy. Проверьте `https://<service>.onrender.com/ready`: нужен HTTP 200 и `"ok":true`.
 6. Во Vercel фронтенда добавьте `VITE_CONVERTER_URL=https://<service>.onrender.com`
    и сделайте Redeploy. Тогда во фронтенде включатся DWG-выход (формат по
    умолчанию при экспорте) и DWG-вход (загрузка DWG в разделах импорта).
