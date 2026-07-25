@@ -228,3 +228,5 @@ begin
   return run_id;
 end;
 $$;
+
+notify pgrst, 'reload schema';
