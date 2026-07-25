@@ -12,6 +12,8 @@ export interface RouteConstraintInput {
   utilityLines?: RouteSegment[]
   roadLines?: RouteSegment[]
   waterLines?: RouteSegment[]
+  /** Closed water boundaries. They remain passable only as a last resort. */
+  waterRings?: RoutePoint[][]
   hardObstacles?: RouteSegment[]
   surveyPoints?: SurveyPoint[]
 }
@@ -24,6 +26,11 @@ export interface ConstrainedRouteOptions {
   redLineCrossingPenalty?: number
   roadCrossingPenalty?: number
   waterCrossingPenalty?: number
+  waterInteriorPenalty?: number
+  /** Maximum distance from a folded DWG corridor boundary that may be routed. */
+  corridorBoundaryBandM?: number
+  /** Cost of one metre of ground rise while travelling towards the outlet. */
+  uphillPenaltyPerM?: number
   turnPenalty?: number
   corridorSnapToleranceM?: number
   maxGridCells?: number
@@ -64,6 +71,9 @@ const DEFAULTS: Required<ConstrainedRouteOptions> = {
   redLineCrossingPenalty: 60,
   roadCrossingPenalty: 4,
   waterCrossingPenalty: 80,
+  waterInteriorPenalty: 35,
+  corridorBoundaryBandM: 45,
+  uphillPenaltyPerM: 2.5,
   turnPenalty: 0.35,
   corridorSnapToleranceM: 50,
   maxGridCells: 450_000,
@@ -112,6 +122,18 @@ function distanceToRings(point: RoutePoint, rings: RoutePoint[][]): number {
   return distanceToSegments(point, rings.map((points) => ({ points: [...points, points[0]] })))
 }
 
+function characteristicRingWidth(ring: RoutePoint[]): number {
+  let doubleArea = 0
+  let perimeter = 0
+  for (let index = 0; index < ring.length; index++) {
+    const point = ring[index]
+    const next = ring[(index + 1) % ring.length]
+    doubleArea += point.x * next.y - next.x * point.y
+    perimeter += distance(point, next)
+  }
+  return perimeter > 0 ? Math.abs(doubleArea) / perimeter : 0
+}
+
 function segmentIntersection(a: RoutePoint, b: RoutePoint, c: RoutePoint, d: RoutePoint): boolean {
   const cross = (p: RoutePoint, q: RoutePoint, r: RoutePoint) =>
     (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
@@ -143,21 +165,6 @@ function edgeCrossings(a: RoutePoint, b: RoutePoint, segments: RouteSegment[]): 
     }
   }
   return count
-}
-
-function collinearSimplify(points: RoutePoint[]): RoutePoint[] {
-  if (points.length < 3) return points
-  const result = [points[0]]
-  let previousDirection = ''
-  for (let i = 1; i < points.length; i++) {
-    const dx = Math.sign(points[i].x - points[i - 1].x)
-    const dy = Math.sign(points[i].y - points[i - 1].y)
-    const direction = `${dx},${dy}`
-    if (i > 1 && direction !== previousDirection) result.push(points[i - 1])
-    previousDirection = direction
-  }
-  result.push(points[points.length - 1])
-  return result
 }
 
 /**
@@ -198,7 +205,15 @@ export function compareRouteToReference(
   }
 }
 
-interface GridCell { col: number; row: number; point: RoutePoint; boundaryDistance: number; utilityDistance: number }
+interface GridCell {
+  col: number
+  row: number
+  point: RoutePoint
+  boundaryDistance: number
+  utilityDistance: number
+  surfaceElevation: number
+  insideWater: boolean
+}
 
 export function traceConstrainedNetwork(
   terminals: RouteTerminal[],
@@ -234,18 +249,59 @@ export function traceConstrainedNetwork(
   const redLines = constraints.redLines ?? []
   const roads = constraints.roadLines ?? []
   const water = constraints.waterLines ?? []
+  const waterRings = (constraints.waterRings ?? []).filter((ring) => ring.length >= 3)
   const hard = constraints.hardObstacles ?? []
+  const survey = constraints.surveyPoints ?? []
   const cells = new Map<string, GridCell>()
   const key = (col: number, row: number) => `${col}:${row}`
+  // A master-plan "corridor" is often a single folded boundary polyline. If
+  // it is treated as a conventional filled polygon, the large void between
+  // branches becomes falsely available and A* draws impossible straight
+  // chords through lakes and parcels. Keep only the engineering band next to
+  // the supplied boundary; a normal 15-25 m corridor remains fully available.
+  const ringRules = rings.map((ring) => ({
+    ring,
+    // For a long thin polygon, 2A/P approximates its physical width. A very
+    // low A/P value compared with its overall bounds identifies the folded
+    // master-plan corridor used by this project. Wide, ordinary parcels keep
+    // their complete interior and are not hollowed out by this safeguard.
+    restrictToBoundaryBand: characteristicRingWidth(ring) <= opt.corridorBoundaryBandM,
+  }))
+  const isNavigable = (point: RoutePoint) => ringRules.some(({ ring, restrictToBoundaryBand }) =>
+    pointInRing(point, ring)
+      && (!restrictToBoundaryBand || distanceToRings(point, [ring]) <= opt.corridorBoundaryBandM),
+  )
+  const segmentIsNavigable = (a: RoutePoint, b: RoutePoint) => {
+    const samples = Math.max(1, Math.ceil(distance(a, b) / (opt.gridSizeM * 0.5)))
+    for (let sample = 1; sample < samples; sample++) {
+      const ratio = sample / samples
+      if (!isNavigable({ x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio })) return false
+    }
+    return true
+  }
+  const simplifyNavigablePath = (points: RoutePoint[]) => {
+    if (points.length < 3) return points
+    const result = [points[0]]
+    let anchor = 0
+    while (anchor < points.length - 1) {
+      let furthest = anchor + 1
+      while (furthest + 1 < points.length && segmentIsNavigable(points[anchor], points[furthest + 1])) furthest++
+      result.push(points[furthest])
+      anchor = furthest
+    }
+    return result
+  }
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const point = { x: minX + col * opt.gridSizeM, y: minY + row * opt.gridSizeM }
-      if (!rings.some((ring) => pointInRing(point, ring))) continue
+      if (!isNavigable(point)) continue
       if (hard.length > 0 && distanceToSegments(point, hard) < opt.gridSizeM * 0.55) continue
       cells.set(key(col, row), {
         col, row, point,
         boundaryDistance: distanceToRings(point, rings),
         utilityDistance: utilities.length > 0 ? distanceToSegments(point, utilities) : Number.POSITIVE_INFINITY,
+        surfaceElevation: survey.length > 0 ? interpolateElevation(survey, point.x, point.y) : 0,
+        insideWater: waterRings.some((ring) => pointInRing(point, ring)),
       })
     }
   }
@@ -306,10 +362,10 @@ export function traceConstrainedNetwork(
         const nextKey = key(cell.col + dx, cell.row + dy)
         const next = cells.get(nextKey)
         if (!next) continue
-        const edgeInside = [0.25, 0.5, 0.75].every((ratio) => rings.some((ring) => pointInRing({
+        const edgeInside = [0.25, 0.5, 0.75].every((ratio) => isNavigable({
           x: cell.point.x + (next.point.x - cell.point.x) * ratio,
           y: cell.point.y + (next.point.y - cell.point.y) * ratio,
-        }, ring)))
+        }))
         if (!edgeInside) continue
         const direction = `${dx},${dy}`
         const step = Math.hypot(dx, dy)
@@ -319,8 +375,15 @@ export function traceConstrainedNetwork(
           + edgeCrossings(cell.point, next.point, redLines) * opt.redLineCrossingPenalty
           + edgeCrossings(cell.point, next.point, roads) * opt.roadCrossingPenalty
           + edgeCrossings(cell.point, next.point, water) * opt.waterCrossingPenalty
+        const waterInteriorCost = next.insideWater ? opt.waterInteriorPenalty : 0
+        // Search direction is terminal -> outlet/tree. A rising surface in
+        // that direction normally increases excavation depth for a gravity
+        // collector, so prefer naturally descending terrain when alternatives
+        // exist inside the same approved corridor.
+        const uphillCost = Math.max(0, next.surfaceElevation - cell.surfaceElevation) * opt.uphillPenaltyPerM
         const turnCost = heading.get(current) && heading.get(current) !== direction ? opt.turnPenalty : 0
-        const tentative = (gScore.get(current) ?? 0) + step + boundaryCost + utilityCost + crossingCost + turnCost
+        const tentative = (gScore.get(current) ?? 0) + step + boundaryCost + utilityCost
+          + crossingCost + waterInteriorCost + uphillCost + turnCost
         if (tentative >= (gScore.get(nextKey) ?? Number.POSITIVE_INFINITY)) continue
         cameFrom.set(nextKey, current)
         gScore.set(nextKey, tentative)
@@ -341,7 +404,7 @@ export function traceConstrainedNetwork(
       gridPath.push((cells.get(cursor) as GridCell).point)
     }
     gridPath.reverse()
-    const path = collinearSimplify([terminal, ...gridPath, ...(tree.size === 1 ? [source] : [])])
+    const path = [terminal, ...simplifyNavigablePath(gridPath), ...(tree.size === 1 ? [source] : [])]
     paths.push({ terminalId: terminal.id, points: path })
     terminalCellById.set(terminal.id, startKey)
     for (let i = 1; i < gridPath.length; i++) {
@@ -355,7 +418,6 @@ export function traceConstrainedNetwork(
     }
   }
 
-  const survey = constraints.surveyPoints ?? []
   if (survey.length === 0) warnings.push('Нет высотных отметок топосъёмки: план построен, но продольный профиль и глубины требуют исходных данных.')
   const elevation = (point: RoutePoint) => interpolateElevation(survey, point.x, point.y)
   const nodes: NetworkNode[] = [{ id: 'SRC', kind: 'source', x: round2(source.x), y: round2(source.y), groundElevation: elevation(source) }]
@@ -373,8 +435,9 @@ export function traceConstrainedNetwork(
   }
   let pipeSeq = 0
 
-  // Collapse the raster path into engineering sections. A 15 m search cell is
-  // not a manhole: keep nodes only at branches and changes of direction.
+  // Collapse the raster tree into engineering sections. A 15 m search cell is
+  // not a manhole. First split at real topological junctions, then retain only
+  // the bends needed to keep each displayed chord inside the DWG corridor.
   const adjacency = new Map<string, Set<string>>()
   const pointByKey = new Map<string, RoutePoint>()
   const addNeighbour = (from: string, to: string) => {
@@ -393,16 +456,7 @@ export function traceConstrainedNetwork(
   pointByKey.set(sourceKey, sourceCell.point)
   const anchors = new Set<string>([sourceKey, ...terminalCellById.values()])
   for (const [cellKey, neighbours] of adjacency) {
-    if (neighbours.size !== 2) {
-      anchors.add(cellKey)
-      continue
-    }
-    const [firstKey, secondKey] = [...neighbours]
-    const centre = pointByKey.get(cellKey)!
-    const first = pointByKey.get(firstKey)!
-    const second = pointByKey.get(secondKey)!
-    const cross = (first.x - centre.x) * (second.y - centre.y) - (first.y - centre.y) * (second.x - centre.x)
-    if (Math.abs(cross) > 1e-6) anchors.add(cellKey)
+    if (neighbours.size !== 2) anchors.add(cellKey)
   }
   const visitedEdges = new Set<string>()
   const edgeId = (a: string, b: string) => a < b ? `${a}|${b}` : `${b}|${a}`
@@ -411,7 +465,7 @@ export function traceConstrainedNetwork(
       if (visitedEdges.has(edgeId(anchor, neighbour))) continue
       let previous = anchor
       let current = neighbour
-      let lengthM = distance(pointByKey.get(previous)!, pointByKey.get(current)!)
+      const chain = [pointByKey.get(previous)!, pointByKey.get(current)!]
       visitedEdges.add(edgeId(previous, current))
       while (!anchors.has(current)) {
         const next = [...(adjacency.get(current) ?? [])].find((candidate) => candidate !== previous)
@@ -419,11 +473,14 @@ export function traceConstrainedNetwork(
         previous = current
         current = next
         visitedEdges.add(edgeId(previous, current))
-        lengthM += distance(pointByKey.get(previous)!, pointByKey.get(current)!)
+        chain.push(pointByKey.get(current)!)
       }
-      const from = getNode(pointByKey.get(anchor)!)
-      const to = getNode(pointByKey.get(current)!)
-      pipes.push({ id: `P${++pipeSeq}`, kind: 'main', fromNode: from, toNode: to, lengthM: round2(lengthM) })
+      const engineeringPoints = simplifyNavigablePath(chain)
+      for (let index = 1; index < engineeringPoints.length; index++) {
+        const from = getNode(engineeringPoints[index - 1])
+        const to = getNode(engineeringPoints[index])
+        pipes.push({ id: `P${++pipeSeq}`, kind: 'main', fromNode: from, toNode: to, lengthM: round2(distance(engineeringPoints[index - 1], engineeringPoints[index])) })
+      }
     }
   }
   const sourceJunction = getNode(sourceCell.point)
@@ -446,8 +503,7 @@ export function traceConstrainedNetwork(
     // Endpoint leads connect an OS/outlet situated on the corridor boundary;
     // the corridor check applies to the designed collector between those leads.
     if (index === 0 || distance(point, source) < 1e-6 || distance(previous, source) < 1e-6) return false
-    const midpoint = { x: (previous.x + point.x) / 2, y: (previous.y + point.y) / 2 }
-    return !rings.some((ring) => pointInRing(midpoint, ring))
+    return !segmentIsNavigable(previous, point)
   }).length, 0)
   if (unrouted.length > 0) warnings.push(`Не проложены подключения: ${unrouted.join(', ')}.`)
   if (utilityCrossings > 0) warnings.push(`Пересечения существующих коммуникаций: ${utilityCrossings}; требуется высотная проверка.`)

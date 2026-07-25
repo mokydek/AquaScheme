@@ -90,7 +90,9 @@ export function LiveSituationMap({
         .addTo(corridorLayer)
     }
 
-    let previousMainLabel: string | undefined
+    const diameterLabelPoints: LocalPoint[] = []
+    let serviceDiameterLabels = 0
+    const localDistance = (a: LocalPoint, b: LocalPoint) => Math.hypot(a.x - b.x, a.y - b.y)
     for (const pipe of network.pipes) {
       const from = nodeById.get(pipe.fromNode)
       const to = nodeById.get(pipe.toNode)
@@ -111,15 +113,25 @@ export function LiveSituationMap({
         `<strong>${isService ? 'Подключение ОС' : 'Проектный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м`,
         { sticky: true },
       )
+      const localMidpoint = localPath[Math.floor(localPath.length / 2)]
       const midpoint = L.latLng(positions[Math.floor(positions.length / 2)])
-      const showDiameterLabel = isService ? pipe.lengthM > 1 : diameterLabel !== previousMainLabel
+      // The hydraulic model may contain many short calculation sections.
+      // Labeling every section made dozens of identical white boxes overlap.
+      // Keep the underlying sections and tooltips, but place readable plan
+      // labels only at a safe cartographic interval.
+      const labelSpacingM = isService ? 1_200 : 900
+      const hasClearLabelSpace = diameterLabelPoints.every((point) => localDistance(point, localMidpoint) >= labelSpacingM)
+      const showDiameterLabel = hasClearLabelSpace
+        && diameterLabelPoints.length < 10
+        && (!isService || (pipe.lengthM >= 120 && serviceDiameterLabels < 4))
       if (showDiameterLabel && diameter) {
         L.marker(midpoint, {
           interactive: false,
           icon: L.divIcon({ className: 'pipe-map-diameter', html: diameterLabel, iconSize: [68, 18], iconAnchor: [34, 9] }),
         }).addTo(map)
+        diameterLabelPoints.push(localMidpoint)
+        if (isService) serviceDiameterLabels++
       }
-      if (!isService) previousMainLabel = diameterLabel
       positions.forEach((position) => bounds.extend(position))
     }
 

@@ -26,7 +26,26 @@ describe('constrained routing', () => {
     expect(result.report.ok).toBe(true)
     expect(result.report.routedTerminals).toBe(4)
     expect(result.report.outsideCorridorSegments).toBe(0)
-    expect(result.network.pipes.length).toBeGreaterThan(100)
+    expect(result.network.pipes.length).toBeGreaterThan(10)
+    expect(result.network.pipes.length).toBeLessThan(100)
+
+    const southernBranch = result.paths.find((path) => path.terminalId === 'T4')
+    expect(southernBranch).toBeDefined()
+    const direct = Math.hypot(
+      projectData.inflows[3].x - projectData.inflows[2].x,
+      projectData.inflows[3].y - projectData.inflows[2].y,
+    )
+    const branchLength = southernBranch!.points.slice(1).reduce(
+      (sum, point, index) => sum + Math.hypot(point.x - southernBranch!.points[index].x, point.y - southernBranch!.points[index].y),
+      0,
+    )
+    const straightDeviation = Math.max(...southernBranch!.points.map((point) =>
+      pointSegmentDistance(point, projectData.inflows[2], projectData.inflows[3]),
+    ))
+    // ОС III-8 -> ОС III-4 must follow the folded southern DWG corridor.
+    // A direct chord is shorter but crosses the broad false polygon interior.
+    expect(branchLength).toBeGreaterThan(direct * 1.04)
+    expect(straightDeviation).toBeGreaterThan(180)
 
     const generatedSegments = result.paths.flatMap((path) => path.points.slice(1).map((point, index) => [path.points[index], point] as const))
     const distances = projectData.route.map((point) => Math.min(...generatedSegments.map(([a, b]) => pointSegmentDistance(point, a, b))))
@@ -38,5 +57,16 @@ describe('constrained routing', () => {
     // not as an input or a requirement to cut outside the corridor.
     expect(benchmark.referenceCoveragePct).toBeGreaterThan(70)
     expect(benchmark.maximumDeviationM).toBeLessThan(210)
+  })
+
+  it('keeps the complete interior of an ordinary wide corridor', () => {
+    const result = traceConstrainedNetwork(
+      [{ id: 'wide', x: 110, y: 60 }],
+      { x: 10, y: 60 },
+      { corridorRings: [[{ x: 0, y: 0 }, { x: 120, y: 0 }, { x: 120, y: 120 }, { x: 0, y: 120 }]] },
+      { gridSizeM: 10 },
+    )
+    expect(result.report.ok).toBe(true)
+    expect(Math.max(...result.paths[0].points.map((point) => Math.abs(point.y - 60)))).toBeLessThanOrEqual(1)
   })
 })

@@ -211,6 +211,9 @@ export function ImportSection({
           utilityLines: mapSegments(parsed.constraints.utilityLines),
           roadLines: mapSegments(parsed.constraints.roadLines),
           waterLines: mapSegments(parsed.constraints.hydrography),
+          waterRings: parsed.constraints.hydrography
+            .filter((segment) => segment.closed && segment.points.length >= 4)
+            .map((segment) => segment.points.map(transform)),
           surveyPoints: dxfSurvey.length > 0 ? dxfSurvey : points,
         },
         { gridSizeM: 15 },
