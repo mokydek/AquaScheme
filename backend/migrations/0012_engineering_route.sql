@@ -34,6 +34,18 @@ alter table public.nodes add column if not exists invert_elevation_m double prec
 alter table public.nodes add column if not exists source_entity text;
 alter table public.nodes add column if not exists data_source text;
 
+-- The original MVP restricted node kinds to seven water-network values.
+-- Keep the guard, but allow the explicit sewer/LNS topology persisted by the
+-- engineering engine. The exact engineering kind is also retained in meta.
+alter table public.nodes drop constraint if exists nodes_kind_check;
+alter table public.nodes add constraint nodes_kind_check check (kind in (
+  'source', 'junction', 'hydrant', 'valve', 'air_valve', 'drain', 'well',
+  'ring', 'cross', 'building', 'facility_inflow', 'lns_inlet', 'lns_outlet',
+  'outlet', 'manhole', 'terrain_break', 'treatment_facility',
+  'pumping_station', 'gravity_inlet', 'pressure_outlet', 'chamber',
+  'outfall', 'crossing', 'transition', 'inspection_node'
+));
+
 alter table public.pipes add column if not exists engineering_kind text;
 alter table public.pipes add column if not exists system_type text;
 alter table public.pipes add column if not exists parallel_count integer not null default 1;

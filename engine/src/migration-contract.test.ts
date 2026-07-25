@@ -29,4 +29,11 @@ describe('engineering persistence migration', () => {
     expect(sql).toContain("meta ->> 'engineId' = item ->> 'id'")
     expect(sql).toContain("calculation_status = case")
   })
+
+  it('allows the explicit treatment, pumping-station and outfall node kinds', () => {
+    expect(sql).toContain('drop constraint if exists nodes_kind_check')
+    expect(sql).toContain("'treatment_facility'")
+    expect(sql).toContain("'pumping_station'")
+    expect(sql).toContain("'outfall'")
+  })
 })
