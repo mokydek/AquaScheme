@@ -35,6 +35,7 @@ export function LiveSituationMap({
   pipeDiameterMm,
   pipeDisplayLabel,
   pipePaths,
+  verifiedProjectGeometryOnly = false,
   buildings,
   corridorRings,
   outletFlowLps,
@@ -43,6 +44,7 @@ export function LiveSituationMap({
   pipeDiameterMm: Map<string, number>
   pipeDisplayLabel?: Map<string, string>
   pipePaths?: Map<string, LocalPoint[]>
+  verifiedProjectGeometryOnly?: boolean
   buildings: Array<{ x: number; y: number; label?: string | null }>
   corridorRings: Array<Array<LocalPoint>>
   outletFlowLps?: number
@@ -98,6 +100,7 @@ export function LiveSituationMap({
       const diameter = pipeDiameterMm.get(pipe.id)
       const diameterLabel = pipeDisplayLabel?.get(pipe.id) ?? (diameter ? `Ø${diameter}` : 'Ø—')
       const isService = pipe.kind === 'service' || Boolean(from.buildingId || to.buildingId)
+      if (verifiedProjectGeometryOnly && isService && !pipePaths?.has(pipe.id)) continue
       const line = L.polyline(positions, {
         color: isService ? '#c53364' : diameterColor(diameter),
         weight: isService ? 3 : 6,
@@ -168,14 +171,14 @@ export function LiveSituationMap({
       map.remove()
       setReady(false)
     }
-  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, buildings, corridorRings, outletFlowLps])
+  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, verifiedProjectGeometryOnly, buildings, corridorRings, outletFlowLps])
 
   return (
     <div className="live-situation-map-wrap">
       {!ready && <div className="live-map-loading"><span className="export-progress-spinner" />Загрузка настоящей карты…</div>}
       <div ref={containerRef} className="live-situation-map" aria-label="Интерактивная карта с проектной трассой коллектора" />
       <p className="reference-source-note">
-        Подложка переключается между картой, спутником и обзорным рельефом. Ось трассы и подключения взяты из данных DWG проекта 2024-51-НК; проектные диаметры не подменяются автоматическим гидравлическим подбором. Инженерные отметки рельефа учитываются в продольном профиле и расчёте, а не меняют план трассы. Полоса отвода доступна отдельным выключенным слоем и никогда не заливается.
+        OSM, спутник и обзорный рельеф являются только ориентировочными подложками. Утверждаемая геометрия определяется генпланом и DWG: неподтверждённые прямые подключения здесь не рисуются. Инженерные отметки рельефа учитываются в продольном профиле и расчёте. Полоса отвода доступна отдельным выключенным слоем и никогда не заливается.
       </p>
     </div>
   )

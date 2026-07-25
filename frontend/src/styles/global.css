@@ -998,6 +998,7 @@ textarea {
 
 .reference-situation-sheet figcaption span { color: #777; }
 .reference-situation-sheet img { display: block; width: 100%; max-height: 720px; object-fit: contain; }
+.genplan-route-view .reference-situation-sheet img { max-height: 880px; }
 
 .reference-situation-facts {
   display: flex;

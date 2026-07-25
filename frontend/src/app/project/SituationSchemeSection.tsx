@@ -9,6 +9,7 @@ import { Panel } from './Panel'
 import { ReferenceSituationView } from './ReferenceSituationView'
 import { PipeCalculationsView } from './PipeCalculationsView'
 import { LiveSituationMap } from './LiveSituationMap'
+import { GenplanRouteView } from './GenplanRouteView'
 
 /**
  * Standalone «Ситуационная схема» category: the scheme is built here on its own
@@ -37,7 +38,7 @@ export function SituationSchemeSection({
   const { t } = useTranslation()
   const basisContent = (basisDataset?.content ?? {}) as { mode?: string; project?: { code?: string } }
   const hasReferenceSheet = basisContent.mode === 'demo-derived' || basisContent.project?.code === '2024-51-НК'
-  const [view, setView] = useState<'reference' | 'calculated' | 'calculations'>(hasReferenceSheet ? 'reference' : 'calculated')
+  const [view, setView] = useState<'genplan' | 'reference' | 'calculated' | 'calculations'>(hasReferenceSheet ? 'genplan' : 'calculated')
 
   const model = useMemo(() => {
     if (pipes.length === 0) return null
@@ -133,8 +134,13 @@ export function SituationSchemeSection({
         <>
           <div className="scheme-view-tabs" role="tablist" aria-label="Вид ситуационной схемы">
               {hasReferenceSheet && (
+              <button type="button" className={view === 'genplan' ? 'active' : ''} onClick={() => setView('genplan')}>
+                Генплан — основание трассы
+              </button>
+              )}
+              {hasReferenceSheet && (
               <button type="button" className={view === 'reference' ? 'active' : ''} onClick={() => setView('reference')}>
-                Конечная схема из проекта
+                Итоговая схема из проекта
               </button>
               )}
               <button type="button" className={view === 'calculated' ? 'active' : ''} onClick={() => setView('calculated')}>
@@ -144,7 +150,9 @@ export function SituationSchemeSection({
                 Расчёты труб и диаметры
               </button>
           </div>
-          {hasReferenceSheet && view === 'reference' ? (
+          {hasReferenceSheet && view === 'genplan' ? (
+            <GenplanRouteView />
+          ) : hasReferenceSheet && view === 'reference' ? (
             <ReferenceSituationView />
           ) : view === 'calculations' ? (
             <PipeCalculationsView pipes={model.calculatedPipes} nodeLabel={nodeLabel} />
@@ -155,14 +163,16 @@ export function SituationSchemeSection({
               pipeDiameterMm={projectPipeDisplay?.diameterMm ?? model.pipeDiameterMm}
               pipeDisplayLabel={projectPipeDisplay?.labels}
               pipePaths={projectPipeDisplay?.paths}
+              verifiedProjectGeometryOnly={hasReferenceSheet}
               corridorRings={corridorRings}
               outletFlowLps={model.outletFlowLps}
             />
           )}
           {hasReferenceSheet && (
             <p className="reference-source-note">
-              Конечный вид и обозначения сверены с «ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf», лист 2.
-              Расчётная вкладка строится заново из загруженной сети и не подменяет исходный чертёж.
+              Иерархия источников: положение трассы и планировочные ограничения — «Схема ЛК от Генплан с диаметрами»;
+              конечное оформление — «ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf», лист 2; гидравлическая вкладка — отдельная проверка.
+              Автоматический расчёт не имеет права спрямлять или подменять геометрию генплана.
             </p>
           )}
         </>
