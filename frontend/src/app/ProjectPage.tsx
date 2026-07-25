@@ -95,19 +95,19 @@ export function ProjectPage() {
     const [projectRes, datasetsRes, buildingsRes, nodesRes, pipesRes, runRes] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).maybeSingle(),
       supabase.from('datasets').select('*').eq('project_id', id),
-      supabase
-        .from('buildings')
-        .select('id,label,x,y,floors,residents,specific_demand_lpd,design_flow_lps')
+        supabase
+          .from('buildings')
+          .select('*')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
-      supabase
-        .from('nodes')
-        .select('id,kind,label,x,y,ground_elevation,building_id,design_flow_lps,invert_elevation_m,system_type,source_entity,data_source,meta')
+        supabase
+          .from('nodes')
+          .select('*')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
-      supabase
-        .from('pipes')
-        .select('id,from_node,to_node,length_m,diameter_mm,material,engineering_kind,system_type,parallel_count,alignment,source_layer,source_entity,flow_direction,inner_diameter_mm,sdr,sn,pn,roughness_mm,slope,start_invert_m,end_invert_m,cover_m,design_flow_lps,velocity_mps,filling_ratio,pressure_m,calculation_status,data_source,meta')
+        supabase
+          .from('pipes')
+          .select('*')
         .eq('project_id', id)
         .order('created_at', { ascending: true }),
       supabase
