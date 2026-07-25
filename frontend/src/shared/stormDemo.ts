@@ -149,8 +149,9 @@ export async function seedStormProject(projectId: string, callbacks?: {
     try {
       await fn()
       seeded++
-    } catch {
-      failures.push(name)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      failures.push(message ? `${name}: ${message}` : name)
     }
   }
 
