@@ -54,6 +54,26 @@ export async function insertParcel(
   if (error) throw error
 }
 
+/** Replaces the active engineering right-of-way after a new master plan is processed. */
+export async function replaceRightOfWay(projectId: string, ring: Vec2[], label: string): Promise<void> {
+  const { data: existing, error: selectError } = await supabase
+    .from('parcels')
+    .select('id')
+    .eq('project_id', projectId)
+    .eq('kind', 'right_of_way')
+    .limit(1)
+  if (selectError) throw selectError
+  if (existing?.[0]) {
+    const { error } = await supabase
+      .from('parcels')
+      .update({ geometry: ringToGeometry(ring), label })
+      .eq('id', existing[0].id)
+    if (error) throw error
+  } else {
+    await insertParcel(projectId, 'right_of_way', ring, label)
+  }
+}
+
 export async function deleteParcel(parcelId: string): Promise<void> {
   await supabase.from('parcels').delete().eq('id', parcelId)
 }

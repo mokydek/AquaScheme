@@ -1,4 +1,4 @@
-import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
+import { NORMATIVE_DEFAULTS, traceConstrainedNetwork } from '@aquascheme/engine'
 import type { CatalogItem, TracedNetwork } from '@aquascheme/engine'
 import { supabase } from './supabase'
 import { replaceNetwork } from './network'
@@ -31,7 +31,7 @@ const BASIS_DEMO_FILES: Partial<Record<string, string>> = {
   assignment: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — общие данные и основание проектирования',
   apz: 'АПЗ исправленный 22,10.pdf',
   pdp: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — планы трассы, листы 3–31',
-  route_act: 'ТОО Аква Д.большой Талдыколь общий.dwg — геометрия принятой трассы',
+  route_act: 'ТОО Аква Д.большой Талдыколь общий.dwg — инженерный коридор и топографическая основа',
   genplan_scheme: 'Схема ЛК от Генплан с диаметрами..pdf',
   topo: 'Топо Водосбрсной общий 15,10.pdf',
   geology: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
@@ -100,48 +100,22 @@ function nearestElevation(x: number, y: number): number {
 }
 
 function realNetwork(buildingIdByLabel: Map<string, string>): TracedNetwork {
-  const nodes: TracedNetwork['nodes'] = realProject.route.map((point, index) => ({
-    id: `К2-${index}`,
-    kind: index === 0 ? 'source' : 'junction',
-    x: point.x,
-    y: point.y,
-    groundElevation: nearestElevation(point.x, point.y),
-  }))
-  const pipes: TracedNetwork['pipes'] = realProject.route.slice(1).map((point, index) => {
-    const previous = realProject.route[index]
-    return {
-      id: `К2-${index + 1}`,
-      kind: 'main',
-      fromNode: `К2-${index + 1}`,
-      toNode: `К2-${index}`,
-      lengthM: Math.hypot(point.x - previous.x, point.y - previous.y),
-    }
-  })
-  for (const [index, inflow] of realProject.inflows.entries()) {
-    let routeIndex = 0
-    let best = Number.POSITIVE_INFINITY
-    realProject.route.forEach((point, candidate) => {
-      const distance = (point.x - inflow.x) ** 2 + (point.y - inflow.y) ** 2
-      if (distance < best) { best = distance; routeIndex = candidate }
-    })
-    const nodeId = `ОС-${index + 1}`
-    nodes.push({
-      id: nodeId,
-      kind: 'building',
+  const result = traceConstrainedNetwork(
+    realProject.inflows.map((inflow, index) => ({
+      id: inflow.label,
+      buildingId: buildingIdByLabel.get(inflow.label) ?? `ОС-${index + 1}`,
       x: inflow.x,
       y: inflow.y,
-      groundElevation: nearestElevation(inflow.x, inflow.y),
-      buildingId: buildingIdByLabel.get(inflow.label) ?? nodeId,
-    })
-    pipes.push({
-      id: `Подключение-${index + 1}`,
-      kind: 'service',
-      fromNode: nodeId,
-      toNode: `К2-${routeIndex}`,
-      lengthM: Math.max(1, Math.sqrt(best)),
-    })
-  }
-  return { nodes, pipes, totalLengthM: pipes.reduce((sum, pipe) => sum + pipe.lengthM, 0) }
+    })),
+    realProject.outlet,
+    {
+      corridorRings: [realProject.corridor],
+      surveyPoints: realProject.surveyPoints.filter((point) => point.z >= 300 && point.z <= 400),
+    },
+    { gridSizeM: 15 },
+  )
+  if (!result.report.ok) throw new Error(result.report.warnings.join(' '))
+  return result.network
 }
 
 const REAL_CATALOG: CatalogItem[] = [
@@ -205,7 +179,8 @@ export async function seedStormProject(projectId: string): Promise<StormDemoResu
     hazards: ['high_groundwater'],
   }))
 
-  // Inflow sources and route geometry. Exact decimal design flow is stored in
+  // Inflow sources. The route is calculated from the DWG engineering corridor,
+  // not copied from the accepted album. Exact decimal design flow is stored in
   // specific_demand_lpd because the legacy residents column is integer.
   await step('sources', async () => {
     await supabase.from('buildings').delete().eq('project_id', projectId)

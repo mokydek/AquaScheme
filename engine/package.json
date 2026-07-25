@@ -29,6 +29,10 @@
     "./dxfread": {
       "types": "./src/dxfread.ts",
       "default": "./src/dxfread.ts"
+    },
+    "./constrained-route": {
+      "types": "./src/constrained-route.ts",
+      "default": "./src/constrained-route.ts"
     }
   },
   "scripts": {

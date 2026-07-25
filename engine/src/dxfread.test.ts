@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDxfNetwork, parseTopographyDxf } from './dxfread'
+import { classifyDxfConstraints, parseDxfNetwork, parseTopographyDxf } from './dxfread'
 
 const FIXTURE = [
   '0',
@@ -75,6 +75,30 @@ describe('parseDxfNetwork', () => {
     const polygon = parseDxfNetwork(closed).segments[1]
     expect(polygon.closed).toBe(true)
     expect(polygon.points[0]).toEqual(polygon.points.at(-1))
+  })
+})
+
+describe('classifyDxfConstraints', () => {
+  it('does not mistake planning and utility layers for designed pipes', () => {
+    const data = classifyDxfConstraints({
+      ok: true,
+      points: [{ x: 2, y: 2, z: 351.2, layer: 'точки' }],
+      layers: [
+        { name: 'Коридор_инженерных_сетей', segments: 1, points: 0 },
+        { name: 'Красные_линии', segments: 1, points: 0 },
+        { name: 'Трубопроводы_водоснабжения', segments: 1, points: 0 },
+      ],
+      segments: [
+        { layer: 'Коридор_инженерных_сетей', closed: true, points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 30 }, { x: 0, y: 30 }, { x: 0, y: 0 }] },
+        { layer: 'Красные_линии', points: [{ x: 20, y: -10 }, { x: 20, y: 40 }] },
+        { layer: 'Трубопроводы_водоснабжения', points: [{ x: 40, y: -10 }, { x: 40, y: 40 }] },
+      ],
+    })
+    expect(data.corridorRings).toHaveLength(1)
+    expect(data.redLines).toHaveLength(1)
+    expect(data.utilityLines).toHaveLength(1)
+    expect(data.surveyPoints).toEqual([{ x: 2, y: 2, z: 351.2 }])
+    expect(data.rejectedSurveyPoints).toBe(0)
   })
 })
 

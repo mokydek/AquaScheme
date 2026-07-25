@@ -25,6 +25,140 @@ export interface DxfNetworkData {
   ok: boolean
 }
 
+export type DxfLayerRole =
+  | 'corridor'
+  | 'redLine'
+  | 'utility'
+  | 'road'
+  | 'hydrography'
+  | 'terrain'
+  | 'candidateRoute'
+  | 'other'
+
+export interface DxfConstraintData {
+  /** Closed boundaries in which a designed route is allowed to run. */
+  corridorRings: ImportPoint[][]
+  /** Open linework from the corridor layer, retained for diagnostics only. */
+  corridorLinework: ImportSegment[]
+  redLines: ImportSegment[]
+  utilityLines: ImportSegment[]
+  roadLines: ImportSegment[]
+  hydrography: ImportSegment[]
+  terrainLines: ImportSegment[]
+  candidateRoute: ImportSegment[]
+  roles: Record<string, DxfLayerRole>
+  surveyPoints: SurveyPoint[]
+  rejectedSurveyPoints: number
+}
+
+const normalizedLayer = (name: string): string => name.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е')
+
+function pointSegmentDistance(point: ImportPoint, a: ImportPoint, b: ImportPoint): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const length2 = dx * dx + dy * dy
+  if (length2 === 0) return Math.hypot(point.x - a.x, point.y - a.y)
+  const ratio = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length2))
+  return Math.hypot(point.x - (a.x + ratio * dx), point.y - (a.y + ratio * dy))
+}
+
+/** Douglas-Peucker removes millimetric CAD vertices and narrow backtracking
+ * spikes that make an otherwise valid right-of-way polygon self-intersect. */
+function simplifyPolyline(points: ImportPoint[], toleranceM: number): ImportPoint[] {
+  if (points.length <= 2) return points
+  let farthestIndex = -1
+  let farthestDistance = 0
+  for (let index = 1; index < points.length - 1; index++) {
+    const distance = pointSegmentDistance(points[index], points[0], points[points.length - 1])
+    if (distance > farthestDistance) {
+      farthestDistance = distance
+      farthestIndex = index
+    }
+  }
+  if (farthestDistance <= toleranceM || farthestIndex < 0) return [points[0], points[points.length - 1]]
+  const left = simplifyPolyline(points.slice(0, farthestIndex + 1), toleranceM)
+  const right = simplifyPolyline(points.slice(farthestIndex), toleranceM)
+  return [...left.slice(0, -1), ...right]
+}
+
+/**
+ * Classifies a complete topographic/master-plan DXF. This is deliberately
+ * separate from parseDxfNetwork: a red line, contour or cable must never be
+ * imported as a sewer pipe merely because it is a polyline.
+ */
+export function classifyDxfConstraints(data: DxfNetworkData): DxfConstraintData {
+  const roles: Record<string, DxfLayerRole> = {}
+  const roleOf = (layer: string): DxfLayerRole => {
+    const name = normalizedLayer(layer)
+    if (/коридор.*инженер|инженер.*коридор/.test(name)) return 'corridor'
+    if (/красн.*лин|крассн.*лин/.test(name)) return 'redLine'
+    if (/проезж|тротуар|дорог|улиц|road/.test(name)) return 'road'
+    if (/гидрограф|водоем|водоём|река|канал|озер|озёр/.test(name) && !/канализ/.test(name)) return 'hydrography'
+    if (/рельеф|горизонтал|отметк|grade|elevation|survey|точк.*высот/.test(name)) return 'terrain'
+    if (/трубопровод|водопровод|канализ|ливнев|дренаж|кабел|газоснаб|теплосет|электро|связи/.test(name)) return 'utility'
+    if (/проект.*(трас|осев|коллектор)|(^|[_ -])к2([_ -]|$)/.test(name)) return 'candidateRoute'
+    return 'other'
+  }
+
+  for (const layer of data.layers) roles[layer.name] = roleOf(layer.name)
+  const byRole = (role: DxfLayerRole) => data.segments.filter((segment) => roles[segment.layer ?? '0'] === role)
+  const corridor = byRole('corridor')
+  const rawCorridorRings = corridor
+    .filter((segment) => segment.closed && segment.points.length >= 4)
+    .map((segment) => {
+      const points = [...segment.points]
+      const first = points[0]
+      const last = points[points.length - 1]
+      if (first.x === last.x && first.y === last.y) points.pop()
+      // 5 m is below normal corridor width but removes doubled CAD strokes.
+      return simplifyPolyline(points, 5)
+    })
+    // The source drawing contains small closed symbols on the same layer.
+    // Keep only spatially meaningful right-of-way polygons.
+    .filter((ring) => {
+      const xs = ring.map((point) => point.x)
+      const ys = ring.map((point) => point.y)
+      return Math.max(...xs) - Math.min(...xs) >= 30 && Math.max(...ys) - Math.min(...ys) >= 30
+    })
+  const ringArea = (ring: ImportPoint[]) => Math.abs(ring.reduce((sum, point, index) => {
+    const next = ring[(index + 1) % ring.length]
+    return sum + point.x * next.y - next.x * point.y
+  }, 0) / 2)
+  const fingerprints = new Set<string>()
+  const corridorRings = rawCorridorRings
+    .sort((a, b) => ringArea(b) - ringArea(a))
+    .filter((ring) => {
+      const fingerprint = ring.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(';')
+      if (fingerprints.has(fingerprint)) return false
+      fingerprints.add(fingerprint)
+      return true
+    })
+
+  const rawSurveyPoints = data.points
+    .filter((point) => typeof point.z === 'number' && Number.isFinite(point.z) && point.z !== 0)
+    .map((point) => ({ x: point.x, y: point.y, z: point.z as number }))
+  const sortedElevations = rawSurveyPoints.map((point) => point.z).sort((a, b) => a - b)
+  const median = sortedElevations[Math.floor(sortedElevations.length / 2)] ?? 0
+  const deviations = sortedElevations.map((z) => Math.abs(z - median)).sort((a, b) => a - b)
+  const medianDeviation = deviations[Math.floor(deviations.length / 2)] ?? 0
+  const elevationLimit = Math.max(50, medianDeviation * 8)
+  const surveyPoints = rawSurveyPoints.filter((point) => Math.abs(point.z - median) <= elevationLimit)
+
+  return {
+    corridorRings,
+    corridorLinework: corridor.filter((segment) => !segment.closed),
+    redLines: byRole('redLine'),
+    utilityLines: byRole('utility'),
+    roadLines: byRole('road'),
+    hydrography: byRole('hydrography'),
+    terrainLines: byRole('terrain'),
+    candidateRoute: byRole('candidateRoute'),
+    roles,
+    surveyPoints,
+    rejectedSurveyPoints: rawSurveyPoints.length - surveyPoints.length,
+  }
+}
+
 interface DxfVertex {
   x?: number
   y?: number

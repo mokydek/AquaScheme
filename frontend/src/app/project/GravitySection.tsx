@@ -437,6 +437,7 @@ export function GravitySection({
         profile: result.profile,
         schedule,
         pipeDiameterMm,
+        buildingLabels: new Map(buildings.map((building) => [building.id, building.label ?? building.id])),
         outletFlowLps: result.outletFlowLps,
         designSchedule: referenceSchedule,
       })

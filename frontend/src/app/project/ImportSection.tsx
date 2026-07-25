@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform } from '@aquascheme/engine'
-import type { ImportReport, ImportSegment, SurveyPoint } from '@aquascheme/engine'
-import type { DxfNetworkData } from '@aquascheme/engine/dxfread'
+import { importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform, traceConstrainedNetwork } from '@aquascheme/engine'
+import type { ConstrainedRouteReport, ImportReport, ImportSegment, SurveyPoint } from '@aquascheme/engine'
+import type { DxfConstraintData, DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { replaceNetwork } from '../../shared/network'
+import { replaceRightOfWay } from '../../shared/parcels'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import type { BuildingRow } from '../../shared/datasets'
 import type { PipeRow } from '../../shared/network'
@@ -12,7 +13,7 @@ import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 
 type Parsed =
-  | { kind: 'dxf'; data: DxfNetworkData }
+  | { kind: 'dxf'; data: DxfNetworkData; constraints: DxfConstraintData }
   | { kind: 'geojson'; segments: ImportSegment[]; treatedAsLonLat: boolean }
 
 type GeorefMode = 'none' | 'points' | 'proj4'
@@ -51,6 +52,7 @@ export function ImportSection({
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [fromDwg, setFromDwg] = useState(false)
   const [report, setReport] = useState<ImportReport | null>(null)
+  const [constraintReport, setConstraintReport] = useState<ConstrainedRouteReport | null>(null)
 
   const canImport = source !== null
 
@@ -60,20 +62,22 @@ export function ImportSection({
     setNotice(null)
     setUploadMessage(null)
     setReport(null)
+    setConstraintReport(null)
     setParsed(null)
     setFromDwg(false)
     try {
       const routed = await routeUpload(file, ['dxf', 'geojson'])
       if (routed.kind === 'dxf') {
-        const { parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
+        const { classifyDxfConstraints, parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
         const data = parseDxfNetwork(routed.text ?? '')
         if (!data.ok || data.segments.length === 0) {
           setNotice('invalid')
         } else {
-          setParsed({ kind: 'dxf', data })
+          const constraints = classifyDxfConstraints(data)
+          setParsed({ kind: 'dxf', data, constraints })
           setFromDwg(routed.fromDwg === true)
           const selected: Record<string, boolean> = {}
-          for (const layer of data.layers) selected[layer.name] = layer.segments > 0
+          for (const layer of data.layers) selected[layer.name] = constraints.roles[layer.name] === 'candidateRoute'
           setSelectedLayers(selected)
         }
       } else {
@@ -95,50 +99,59 @@ export function ImportSection({
 
   const num = (value: string): number => Number(value.trim().replace(',', '.'))
 
+  const afterPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+  const coordinateTransform = async (): Promise<((point: { x: number; y: number }) => { x: number; y: number }) | null> => {
+    if (georefMode === 'none') return (point) => ({ x: point.x, y: point.y })
+    if (georefMode === 'points') {
+      const values = CP_KEYS.map((key) => num(cp[key]))
+      if (values.some((value) => !Number.isFinite(value))) {
+        setNotice('georefError')
+        return null
+      }
+      try {
+        const transform = similarityTransform(
+          { from: { x: values[0], y: values[1] }, to: { x: values[2], y: values[3] } },
+          { from: { x: values[4], y: values[5] }, to: { x: values[6], y: values[7] } },
+        )
+        return (point) => transform(point.x, point.y)
+      } catch {
+        setNotice('georefError')
+        return null
+      }
+    }
+    try {
+      const proj4 = (await import('proj4')).default
+      return (point) => {
+        const [lon, lat] = proj4(projString, 'EPSG:4326', [point.x, point.y])
+        const local = lonLatToLocal(lon, lat)
+        return { x: local.x, y: local.y }
+      }
+    } catch {
+      setNotice('georefError')
+      return null
+    }
+  }
+
   const run = async () => {
     if (!parsed || !source || busy) return
     setBusy(true)
     setNotice(null)
+    setConstraintReport(null)
     try {
+      await afterPaint()
       let segments: ImportSegment[] =
         parsed.kind === 'dxf'
           ? parsed.data.segments.filter((s) => selectedLayers[s.layer ?? '0'])
           : parsed.segments
 
-      if (georefMode === 'points') {
-        const values = CP_KEYS.map((k) => num(cp[k]))
-        if (values.some((v) => !Number.isFinite(v))) {
-          setNotice('georefError')
-          return
-        }
-        let transform
-        try {
-          transform = similarityTransform(
-            { from: { x: values[0], y: values[1] }, to: { x: values[2], y: values[3] } },
-            { from: { x: values[4], y: values[5] }, to: { x: values[6], y: values[7] } },
-          )
-        } catch {
-          setNotice('georefError')
-          return
-        }
-        segments = segments.map((s) => ({
-          layer: s.layer,
-          points: s.points.map((p) => transform(p.x, p.y)),
-        }))
-      } else if (georefMode === 'proj4') {
-        try {
-          const proj4 = (await import('proj4')).default
-          const convert = (p: { x: number; y: number }) => {
-            const [lon, lat] = proj4(projString, 'EPSG:4326', [p.x, p.y])
-            const local = lonLatToLocal(lon, lat)
-            return { x: local.x, y: local.y }
-          }
-          segments = segments.map((s) => ({ layer: s.layer, points: s.points.map(convert) }))
-        } catch {
-          setNotice('georefError')
-          return
-        }
-      }
+      const transform = await coordinateTransform()
+      if (!transform) return
+      segments = segments.map((segment) => ({
+        layer: segment.layer,
+        closed: segment.closed,
+        points: segment.points.map(transform),
+      }))
 
       const snap = num(tolerance)
       const { network, report: importReport } = importNetwork(
@@ -155,6 +168,60 @@ export function ImportSection({
       }
       await replaceNetwork(projectId, network)
       setReport(importReport)
+      setNotice('done')
+      await onChanged()
+    } catch {
+      setNotice('error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const runConstrained = async () => {
+    if (!parsed || parsed.kind !== 'dxf' || !source || busy) return
+    setBusy(true)
+    setNotice(null)
+    setReport(null)
+    setConstraintReport(null)
+    try {
+      await afterPaint()
+      const transform = await coordinateTransform()
+      if (!transform) return
+      const primaryCorridor = parsed.constraints.corridorRings[0]
+      if (!primaryCorridor || buildings.length === 0) {
+        setNotice('error')
+        return
+      }
+      const mapSegments = (segments: ImportSegment[]) => segments.map((segment) => ({
+        layer: segment.layer,
+        points: segment.points.map(transform),
+      }))
+      const dxfSurvey = parsed.constraints.surveyPoints.map((point) => ({ ...transform(point), z: point.z }))
+      const route = traceConstrainedNetwork(
+        buildings.map((building) => ({
+          id: building.label ?? building.id,
+          buildingId: building.id,
+          x: building.x,
+          y: building.y,
+        })),
+        { x: source.x, y: source.y },
+        {
+          corridorRings: [primaryCorridor.map(transform)],
+          redLines: mapSegments(parsed.constraints.redLines),
+          utilityLines: mapSegments(parsed.constraints.utilityLines),
+          roadLines: mapSegments(parsed.constraints.roadLines),
+          waterLines: mapSegments(parsed.constraints.hydrography),
+          surveyPoints: dxfSurvey.length > 0 ? dxfSurvey : points,
+        },
+        { gridSizeM: 15 },
+      )
+      setConstraintReport(route.report)
+      if (route.network.pipes.length === 0 || route.report.routedTerminals === 0) {
+        setNotice('error')
+        return
+      }
+      await replaceNetwork(projectId, route.network)
+      await replaceRightOfWay(projectId, primaryCorridor.map(transform), 'Инженерный коридор из загруженного DWG')
       setNotice('done')
       await onChanged()
     } catch {
@@ -191,25 +258,53 @@ export function ImportSection({
       {fromDwg && parsed && <p className="stat-line ok">{t('upload.convertedFromDwg')}</p>}
       {parsed?.kind === 'dxf' && (
         <div style={{ marginTop: 16 }}>
-          <p className="field-label">{t('project.import.layers')}</p>
-          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {parsed.data.layers
-              .filter((l) => l.segments > 0)
-              .map((layer) => (
-                <label className="check" key={layer.name}>
-                  <input
-                    type="checkbox"
-                    checked={selectedLayers[layer.name] ?? false}
-                    onChange={(e) =>
-                      setSelectedLayers((prev) => ({ ...prev, [layer.name]: e.target.checked }))
-                    }
-                  />
-                  <span className="mono" style={{ fontSize: 13 }}>
-                    {layer.name} · {layer.segments}
-                  </span>
-                </label>
-              ))}
-          </div>
+          <p className="field-label">Распознано в исходном чертеже</p>
+          <p className="stat-line">
+            Инженерный коридор: {parsed.constraints.corridorRings.length > 0 ? 'найден' : 'не найден'} ·
+            {' '}красные линии: {parsed.constraints.redLines.length} · коммуникации: {parsed.constraints.utilityLines.length} ·
+            {' '}дороги: {parsed.constraints.roadLines.length} · гидрография: {parsed.constraints.hydrography.length} ·
+            {' '}высотные точки: {parsed.constraints.surveyPoints.length}
+          </p>
+          {parsed.constraints.rejectedSurveyPoints > 0 && (
+            <p className="stat-line warn">Отброшено аномальных высотных отметок: {parsed.constraints.rejectedSurveyPoints}</p>
+          )}
+          {parsed.constraints.corridorRings.length === 0 ? (
+            <p className="notice error">Стоп-фактор: в DWG нет замкнутого слоя инженерного коридора. Автоматическая трасса не строится.</p>
+          ) : (
+            <div className="section-actions">
+              <button
+                type="button"
+                className={`btn btn-sm${busy ? ' is-loading' : ''}`}
+                disabled={busy || !canImport}
+                onClick={() => void runConstrained()}
+              >
+                {busy && <span className="button-spinner" aria-hidden="true" />}
+                {busy ? 'Проверка ограничений и поиск трассы…' : 'Построить трассу по генплану и ограничениям'}
+              </button>
+            </div>
+          )}
+          <details style={{ marginTop: 16 }}>
+            <summary className="field-label">Ручной импорт уже готовой оси по выбранным слоям</summary>
+            <p className="hint">Этот режим не проектирует трассу, а переносит готовые полилинии. Слои коридора, рельефа и коммуникаций исключены по умолчанию.</p>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflow: 'auto' }}>
+              {parsed.data.layers
+                .filter((layer) => layer.segments > 0 && ['candidateRoute', 'other'].includes(parsed.constraints.roles[layer.name]))
+                .map((layer) => (
+                  <label className="check" key={layer.name}>
+                    <input
+                      type="checkbox"
+                      checked={selectedLayers[layer.name] ?? false}
+                      onChange={(event) =>
+                        setSelectedLayers((prev) => ({ ...prev, [layer.name]: event.target.checked }))
+                      }
+                    />
+                    <span className="mono" style={{ fontSize: 13 }}>
+                      {layer.name} · {layer.segments}
+                    </span>
+                  </label>
+                ))}
+            </div>
+          </details>
         </div>
       )}
       {parsed?.kind === 'geojson' && (
@@ -281,9 +376,12 @@ export function ImportSection({
           )}
 
           <div className="section-actions">
-            <button type="button" className="btn btn-sm" disabled={busy || !canImport} onClick={() => void run()}>
-              {t('project.import.run')}
+            {(parsed.kind !== 'dxf' || Object.values(selectedLayers).some(Boolean)) && (
+            <button type="button" className={`btn btn-sm${busy ? ' is-loading' : ''}`} disabled={busy || !canImport} onClick={() => void run()}>
+              {busy && <span className="button-spinner" aria-hidden="true" />}
+              {busy ? 'Обработка…' : t('project.import.run')}
             </button>
+            )}
             {notice === 'done' && <span className="stat-line ok">{t('project.import.done')}</span>}
           </div>
         </>
@@ -293,6 +391,21 @@ export function ImportSection({
       {notice === 'invalid' && <p className="notice error">{t('project.import.invalid')}</p>}
       {notice === 'georefError' && <p className="notice error">{t('project.import.georefInvalid')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.import.error')}</p>}
+
+      {constraintReport && (
+        <div style={{ marginTop: 16 }}>
+          <p className={constraintReport.ok ? 'stat-line ok' : 'stat-line warn'}>
+            Проложено подключений: {constraintReport.routedTerminals}; расчётных ячеек: {constraintReport.evaluatedCells};
+            {' '}шаг сетки: {constraintReport.gridSizeM} м.
+          </p>
+          <p className="stat-line">
+            Пересечения: красные линии — {constraintReport.redLineCrossings}, коммуникации — {constraintReport.utilityCrossings},
+            {' '}дороги — {constraintReport.roadCrossings}, водные объекты — {constraintReport.waterCrossings};
+            {' '}участки вне коридора — {constraintReport.outsideCorridorSegments}.
+          </p>
+          {constraintReport.warnings.map((warning) => <p className="stat-line warn" key={warning}>{warning}</p>)}
+        </div>
+      )}
 
       {report && (
         <div style={{ marginTop: 16 }}>

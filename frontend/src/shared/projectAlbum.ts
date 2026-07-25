@@ -9,7 +9,7 @@ export interface ProjectAlbumInput {
   schedule: SewerSchedule
   pipeDiameterMm: Map<string, number>
   outletFlowLps: number
-  referenceSituationDataUrl?: string
+  buildingLabels?: Map<string, string>
   designSchedule?: Array<{
     system: string
     designation: string
@@ -21,6 +21,8 @@ export interface ProjectAlbumInput {
 
 type PdfNode = Record<string, unknown>
 type Point = { x: number; y: number }
+
+const xml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 const GROUPS = [
   ['1–3', 'Общие данные', '3'],
@@ -87,6 +89,39 @@ function planSvg(input: ProjectAlbumInput, index: number): string {
   const pk0 = Math.round(input.profile.totalLengthM * from)
   const pk1 = Math.round(input.profile.totalLengthM * to)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 520"><rect width="1000" height="520" fill="#fff"/><g>${contours}${roads}</g><path d="${routePath}" fill="none" stroke="#1646b5" stroke-width="7" stroke-linejoin="round"/><path d="${routePath}" fill="none" stroke="#fff" stroke-width="1" stroke-dasharray="4 5"/>${nodes}<text x="30" y="30" font-size="16" font-weight="700">План К2 ПК${Math.floor(pk0 / 100)}+${pk0 % 100} — ПК${Math.floor(pk1 / 100)}+${pk1 % 100}. М1:500</text><g transform="translate(860 38)"><rect width="110" height="82" fill="#fff" stroke="#111"/><path d="M55 68 L55 15 M55 15 L48 28 M55 15 L62 28" stroke="#111" fill="none"/><text x="55" y="12" text-anchor="middle" font-size="12">С</text><text x="8" y="77" font-size="9">схема листа ${index + 1}/29</text></g></svg>`
+}
+
+function situationSvg(input: ProjectAlbumInput): string {
+  const width = 760
+  const height = 930
+  const nodes = input.network.nodes
+  if (nodes.length === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}"><text x="30" y="50">Нет расчётной сети</text></svg>`
+  const fitted = fit(nodes, width, height, 55)
+  const position = new Map(nodes.map((node, index) => [node.id, fitted[index]]))
+  const pipes = input.network.pipes.map((pipe) => {
+    const from = position.get(pipe.fromNode)
+    const to = position.get(pipe.toNode)
+    if (!from || !to) return ''
+    const diameter = input.pipeDiameterMm.get(pipe.id)
+    const service = pipe.kind === 'service'
+    return `<line x1="${from.x.toFixed(1)}" y1="${from.y.toFixed(1)}" x2="${to.x.toFixed(1)}" y2="${to.y.toFixed(1)}" stroke="${service ? '#c53364' : '#173f9f'}" stroke-width="${service ? 2.5 : 5}"${service ? ' stroke-dasharray="7 5"' : ''}><title>${diameter ? `Ø${diameter}` : 'расчётный участок'} · ${pipe.lengthM.toFixed(1)} м</title></line>`
+  }).join('')
+  const markedNodes = nodes.map((node) => {
+    if (node.kind !== 'building' && node.kind !== 'source') return ''
+    const point = position.get(node.id)!
+    const label = node.kind === 'source' ? 'Выпуск' : input.buildingLabels?.get(node.buildingId ?? '') ?? node.buildingId ?? node.id
+    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="6" fill="#fff" stroke="#8d142f" stroke-width="2"/><text x="${(point.x + 9).toFixed(1)}" y="${(point.y - 8).toFixed(1)}" font-size="12" font-weight="700">${xml(label)}</text>`
+  }).join('')
+  const labelStride = Math.max(1, Math.ceil(input.network.pipes.length / 18))
+  const diameterLabels = input.network.pipes.map((pipe, index) => {
+    if (index % labelStride !== 0 || pipe.kind === 'service') return ''
+    const from = position.get(pipe.fromNode)
+    const to = position.get(pipe.toNode)
+    const diameter = input.pipeDiameterMm.get(pipe.id)
+    if (!from || !to || !diameter) return ''
+    return `<text x="${((from.x + to.x) / 2 + 5).toFixed(1)}" y="${((from.y + to.y) / 2 - 5).toFixed(1)}" font-size="10" fill="#173f9f">Ø${diameter}</text>`
+  }).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/><text x="${width / 2}" y="25" text-anchor="middle" font-size="18" font-weight="700">Расчётная ситуационная схема</text>${pipes}${markedNodes}${diameterLabels}<g transform="translate(24 45)"><path d="M0 36 L0 0 M0 0 L-6 13 M0 0 L6 13" stroke="#111" fill="none"/><text x="0" y="-7" text-anchor="middle" font-size="11">С</text></g><g transform="translate(20 ${height - 55})" font-size="10"><line x1="0" y1="0" x2="35" y2="0" stroke="#173f9f" stroke-width="5"/><text x="43" y="4">коллектор</text><line x1="125" y1="0" x2="160" y2="0" stroke="#c53364" stroke-width="2.5" stroke-dasharray="7 5"/><text x="168" y="4">подключение ОС</text></g></svg>`
 }
 
 function stationAt(profile: GravityProfile, chainage: number) {
@@ -174,9 +209,7 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
         { text: 'Планы и профили сформированы из текущей геометрии сети, отметок земли, расчётных отметок лотка и принятых диаметров. Проектные спецификации сохраняются отдельными листами 59–61.', fontSize: 9, lineHeight: 1.3, margin: [0, 10, 0, 0] },
         { text: 'Обозначения на ситуационной схеме: Оголовок, ЛНС, ОС III-6, ОС II-1, ОС III-8, ОС III-4; Ø1200, 2×Ø800, Ø1600, Ø2000.', fontSize: 9, lineHeight: 1.3, margin: [0, 10, 0, 0], color: '#b20d0d' },
       ] },
-      input.referenceSituationDataUrl
-        ? { width: 315, image: input.referenceSituationDataUrl, fit: [315, 430], alignment: 'right' }
-        : { width: 315, text: 'Эталонная ситуационная схема недоступна', alignment: 'center', margin: [0, 180, 0, 0] },
+      { width: 315, svg: situationSvg(input), fit: [315, 430], alignment: 'right' },
     ], columnGap: 20 },
   ]
   content.push(page(3, 'Общие данные (окончание). Ситуационная схема', situationBody))

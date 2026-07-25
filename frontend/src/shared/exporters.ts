@@ -271,23 +271,9 @@ async function renderPdfDoc(doc: unknown): Promise<Blob> {
   return pdfDocumentBlob(maker.createPdf(doc))
 }
 
-async function blobDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать изображение ситуационной схемы'))
-    reader.onload = () => resolve(String(reader.result))
-    reader.readAsDataURL(blob)
-  })
-}
-
 /** Full 61-sheet A3 album following the structure of 2024-51-НК. */
 export async function generateProjectAlbumPdf(input: ProjectAlbumInput): Promise<Blob> {
-  let referenceSituationDataUrl = input.referenceSituationDataUrl
-  if (!referenceSituationDataUrl && input.projectCode === '2024-51-НК') {
-    const response = await fetch('/reference/2024-51-situation.png')
-    if (response.ok) referenceSituationDataUrl = await blobDataUrl(await response.blob())
-  }
-  return renderPdfDoc(buildProjectAlbumDoc({ ...input, referenceSituationDataUrl }))
+  return renderPdfDoc(buildProjectAlbumDoc(input))
 }
 
 /** Explanatory note as a PDF blob (pdfmake, lazy loaded). */
