@@ -153,6 +153,13 @@ export async function replaceNetwork(
   network: TracedNetwork,
   route: RoutePersistence = {},
 ): Promise<void> {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const invalidBuildingLinks = network.nodes
+    .filter((node) => node.buildingId && !uuidPattern.test(node.buildingId))
+    .map((node) => `${node.id} → ${node.buildingId}`)
+  if (invalidBuildingLinks.length > 0) {
+    throw new Error(`Некорректные связи узлов со зданиями: ${invalidBuildingLinks.join(', ')}. Ожидаются UUID из таблицы buildings.`)
+  }
   const inputHash = route.inputHash ?? await routeInputHash(network)
   const { error } = await supabase.rpc('replace_project_network', {
     p_project_id: projectId,

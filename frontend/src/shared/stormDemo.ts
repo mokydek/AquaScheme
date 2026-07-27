@@ -1,12 +1,13 @@
 import {
   buildStormDemo,
+  bindStormDemoBuildingIds,
   NORMATIVE_DEFAULTS,
   stormDemoAxisAt,
   stormDemoElevationAt,
   STORM_DEMO_STEP_M,
   STORM_DEMO_TOTAL_M,
 } from '@aquascheme/engine'
-import type { Borehole, CatalogItem, SurveyPoint } from '@aquascheme/engine'
+import type { Borehole, CatalogItem, SurveyPoint, TracedNetwork } from '@aquascheme/engine'
 import { supabase } from './supabase'
 import { replaceNetwork, routeInputHash } from './network'
 import { saveDataset } from './datasets'
@@ -88,6 +89,7 @@ export async function seedStormProject(projectId: string, callbacks?: {
   callbacks?.onRouteCancelReady?.(null)
   callbacks?.onRouteProgress?.('Подготовка синтетической модели')
   const demo = buildStormDemo()
+  let persistedNetwork: TracedNetwork | null = null
   const surveyPoints = demoSurveyPoints()
   const boreholes = demoBoreholes()
   const outlet = demo.network.nodes.find((node) => node.kind === 'source')
@@ -139,17 +141,24 @@ export async function seedStormProject(projectId: string, callbacks?: {
   await step('sources', async () => {
     const remove = await supabase.from('buildings').delete().eq('project_id', projectId)
     if (remove.error) throw remove.error
-    const insert = await supabase.from('buildings').insert(demo.sources.map((source) => ({
-      project_id: projectId,
-      label: source.label,
-      x: source.x,
-      y: source.y,
-      floors: 1,
-      residents: Math.round(source.flowLps),
-      specific_demand_lpd: null,
-      design_flow_lps: source.flowLps,
-    })))
+    const insert = await supabase
+      .from('buildings')
+      .insert(demo.sources.map((source) => ({
+        project_id: projectId,
+        label: source.label,
+        x: source.x,
+        y: source.y,
+        floors: 1,
+        residents: Math.round(source.flowLps),
+        specific_demand_lpd: null,
+        design_flow_lps: source.flowLps,
+      })))
+      .select('id,x,y')
     if (insert.error) throw insert.error
+    persistedNetwork = bindStormDemoBuildingIds(
+      demo.network,
+      (insert.data ?? []) as Array<{ id: string; x: number; y: number }>,
+    )
   })
 
   await step('geology summary', () => saveDataset(projectId, 'geology', {
@@ -184,14 +193,15 @@ export async function seedStormProject(projectId: string, callbacks?: {
 
   callbacks?.onRouteProgress?.('Сохранение синтетической трассы')
   await step('engineering route', async () => {
-    const inputHash = await routeInputHash({ network: demo.network, surveyPoints, corridor: DEMO_CORRIDOR })
-    await replaceNetwork(projectId, demo.network, {
+    if (!persistedNetwork) throw new Error('Здания-источники не сохранены; сеть не отправлена в базу.')
+    const inputHash = await routeInputHash({ network: persistedNetwork, surveyPoints, corridor: DEMO_CORRIDOR })
+    await replaceNetwork(projectId, persistedNetwork, {
       status: 'preliminary',
       inputHash,
       warnings: ['Синтетическая демонстрация: для инженерного выпуска импортируйте реальные исходные данные.'],
       report: {
         synthetic: true,
-        quality: { totalLengthM: demo.network.totalLengthM, routedTerminals: demo.sources.length, outsideCorridorSegments: 0 },
+        quality: { totalLengthM: persistedNetwork.totalLengthM, routedTerminals: demo.sources.length, outsideCorridorSegments: 0 },
       },
     })
   })

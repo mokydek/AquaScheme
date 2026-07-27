@@ -23,6 +23,41 @@ export interface StormDemo {
   outletFlowLps: number
 }
 
+export interface PersistedStormDemoBuilding {
+  id: string
+  x: number
+  y: number
+}
+
+function coordinateKey(x: number, y: number): string {
+  return `${x.toFixed(6)}:${y.toFixed(6)}`
+}
+
+/** Bind synthetic source nodes to the real IDs returned by the database. */
+export function bindStormDemoBuildingIds(
+  network: TracedNetwork,
+  buildings: PersistedStormDemoBuilding[],
+): TracedNetwork {
+  const idByCoordinate = new Map(buildings.map((building) => [
+    coordinateKey(building.x, building.y),
+    building.id,
+  ]))
+  const missing: string[] = []
+  const nodes = network.nodes.map((node) => {
+    if (node.kind !== 'building') return node
+    const buildingId = idByCoordinate.get(coordinateKey(node.x, node.y))
+    if (!buildingId) {
+      missing.push(node.id)
+      return node
+    }
+    return { ...node, buildingId }
+  })
+  if (missing.length > 0) {
+    throw new Error(`Не найдены сохранённые здания для узлов: ${missing.join(', ')}.`)
+  }
+  return { ...network, nodes }
+}
+
 export function stormDemoAxisAt(stationM: number): NetworkCoordinate {
   const y = stationM
   const x = stationM <= 800
@@ -86,7 +121,6 @@ export function buildStormDemo(): StormDemo {
       kind: 'building',
       ...source,
       groundElevation: stormDemoElevationAt(target.y),
-      buildingId: id,
       dataSource: 'synthetic-demo',
     })
     pipes.push({
