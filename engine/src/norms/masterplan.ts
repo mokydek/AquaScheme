@@ -13,7 +13,7 @@ import { GRAVITY_DIAMETERS } from './gravity'
  */
 
 export interface PlanSegment {
-  /** Segment key shared with the design (e.g. 'ОС III-6 — узел 1'). */
+  /** Segment key shared with the design (e.g. 'участок 6 — узел 1'). */
   id: string
   /** Diameter from the master-plan scheme, mm. 2х800 is two parallel 800s. */
   planDiameterMm: number

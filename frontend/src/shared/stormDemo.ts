@@ -1,324 +1,201 @@
-import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
-import type { CatalogItem } from '@aquascheme/engine'
+import {
+  buildStormDemo,
+  NORMATIVE_DEFAULTS,
+  stormDemoAxisAt,
+  stormDemoElevationAt,
+  STORM_DEMO_STEP_M,
+  STORM_DEMO_TOTAL_M,
+} from '@aquascheme/engine'
+import type { Borehole, CatalogItem, SurveyPoint } from '@aquascheme/engine'
 import { supabase } from './supabase'
 import { replaceNetwork, routeInputHash } from './network'
 import { saveDataset } from './datasets'
 import { insertParcel } from './parcels'
 import { replaceGeology } from './geology'
 import { deleteCatalog, fetchCatalogs, saveCatalog, setActiveCatalog } from './catalog'
-import { BASIS_ITEMS } from '../app/project/BasisSection'
-import realProject from './realProjectData.json'
-import { runEngineeringRouteInWorker } from './routeWorker'
 
-export const REAL_STORM_PROJECT_NAME = realProject.project.name
+export const DEMO_STORM_PROJECT_NAME = 'Учебный проект ливневого коллектора'
 
-/**
- * One-click storm demo that seeds a WHOLE ready project — not just the network
- * — so the user can open the finished result (the full sheet set) and see the
- * gaps in one place. It fills every panel: inflow sources, the trunk network,
- * geology (the report summary), seismicity, norms,
- * the land-allocation corridor, and the permitting-documents checklist.
- *
- * The binary PDFs/DWG remain in private project storage. The bundle contains
- * only compact, reviewable facts extracted from them: drawing coordinates and
- * elevations, the right-of-way ring, design flows, geology and specification.
- * Every
- * step runs independently so a missing migration for one table never blocks
- * the rest, and the count of seeded sections is returned.
- */
+const DEMO_CORRIDOR = [
+  { x: -140, y: -120 },
+  { x: 200, y: -120 },
+  { x: 200, y: STORM_DEMO_TOTAL_M + 120 },
+  { x: -140, y: STORM_DEMO_TOTAL_M + 120 },
+]
 
-/** Names of the reference input documents (no binaries), for the checklist. */
-const BASIS_DEMO_FILES: Partial<Record<string, string>> = {
-  assignment: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — общие данные и основание проектирования',
-  apz: 'АПЗ исправленный 22,10.pdf',
-  pdp: 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf — планы трассы, листы 3–31',
-  route_act: 'ТОО Аква Д.большой Талдыколь общий.dwg — инженерный коридор и топографическая основа',
-  genplan_scheme: 'Схема ЛК от Генплан с диаметрами..pdf',
-  topo: 'Топо Водосбрсной общий 15,10.pdf',
-  geology: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
-  vertical: 'Топо Водосбрсной общий 15,10.pdf + DWG — высотные отметки и вертикальная планировка',
-  tu: 'АПЗ исправленный 22,10.pdf — исходные технические требования',
+const DEMO_CATALOG: CatalogItem[] = [250, 315, 400, 500, 630, 800].map((dn) => ({
+  itemType: 'pipe',
+  material: 'Синтетический материал демо-каталога',
+  dn,
+}))
+
+function demoSurveyPoints(): SurveyPoint[] {
+  const points: SurveyPoint[] = []
+  for (let station = 0; station <= STORM_DEMO_TOTAL_M; station += STORM_DEMO_STEP_M) {
+    const axis = stormDemoAxisAt(station)
+    const elevation = stormDemoElevationAt(station)
+    points.push(
+      { x: axis.x - 80, y: axis.y, z: elevation + 0.15 },
+      { x: axis.x, y: axis.y, z: elevation },
+      { x: axis.x + 80, y: axis.y, z: elevation - 0.1 },
+    )
+  }
+  return points
 }
 
-/** Every file supplied for verification; names only, never bundled binaries. */
-export const STORM_REFERENCE_FILES = [
-  'АПЗ исправленный 22,10.pdf',
-  'Схема ЛК от Генплан с диаметрами..pdf',
-  'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
-  'ТОО Аква Д.большой Талдыколь общий.dwg',
-  'Топо Водосбрсной общий 15,10.pdf',
-  'aquascheme_geology_template.xlsx',
-  'Земельный кодекс.pdf',
-  '_Экологический кодекс РК 09.01.2026.pdf',
-  '_Строительный кодекс РК 09.01.2026.pdf',
-  '_Водный кодекс РК 12.03.2026.pdf',
-  '4_СН РК 4.01_03_2013 Водоотведение. Наружные сети и сооружения. (с изм. от 07.11.2019г) (1).pdf',
-  '4_СН РК 4.01_03_2013 Водоотведение. Наружные сети и сооружения. (с изм. от 07.11.2019г).pdf',
-  '4_01_03_2011.pdf',
-  'SP_RK_4.01-103-2013.pdf',
-  'СН_РК_1.02-03-2022 (с изм 2025) (1).pdf',
-  'СН_РК_1.02-03-2022 (с изм 2025).pdf',
-  'ГОСТ 21.704-2011 Правила выполнения ПСД НВК.pdf',
-  'ГОСТ 21.101-2020. Основные требования к проектной и рабочей документации.pdf',
-  'ГОСТ 21.110-2013 спецификации.pdf',
-  'АГСК 3 RU (по состоянию на 3 апреля 2026 года).pdf',
-  'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf',
-] as const
-
-export async function seedBasisDemo(projectId: string): Promise<void> {
-  const files: Record<string, string> = {}
-  for (const item of BASIS_ITEMS) {
-    const file = BASIS_DEMO_FILES[item.id]
-    if (file) files[item.id] = file
-  }
-  await saveDataset(projectId, 'basis', {
-    files,
-    referenceFiles: [...STORM_REFERENCE_FILES],
-    mode: 'demo-derived',
-    project: realProject.project,
-    designSchedule: realProject.designSchedule,
-    provenance: {
-      apz: 'АПЗ №145200 от 22.10.2025',
-      drawing: 'ТОО Аква Д.большой Талдыколь общий.dwg',
-      geology: 'Арх. №17-08/25',
-      finalAlbum: '2024-51-НК, том 2, альбом 1, листы 1–3 спецификации',
-    },
+function demoBoreholes(): Borehole[] {
+  return [600, 1800].map((station, index) => {
+    const point = stormDemoAxisAt(station)
+    return {
+      label: `Скважина D-${index + 1}`,
+      x: point.x + 25,
+      y: point.y,
+      mouthElevationM: stormDemoElevationAt(station),
+      layers: [
+        { topDepthM: 0, bottomDepthM: 1.2, igeCode: 'D1', soilName: 'Синтетический суглинок' },
+        { topDepthM: 1.2, bottomDepthM: 6, igeCode: 'D2', soilName: 'Синтетический песок' },
+      ],
+      water: { depthM: 3.5 },
+    }
   })
 }
-
-function nearestElevation(x: number, y: number): number {
-  let best = Number.POSITIVE_INFINITY
-  let elevation = 340
-  for (const point of realProject.surveyPoints) {
-    if (point.z < 300 || point.z > 400) continue
-    const distance = (point.x - x) ** 2 + (point.y - y) ** 2
-    if (distance < best) {
-      best = distance
-      elevation = point.z
-    }
-  }
-  return elevation
-}
-
-function realRouteInput(buildingIdByLabel: Map<string, string>) {
-  const surveyPoints = realProject.surveyPoints.filter((point) => point.z >= 300 && point.z <= 400)
-  return {
-    facilities: realProject.inflows.map((inflow, index) => ({
-      id: inflow.label,
-      label: inflow.label,
-      buildingId: buildingIdByLabel.get(inflow.label) ?? `ОС-${index + 1}`,
-      x: inflow.x,
-      y: inflow.y,
-      designFlowLps: inflow.flowLps,
-    })),
-    lns: { ...realProject.pumpingStation, id: 'LNS' },
-    outlet: { ...realProject.outlet, id: 'OUTLET' },
-    constraints: {
-      corridorRings: [realProject.corridor],
-      surveyPoints,
-      // The bundled public sample deliberately does not contain the complete
-      // classified DWG.  Keep the demo useful for filling the project card,
-      // but never present its sparse geometry as an engineering route.
-      unresolvedLayers: ['PUBLIC_DEMO_REQUIRES_FULL_CLASSIFIED_DWG'],
-      sourceDeclarations: {
-        buildings: 'unknown' as const,
-        utilities: 'unknown' as const,
-        roads: 'unknown' as const,
-        hydrography: 'unknown' as const,
-        parcels: 'unknown' as const,
-        protectionZones: 'unknown' as const,
-      },
-    },
-    options: { gridSizeM: 15 },
-    sourceSurveyPointCount: realProject.sourceSurveyPointCount,
-    pumpHeadM: null,
-  }
-}
-
-const REAL_CATALOG: CatalogItem[] = [
-  { itemType: 'pipe', material: 'Железобетон, ТС 200.25-4', standard: 'ГОСТ 6482-2011', dn: 2000 },
-  { itemType: 'pipe', material: 'Железобетон, ТС 200.25-5', standard: 'ГОСТ 6482-2011', dn: 2000 },
-  { itemType: 'pipe', material: 'Железобетон, ТС 160.25-4', standard: 'ГОСТ 6482-2011', dn: 1600 },
-  { itemType: 'pipe', material: 'Железобетон, ТС 120.25-4', standard: 'ГОСТ 6482-2011', dn: 1200 },
-  { itemType: 'pipe', material: 'Полимерная спиральновитая SN12', standard: 'СТ РК 33813-2022', dn: 2000 },
-  { itemType: 'pipe', material: 'ПЭ100 SDR17', standard: 'ГОСТ 18599-2001', dn: 800, outerMm: 800, wallMm: 47.4, sdr: 17 },
-  { itemType: 'pipe', material: 'ПЭ100 SDR17', standard: 'ГОСТ 18599-2001', dn: 560, outerMm: 560, sdr: 17 },
-  { itemType: 'pipe', material: 'Сталь, футляр 2500×20', standard: 'ГОСТ 10704-91', dn: 2500, outerMm: 2500, wallMm: 20 },
-]
 
 export interface StormDemoResult {
   seededSections: number
   failures: string[]
 }
 
+/**
+ * Seeds a synthetic project that exercises the complete UI without embedding
+ * any acceptance-object values. The route is preliminary by design; only an
+ * imported and classified survey/DWG may become a final engineering result.
+ */
 export async function seedStormProject(projectId: string, callbacks?: {
   onRouteProgress?: (stage: string) => void
   onRouteCancelReady?: (cancel: (() => void) | null) => void
 }): Promise<StormDemoResult> {
   const failures: string[] = []
-  let seeded = 0
-  const step = async (name: string, fn: () => Promise<void>) => {
+  let seededSections = 0
+  const step = async (name: string, action: () => Promise<void>) => {
     try {
-      await fn()
-      seeded++
+      await action()
+      seededSections += 1
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      failures.push(message ? `${name}: ${message}` : name)
+      failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
-  // The public demo uses the already-anonymised survey sample bundled with the
-  // repository. A real project receives the complete surface through import.
-  await step('topography', () => {
-    const points = realProject.surveyPoints.filter((point) => point.z >= 300 && point.z <= 400)
-    const z = points.map((point) => point.z)
-    return saveDataset(projectId, 'topography', { points }, {
-      total: realProject.sourceSurveyPointCount,
-      accepted: points.length,
-      zMin: Math.min(...z),
-      zMax: Math.max(...z),
-      sampledEvery: 5,
-      coordinateSystem: 'локальные координаты исходного DWG',
-      derivedFrom: ['Топо Водосбрсной общий 15,10.pdf', 'ТОО Аква Д.большой Талдыколь общий.dwg'],
-    }, 'ТОО Аква Д.большой Талдыколь общий.dwg')
-  })
-  await step('outlet', () => {
-    return saveDataset(projectId, 'source', {
-      x: realProject.outlet.x,
-      y: realProject.outlet.y,
-      groundElevation: nearestElevation(realProject.outlet.x, realProject.outlet.y),
-      availableHead: 0,
-      label: realProject.outlet.label,
-    }, { derivedFrom: ['Схема ЛК от Генплан с диаметрами..pdf', 'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf'] })
-  })
-  await step('region', () => saveDataset(projectId, 'region', {
-    regionId: 'astana',
-    name: 'г. Астана',
-    source: 'manual',
-    seismicPoints: 6,
-    freezingDepthM: 2.53,
-    hazards: ['high_groundwater'],
-  }))
+  callbacks?.onRouteCancelReady?.(null)
+  callbacks?.onRouteProgress?.('Подготовка синтетической модели')
+  const demo = buildStormDemo()
+  const surveyPoints = demoSurveyPoints()
+  const boreholes = demoBoreholes()
+  const outlet = demo.network.nodes.find((node) => node.kind === 'source')
+
+  await step('topography', () => saveDataset(projectId, 'topography', { points: surveyPoints }, {
+    total: surveyPoints.length,
+    accepted: surveyPoints.length,
+    zMin: Math.min(...surveyPoints.map((point) => point.z)),
+    zMax: Math.max(...surveyPoints.map((point) => point.z)),
+    coordinateSystem: 'synthetic-local-demo',
+  }, 'synthetic-demo.json'))
 
   await step('route constraints', () => saveDataset(projectId, 'route_constraints', {
-    corridorRings: [realProject.corridor],
+    corridorRings: [DEMO_CORRIDOR],
     hardObstacleRings: [],
-    lns: realProject.pumpingStation,
-    unresolvedLayers: ['PUBLIC_DEMO_REQUIRES_FULL_CLASSIFIED_DWG'],
+    surveyPoints,
+    unresolvedLayers: [],
+    georeference: { kind: 'local_anchor', source: 'synthetic local demo coordinates' },
     sourceDeclarations: {
-      buildings: 'unknown',
-      utilities: 'unknown',
-      roads: 'unknown',
-      hydrography: 'unknown',
-      parcels: 'unknown',
-      protectionZones: 'unknown',
+      buildings: 'confirmed_absent',
+      utilities: 'confirmed_absent',
+      roads: 'confirmed_absent',
+      hydrography: 'confirmed_absent',
+      parcels: 'confirmed_absent',
+      protectionZones: 'confirmed_absent',
     },
-    completeness: 'blocked-public-demo-sample',
-  }, {
-    warning: 'Демо содержит обезличенный пример коридора и разреженную поверхность. Для инженерного результата загрузите полный DWG/DXF; система сохранит аудит всех слоёв и покажет недостающие ограничения.',
-    sourceSurveyPointCount: realProject.sourceSurveyPointCount,
+    completeness: 'synthetic-demo-only',
+  }, { warning: 'Демо не является инженерными изысканиями и не допускает выпуск рабочей документации.' }))
+
+  if (outlet) {
+    await step('outlet', () => saveDataset(projectId, 'source', {
+      x: outlet.x,
+      y: outlet.y,
+      groundElevation: outlet.groundElevation,
+      availableHead: 0,
+      label: 'Учебный выпуск',
+    }, { source: 'synthetic-demo' }))
+  }
+
+  await step('region', () => saveDataset(projectId, 'region', {
+    regionId: 'synthetic-demo',
+    name: 'Условная территория',
+    source: 'synthetic-demo',
+    seismicPoints: 6,
+    freezingDepthM: 1.8,
+    hazards: [],
   }))
 
-  // Inflow facilities. L/s has its own field; it is not daily consumption.
   await step('sources', async () => {
-    await supabase.from('buildings').delete().eq('project_id', projectId)
-    const { error } = await supabase
-      .from('buildings')
-      .insert(realProject.inflows.map((source) => ({
-        project_id: projectId,
-        label: source.label,
-        x: source.x,
-        y: source.y,
-        floors: 1,
-        residents: Math.round(source.flowLps),
-        specific_demand_lpd: null,
-        design_flow_lps: source.flowLps,
-      })))
-    if (error) throw error
+    const remove = await supabase.from('buildings').delete().eq('project_id', projectId)
+    if (remove.error) throw remove.error
+    const insert = await supabase.from('buildings').insert(demo.sources.map((source) => ({
+      project_id: projectId,
+      label: source.label,
+      x: source.x,
+      y: source.y,
+      floors: 1,
+      residents: Math.round(source.flowLps),
+      specific_demand_lpd: null,
+      design_flow_lps: source.flowLps,
+    })))
+    if (insert.error) throw insert.error
   })
 
-  // Geology is a report-level summary. The supplied XLSX is only a template,
-  // so its sample С-1/С-2 rows must never be presented as real boreholes.
-  await step('geology', () =>
-    saveDataset(projectId, 'geology', {
-      soilType: 'clay',
-      groundwaterDepthM: realProject.geology.groundwaterDepthM.min,
-      groundwaterRangeM: realProject.geology.groundwaterDepthM,
-      groundwaterElevationM: realProject.geology.groundwaterElevationM,
-      groundwaterDesignRiseM: realProject.geology.designRiseM,
-      corrosivity: realProject.geology.corrosivity,
-      freezingDepthM: realProject.geology.freezingDepthM,
-      subsidenceType: null,
-      heaving: false,
-      swelling: false,
-      reportIge: realProject.geology.ige,
-      sourceFile: 'Геологоия по замечаниям Арх. №17-08-25. 19,01,26,.pdf',
-      sourceArchiveNumber: '17-08/25',
-    }),
-  )
-  await step('boreholes', () => replaceGeology(projectId, []))
+  await step('geology summary', () => saveDataset(projectId, 'geology', {
+    soilType: 'loam',
+    groundwaterDepthM: 3.5,
+    corrosivity: 'unknown',
+    freezingDepthM: 1.8,
+    sourceFile: 'synthetic-demo.json',
+    synthetic: true,
+  }))
+  await step('boreholes', () => replaceGeology(projectId, boreholes))
+  await step('seismic', () => saveDataset(projectId, 'seismic', { siteIntensityPoints: 6, synthetic: true }))
+  await step('norms', () => saveDataset(projectId, 'normative', { ...NORMATIVE_DEFAULTS, demoOnly: true }))
 
-  // 3. Seismicity and norms.
-  await step('seismic', () => saveDataset(projectId, 'seismic', { siteIntensityPoints: 6 }))
-  await step('norms', () => saveDataset(projectId, 'normative', { ...NORMATIVE_DEFAULTS }))
-
-  // The actual closed right-of-way polyline from the DWG, simplified at 8 m.
   await step('parcels', async () => {
-    await supabase.from('parcels').delete().eq('project_id', projectId)
-    await insertParcel(projectId, 'right_of_way', realProject.corridor, 'Коридор инженерных сетей из исходного DWG')
+    const remove = await supabase.from('parcels').delete().eq('project_id', projectId)
+    if (remove.error) throw remove.error
+    await insertParcel(projectId, 'right_of_way', DEMO_CORRIDOR, 'Синтетический учебный коридор')
   })
 
   await step('catalog', async () => {
     for (const catalog of await fetchCatalogs(projectId)) await deleteCatalog(projectId, catalog.id)
-    const catalogId = await saveCatalog(
-      projectId,
-      '2024-51-НК.С — спецификация листы 1–3',
-      'ТОМ 2. Альбом 1. НК 02.02.26.измен ОД.pdf',
-      REAL_CATALOG,
-    )
-    await setActiveCatalog(projectId, catalogId)
+    const id = await saveCatalog(projectId, 'Синтетический демо-каталог', 'synthetic-demo.csv', DEMO_CATALOG)
+    await setActiveCatalog(projectId, id)
   })
 
-  // Permitting checklist + exact schedule and project card.
-  await step('basis', () => seedBasisDemo(projectId))
+  await step('basis', () => saveDataset(projectId, 'basis', {
+    files: {},
+    mode: 'synthetic',
+    note: 'Исходные документы намеренно не отмечены загруженными: демо не заменяет реальные ТЗ, АПЗ, DWG, топосъёмку и ИГИ.',
+  }))
 
-  // Recalculate last, after every route-affecting dataset has invalidated the
-  // previous result. The LNS splits gravity and pressure hydraulics explicitly.
+  callbacks?.onRouteProgress?.('Сохранение синтетической трассы')
   await step('engineering route', async () => {
-    const { data, error } = await supabase
-      .from('buildings')
-      .select('id,label')
-      .eq('project_id', projectId)
-    if (error) throw error
-    const idByLabel = new Map((data ?? []).map((row: { id: string; label: string }) => [row.label, row.id]))
-    const running = runEngineeringRouteInWorker(realRouteInput(idByLabel), callbacks?.onRouteProgress)
-    callbacks?.onRouteCancelReady?.(running.cancel)
-    const result = await running.promise.finally(() => callbacks?.onRouteCancelReady?.(null))
-    const inputHash = await routeInputHash({
-      inflows: realProject.inflows,
-      lns: realProject.pumpingStation,
-      outlet: realProject.outlet,
-      corridor: realProject.corridor,
-      survey: realProject.surveyPoints,
-      completeness: 'blocked-public-demo-sample',
-    })
-    await replaceNetwork(projectId, result.network, {
-      status: result.status,
-      algorithmVersion: result.algorithmVersion,
+    const inputHash = await routeInputHash({ network: demo.network, surveyPoints, corridor: DEMO_CORRIDOR })
+    await replaceNetwork(projectId, demo.network, {
+      status: 'preliminary',
       inputHash,
-      warnings: result.warnings,
-      blockers: result.blockers,
+      warnings: ['Синтетическая демонстрация: для инженерного выпуска импортируйте реальные исходные данные.'],
       report: {
-        ...result.reports,
-        surveyCoverage: result.surveyCoverage,
-        quality: {
-          totalLengthM: result.network.totalLengthM,
-          routedTerminals: result.reports.gravity.routedTerminals + result.reports.pressure.routedTerminals,
-          outsideCorridorSegments: result.reports.gravity.outsideCorridorSegments + result.reports.pressure.outsideCorridorSegments,
-        },
+        synthetic: true,
+        quality: { totalLengthM: demo.network.totalLengthM, routedTerminals: demo.sources.length, outsideCorridorSegments: 0 },
       },
     })
   })
 
-  return { seededSections: seeded, failures }
+  callbacks?.onRouteProgress?.('Готово')
+  return { seededSections, failures }
 }

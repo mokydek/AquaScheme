@@ -260,7 +260,7 @@ export const en = {
         exportNote: 'Download note PDF',
         demoSeed: 'Load demo trunk',
         demoSeeding: 'Loading',
-        demoSeedHint: 'Loads a READY project into every section at once: inflow sources (ОС-1..4), a ~15.8 km network, geology with boreholes and high groundwater, seismicity, norms, the right-of-way corridor and the permitting-documents checklist. Names and elevations are neutral',
+        demoSeedHint: 'Loads a fictional local network, terrain, two training boreholes, and a demo catalog. Final engineering release stays blocked until real source data are imported',
         demoSeedDone: 'Demo project loaded: {{count}} sections. Review the result and export the set',
         demoSeedPartial: 'Demo partially loaded: {{count}} sections. Failed: {{failed}} (check the DB migrations)',
         corridorRun: 'Check corridor',

@@ -15,18 +15,12 @@ import { fileURLToPath } from 'node:url'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const BM = join(ROOT, 'docs', 'benchmark')
 
-const REQUIRED_INPUTS = [
-  'input/tz-vodosbros-os-34-33-38.pdf',
-  'input/apz-ispravlenny-2210.pdf',
-  'input/pdp-vodosbrosnoy-2025.pdf',
-  'input/akt-vybora-sbrosnoy-2025.pdf',
-  'input/shema-lk-genplan-diametry.pdf',
-  'input/topo-vodosbrosnoy-1510.pdf',
-  'input/vert-planirovka-1510.pdf',
-  'input/geologiya-arh-17-08-25.pdf',
-  'input/too-akva-bolshoy-taldykol.dwg',
-  'etalon/tom2-albom1-nk-izm-od-020226.pdf',
-]
+// Local-only manifests list confidential input paths and their roles. Keeping
+// project filenames here would itself leak acceptance-object information.
+const manifestPath = join(BM, 'manifest.json')
+const REQUIRED_INPUTS = existsSync(manifestPath)
+  ? JSON.parse(readFileSync(manifestPath, 'utf8')).requiredInputs ?? []
+  : ['manifest.json']
 
 const missing = REQUIRED_INPUTS.filter((p) => !existsSync(join(BM, p)))
 if (missing.length > 0) {

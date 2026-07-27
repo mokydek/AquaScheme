@@ -1,7 +1,7 @@
 import { buildSpecification } from '@aquascheme/engine'
 import type { ExportInput } from '@aquascheme/engine'
 import { convertDrawing } from './upload'
-import { buildProjectAlbumDoc } from './projectAlbum'
+import { buildProjectAlbumDoc, buildProjectSheetDoc } from './projectAlbum'
 import type { ProjectAlbumInput } from './projectAlbum'
 
 /** DXF drawing text. */
@@ -26,6 +26,7 @@ export async function generateSpecSheetDxf(input: ExportInput): Promise<string> 
 export async function generateSewerProfileDxf(input: {
   projectName: string
   profile: import('@aquascheme/engine').GravityProfile
+  crossings?: import('@aquascheme/engine').CrossingRecord[]
 }): Promise<string> {
   const { buildSewerProfileDxf } = await import('@aquascheme/engine/dxf')
   return buildSewerProfileDxf(input)
@@ -47,9 +48,10 @@ export async function generateProfileSheetSetDxf(
   projectName: string,
   profile: import('@aquascheme/engine').GravityProfile,
   system: 'sewer' | 'storm',
+  crossings: import('@aquascheme/engine').CrossingRecord[] = [],
 ): Promise<Array<{ title: string; dxf: string }>> {
   const { buildProfileSheetSetDxf } = await import('@aquascheme/engine/dxf')
-  return buildProfileSheetSetDxf(projectName, profile, system)
+  return buildProfileSheetSetDxf(projectName, profile, system, 850, crossings)
 }
 
 /** Per-picket plan sheet set («План К2 ПК…-ПК…. М1:500»), one DXF per sheet. */
@@ -141,11 +143,21 @@ function pdfFontVfs(module: unknown): Record<string, string> {
 export async function generateManholeSheetsDxf(
   projectName: string,
   schedule: import('@aquascheme/engine').SewerSchedule,
-): Promise<{ tables: Array<{ title: string; dxf: string }>; grille: string }> {
+  constructions: import('@aquascheme/engine').SelectedManholeConstruction[] = [],
+): Promise<{ tables: Array<{ title: string; dxf: string }>; grille?: string }> {
   const { buildManholeMaterialSheetsDxf, buildProtectiveGrilleSheetDxf } = await import('@aquascheme/engine/dxf')
+  const grilleComponents = constructions.flatMap((construction) => construction.components
+    .filter((component) => /сетк/i.test(component.name))
+    .map((component) => ({ quantity: component.quantity, source: construction.source })))
   return {
-    tables: buildManholeMaterialSheetsDxf(projectName, schedule),
-    grille: buildProtectiveGrilleSheetDxf(projectName, schedule.manholes.length),
+    tables: buildManholeMaterialSheetsDxf(projectName, schedule, constructions),
+    ...(grilleComponents.length > 0 ? {
+      grille: buildProtectiveGrilleSheetDxf(
+        projectName,
+        grilleComponents.reduce((sum, item) => sum + item.quantity, 0),
+        [...new Set(grilleComponents.map((item) => item.source))].join('; '),
+      ),
+    } : {}),
   }
 }
 
@@ -180,14 +192,18 @@ export async function generateSewerSpecXlsx(
 /** Sewer (К1) manhole and pipe schedule as an XLSX byte array (two sheets). */
 export async function generateSewerScheduleXlsx(
   schedule: import('@aquascheme/engine').SewerSchedule,
+  manholeConstructions: import('@aquascheme/engine').SelectedManholeConstruction[] = [],
 ): Promise<Uint8Array> {
   const XLSX = await import('xlsx')
   const book = XLSX.utils.book_new()
+  const constructionByLabel = new Map(manholeConstructions.map((item) => [item.manholeLabel, item]))
   const wells = schedule.manholes.map((m) => ({
     'Колодец': m.label,
     'ПК': m.picket,
     'Глубина, мм': m.depthMm,
     'Ø трубы, мм': m.pipeDiameterMm,
+    'Тип конструкции': constructionByLabel.get(m.label)?.typeCode ?? 'не подобрано',
+    'Источник конструкции': constructionByLabel.get(m.label)?.source ?? '',
   }))
   XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(wells), 'Колодцы')
   const pipes = schedule.pipes.map((p) => ({
@@ -197,6 +213,38 @@ export async function generateSewerScheduleXlsx(
     'Код АГСК-3': p.agskCode,
   }))
   XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(pipes), 'Трубы')
+  if (manholeConstructions.length > 0) {
+    const components = manholeConstructions.flatMap((construction) => construction.components.map((component) => ({
+      'Колодец': construction.manholeLabel,
+      'Тип конструкции': construction.typeCode,
+      'Наименование элемента': component.name,
+      'Код': component.catalogCode ?? '',
+      'Ед.': component.unit,
+      'Количество': component.quantity,
+      'Источник': construction.source,
+    })))
+    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(components), 'Элементы колодцев')
+
+    const totals = new Map<string, { name: string; code: string; unit: string; quantity: number }>()
+    for (const construction of manholeConstructions) {
+      for (const component of construction.components) {
+        const key = `${component.catalogCode ?? ''}\u0000${component.name}\u0000${component.unit}`
+        const current = totals.get(key)
+        totals.set(key, {
+          name: component.name,
+          code: component.catalogCode ?? '',
+          unit: component.unit,
+          quantity: Math.round(((current?.quantity ?? 0) + component.quantity) * 1000) / 1000,
+        })
+      }
+    }
+    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet([...totals.values()].map((item) => ({
+      'Наименование элемента': item.name,
+      'Код': item.code,
+      'Ед.': item.unit,
+      'Количество': item.quantity,
+    }))), 'Итоги по колодцам')
+  }
   return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
 }
 
@@ -214,33 +262,6 @@ export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> 
   const sheet = XLSX.utils.json_to_sheet(rows)
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'Спецификация')
-  return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
-}
-
-export interface ReferencePipeScheduleRow {
-  system: string
-  designation: string
-  standard: string
-  diameterMm: number
-  lengthM: number
-}
-
-/** Exact pipe schedule transcribed from the approved/reference album. */
-export async function generateReferencePipeScheduleXlsx(
-  rows: ReferencePipeScheduleRow[],
-): Promise<Uint8Array> {
-  const XLSX = await import('xlsx')
-  const sheet = XLSX.utils.json_to_sheet(rows.map((row, index) => ({
-    'Поз.': index + 1,
-    'Система': row.system,
-    'Наименование и техническая характеристика': row.designation,
-    'Стандарт': row.standard,
-    'Ø, мм': row.diameterMm,
-    'Длина, м': row.lengthM,
-  })))
-  sheet['!cols'] = [{ wch: 7 }, { wch: 39 }, { wch: 64 }, { wch: 22 }, { wch: 11 }, { wch: 13 }]
-  const book = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(book, sheet, '2024-51-НК.С')
   return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
 }
 
@@ -271,9 +292,115 @@ async function renderPdfDoc(doc: unknown): Promise<Blob> {
   return pdfDocumentBlob(maker.createPdf(doc))
 }
 
-/** Full 61-sheet A3 album following the structure of 2024-51-НК. */
+/** Data-driven working-drawing album. The reference PDF is never an input. */
 export async function generateProjectAlbumPdf(input: ProjectAlbumInput): Promise<Blob> {
   return renderPdfDoc(buildProjectAlbumDoc(input))
+}
+
+/** One vector working sheet; BLOCKED/PRELIMINARY/STALE sheets are refused. */
+export async function generateProjectSheetPdf(input: ProjectAlbumInput, sheetId: string): Promise<Blob> {
+  return renderPdfDoc(buildProjectSheetDoc(input, sheetId))
+}
+
+/** One DXF sheet selected from the same dynamic register as the PDF album. */
+export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, sheetId: string): Promise<string> {
+  const sheet = input.drawingSet.sheets.find((item) => item.id === sheetId)
+  if (!sheet) throw new Error('Лист не найден в текущем реестре.')
+  if (sheet.status !== 'CALCULATED' && sheet.status !== 'VERIFIED') {
+    throw new Error(`Лист ${sheet.sheetNumber} нельзя выпустить со статусом ${sheet.status}.`)
+  }
+  const dxf = await import('@aquascheme/engine/dxf')
+  if (sheet.kind === 'plan') {
+    const sheets = dxf.buildPlanSheetSetDxf({
+      projectName: input.projectName,
+      network: input.network,
+      pipeDiameterMm: input.pipeDiameterMm,
+      mainPath: input.drawingSet.mainPath,
+      buildingLabels: input.buildingLabels,
+      system: input.system,
+    })
+    const index = input.drawingSet.sheets.filter((item) => item.kind === 'plan').findIndex((item) => item.id === sheet.id)
+    if (!sheets[index]) throw new Error('Геометрия нарезки DXF не совпала с реестром планов.')
+    return sheets[index].dxf
+  }
+  if (sheet.kind === 'profile') {
+    const sheets = dxf.buildProfileSheetSetDxf(
+      input.projectName,
+      input.profile,
+      input.system,
+      850,
+      input.constraints?.crossings ?? [],
+    )
+    const index = input.drawingSet.sheets.filter((item) => item.kind === 'profile').findIndex((item) => item.id === sheet.id)
+    if (!sheets[index]) throw new Error('Геометрия нарезки DXF не совпала с реестром профилей.')
+    return sheets[index].dxf
+  }
+  if (sheet.kind === 'material_table') {
+    const sheets = dxf.buildManholeMaterialSheetsDxf(input.projectName, input.schedule, input.manholeConstructions, 27)
+    const index = input.drawingSet.sheets.filter((item) => item.kind === 'material_table').findIndex((item) => item.id === sheet.id)
+    if (!sheets[index]) throw new Error('Ведомость DXF не совпала с реестром листов.')
+    return sheets[index].dxf
+  }
+  if (sheet.kind === 'specification') {
+    return dxf.buildWorkingDrawingSpecificationDxf(input.projectName, input.schedule, input.manholeConstructions)
+  }
+  if (sheet.id.startsWith('structures-')) {
+    return dxf.buildManholeConstructionDetailDxf(input.projectName, input.schedule, input.manholeConstructions)
+  }
+  if (sheet.id.startsWith('crossings-')) {
+    const index = input.drawingSet.sheets.filter((item) => item.id.startsWith('crossings-')).findIndex((item) => item.id === sheet.id)
+    const crossings = input.constraints?.crossings?.slice(index * 8, index * 8 + 8) ?? []
+    return dxf.buildCrossingDetailDxf(input.projectName, crossings, sheet.title)
+  }
+  throw new Error(`DXF для типа листа ${sheet.kind} не реализован.`)
+}
+
+/** Complete register DXF export with each family generated only once. */
+export async function generateWorkingDrawingSetDxfs(input: ProjectAlbumInput): Promise<Array<{
+  sheetId: string
+  sheetNumber: number
+  title: string
+  dxf: string
+}>> {
+  if (!input.drawingSet.summary.finalExportAllowed) {
+    throw new Error('Комплект DXF заблокирован реестром рабочих листов.')
+  }
+  const dxf = await import('@aquascheme/engine/dxf')
+  const planFiles = dxf.buildPlanSheetSetDxf({
+    projectName: input.projectName,
+    network: input.network,
+    pipeDiameterMm: input.pipeDiameterMm,
+    mainPath: input.drawingSet.mainPath,
+    buildingLabels: input.buildingLabels,
+    system: input.system,
+  })
+  const profileFiles = dxf.buildProfileSheetSetDxf(
+    input.projectName,
+    input.profile,
+    input.system,
+    850,
+    input.constraints?.crossings ?? [],
+  )
+  const materialFiles = dxf.buildManholeMaterialSheetsDxf(input.projectName, input.schedule, input.manholeConstructions, 27)
+  let planIndex = 0
+  let profileIndex = 0
+  let materialIndex = 0
+  let crossingIndex = 0
+  return input.drawingSet.sheets.map((sheet) => {
+    let drawing: string | undefined
+    if (sheet.kind === 'plan') drawing = planFiles[planIndex++]?.dxf
+    else if (sheet.kind === 'profile') drawing = profileFiles[profileIndex++]?.dxf
+    else if (sheet.kind === 'material_table') drawing = materialFiles[materialIndex++]?.dxf
+    else if (sheet.kind === 'specification') drawing = dxf.buildWorkingDrawingSpecificationDxf(input.projectName, input.schedule, input.manholeConstructions)
+    else if (sheet.id.startsWith('structures-')) drawing = dxf.buildManholeConstructionDetailDxf(input.projectName, input.schedule, input.manholeConstructions)
+    else if (sheet.id.startsWith('crossings-')) {
+      const crossings = input.constraints?.crossings?.slice(crossingIndex * 8, crossingIndex * 8 + 8) ?? []
+      crossingIndex++
+      drawing = dxf.buildCrossingDetailDxf(input.projectName, crossings, sheet.title)
+    }
+    if (!drawing) throw new Error(`Не создан DXF для листа ${sheet.sheetNumber}: ${sheet.title}.`)
+    return { sheetId: sheet.id, sheetNumber: sheet.sheetNumber, title: sheet.title, dxf: drawing }
+  })
 }
 
 /** Explanatory note as a PDF blob (pdfmake, lazy loaded). */

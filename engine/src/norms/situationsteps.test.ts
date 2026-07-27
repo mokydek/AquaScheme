@@ -18,7 +18,7 @@ describe('buildSituationSteps', () => {
       pipeDiameterMm: new Map([['P1', 2000]]),
       buildingsCount: 4,
       corridorRings: 1,
-      outletFlowLps: 2335.8,
+      outletFlowLps: 42.5,
     })
     expect(steps.map((s) => s.id)).toEqual(['context', 'corridor', 'route', 'diameters', 'outlet', 'legend'])
     expect(steps.map((s) => s.order)).toEqual([1, 2, 3, 4, 5, 6])
@@ -26,7 +26,7 @@ describe('buildSituationSteps', () => {
     expect(steps[2].stats).toEqual({ pipes: 1, lengthM: 100 })
     expect(steps[3].sourceKey).toBe('diametersCalc')
     expect(steps[3].stats.list).toBe('Ø2000')
-    expect(steps[4].stats.flowLps).toBe('2335.8')
+    expect(steps[4].stats.flowLps).toBe('42.5')
   })
 
   it('marks absent layers honestly instead of dropping them', () => {

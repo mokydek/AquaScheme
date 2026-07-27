@@ -1034,18 +1034,51 @@ textarea {
 .album-sheet-set-head p { margin: 0; color: #666; font-size: 12px; max-width: 700px; }
 .album-sheet-set-head .eyebrow { color: #1746d1; font-size: 10px; letter-spacing: .08em; }
 .album-sheet-set-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.album-sheet-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
-.album-sheet-groups article { position: relative; min-height: 116px; padding: 12px; border: 1px solid var(--border, #d9d9d9); background: #fff; }
-.album-sheet-groups article strong { display: block; margin: 7px 0 4px; font-size: 13px; }
-.album-sheet-groups article p { margin: 0 0 22px; color: #666; font-size: 11px; line-height: 1.45; }
-.album-sheet-range { color: #1746d1; font: 10px/1.2 monospace; text-transform: uppercase; }
-.album-sheet-count { position: absolute; right: 10px; bottom: 9px; color: #777; font-size: 10px; }
+.album-status-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.album-status-summary code { margin-left: auto; color: #666; font-size: 10px; }
+.drawing-status { padding: 4px 7px; border: 1px solid #ccc; background: #fff; font: 10px/1.2 monospace; text-transform: uppercase; }
+.drawing-status.blocked { border-color: #b22; color: #941a1a; }
+.drawing-status.preliminary { border-color: #c78100; color: #885900; }
+.drawing-status.calculated { border-color: #1746d1; color: #1746d1; }
+.drawing-status.verified { border-color: #248744; color: #17602f; }
+.drawing-status.stale { border-color: #777; color: #666; }
+.drawing-workspace { display: grid; grid-template-columns: minmax(230px, 310px) minmax(0, 1fr); gap: 14px; margin-top: 16px; }
+.drawing-register { max-height: 720px; overflow: auto; border: 1px solid var(--border, #d9d9d9); background: #fff; }
+.drawing-register button { width: 100%; display: grid; grid-template-columns: 34px minmax(0, 1fr) 10px; gap: 9px; align-items: center; padding: 10px; border: 0; border-bottom: 1px solid #e6e6e6; background: #fff; color: #111; text-align: left; cursor: pointer; }
+.drawing-register button:hover { background: #f5f7ff; }
+.drawing-register button.active { background: #edf1ff; box-shadow: inset 3px 0 #1746d1; }
+.drawing-register-number { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #bbb; font: 11px monospace; }
+.drawing-register-copy { min-width: 0; }
+.drawing-register-copy strong { display: block; overflow: hidden; font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.drawing-register-copy small { display: block; margin-top: 3px; color: #777; font-size: 9px; }
+.drawing-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #777; }
+.drawing-status-dot.blocked { background: #b22; }
+.drawing-status-dot.preliminary { background: #c78100; }
+.drawing-status-dot.calculated { background: #1746d1; }
+.drawing-status-dot.verified { background: #248744; }
+.drawing-status-dot.stale { background: #777; }
+.drawing-sheet-detail { min-width: 0; }
+.drawing-preview-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 7px; border: 1px solid #bbb; border-bottom: 0; background: #f5f5f5; font-size: 10px; }
+.drawing-preview-toolbar .check { margin-left: 6px; }
+.drawing-preview-viewport { max-height: 720px; overflow: auto; border: 1px solid #bbb; background: #d8d8d8; }
+.working-drawing-preview { width: 100%; height: auto; display: block; border: 1px solid #bbb; background: #fff; }
+.drawing-audit { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.drawing-audit > div { min-width: 0; padding: 12px; border: 1px solid #ddd; background: #fff; }
+.drawing-audit h5 { margin: 0 0 9px; font-size: 12px; }
+.drawing-sources { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.drawing-sources li { display: flex; justify-content: space-between; gap: 14px; padding: 6px 8px; border-left: 3px solid #999; background: #f7f7f7; font-size: 10px; }
+.drawing-sources li.verified { border-color: #248744; }
+.drawing-sources li.available { border-color: #c78100; }
+.drawing-sources li.missing { border-color: #b22; }
+.drawing-sources li span { color: #666; text-align: right; }
+.drawing-hash { margin: 9px 0 0; color: #777; font-size: 10px; }
 
 @media (max-width: 820px) {
   .reference-situation { grid-template-columns: 1fr; }
   .album-sheet-set-head { flex-direction: column; }
   .album-sheet-set-actions { justify-content: flex-start; }
-  .album-sheet-groups { grid-template-columns: 1fr; }
+  .drawing-workspace, .drawing-audit { grid-template-columns: 1fr; }
+  .drawing-register { max-height: 320px; }
 }
 
 .file-input {

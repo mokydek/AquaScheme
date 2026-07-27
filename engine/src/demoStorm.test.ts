@@ -3,41 +3,36 @@ import { buildStormDemo, STORM_DEMO_TOTAL_M } from './demoStorm'
 import { solveGravityNetwork } from './norms/gravity'
 
 describe('buildStormDemo', () => {
-  it('is deterministic and shaped like the benchmark trunk', () => {
-    const a = buildStormDemo()
-    const b = buildStormDemo()
-    expect(JSON.stringify(a)).toBe(JSON.stringify(b))
-    expect(a.sources.map((s) => s.label)).toEqual(['ОС-1', 'ОС-2', 'ОС-3', 'ОС-4'])
-    expect(a.outletFlowLps).toBe(611 + 531 + 1155 + 200)
-    expect(a.network.nodes.some((n) => n.kind === 'source')).toBe(true)
-    // Chainage of the trunk reaches the full picket length.
-    const ys = a.network.nodes.filter((n) => n.kind !== 'building').map((n) => n.y)
-    expect(Math.max(...ys)).toBeCloseTo(STORM_DEMO_TOTAL_M, 2)
-    // Neutral datum: elevations fall 7.9 m from 100.0, no real site marks.
-    const elevations = a.network.nodes.map((n) => n.groundElevation)
+  it('is deterministic, synthetic and preserves pipe alignments', () => {
+    const first = buildStormDemo()
+    const second = buildStormDemo()
+    expect(second).toEqual(first)
+    expect(first.sources.map((source) => source.label)).toEqual(['Источник A', 'Источник B', 'Источник C'])
+    expect(first.outletFlowLps).toBe(39)
+    expect(first.network.pipes.every((pipe) => (pipe.alignment?.length ?? 0) >= 2)).toBe(true)
+    expect(first.network.pipes.every((pipe) => pipe.dataSource === 'synthetic-demo')).toBe(true)
+    const ys = first.network.nodes.filter((node) => node.kind !== 'building').map((node) => node.y)
+    expect(Math.max(...ys)).toBe(STORM_DEMO_TOTAL_M)
+    const elevations = first.network.nodes.map((node) => node.groundElevation)
     expect(Math.max(...elevations)).toBe(100)
-    expect(Math.min(...elevations)).toBeCloseTo(92.1, 2)
+    expect(Math.min(...elevations)).toBeCloseTo(95.2, 2)
   })
 
-  it('solves to a Ф2000 trunk at the outlet with the min-burial strategy', () => {
+  it('passes the generic gravity calculation without target-result fitting', () => {
     const demo = buildStormDemo()
+    const flowByLabel = new Map(demo.sources.map((source) => [source.label, source.flowLps]))
     const flows = new Map(demo.network.nodes
-      .filter((n) => n.kind === 'building')
-      .map((n) => [n.id, demo.sources.find((s) => s.label === `ОС-${n.id.slice(2)}`)?.flowLps ?? 0]))
+      .filter((node) => node.kind === 'building')
+      .map((node, index) => [node.id, flowByLabel.get(demo.sources[index].label) ?? 0]))
     const result = solveGravityNetwork({
       network: demo.network,
       buildingFlowLps: flows,
       system: 'storm',
-      freezingDepthM: 2.2,
+      freezingDepthM: 1.8,
       strategy: 'minBurial',
     })
-    expect(result.outletFlowLps).toBe(2497)
-    // The last trunk segment carries the full flow at Ф2000 like the etalon.
-    const lastMain = result.pipes
-      .filter((p) => p.id.startsWith('P'))
-      .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
-      .at(-1)
-    expect(lastMain?.diameterMm).toBe(2000)
+    expect(result.outletFlowLps).toBe(39)
     expect(result.profile).not.toBeNull()
-  }, 60000)
+    expect(result.pipes.every((pipe) => Number.isFinite(pipe.diameterMm) && pipe.diameterMm > 0)).toBe(true)
+  })
 })

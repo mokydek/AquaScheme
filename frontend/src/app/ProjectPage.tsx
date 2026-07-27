@@ -21,6 +21,7 @@ import { ImportSection } from './project/ImportSection'
 import { ParcelsSection } from './project/ParcelsSection'
 import { BasisSection } from './project/BasisSection'
 import { CatalogSection } from './project/CatalogSection'
+import { ManholeCatalogSection } from './project/ManholeCatalogSection'
 import { fetchCatalogs } from '../shared/catalog'
 import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
@@ -173,10 +174,10 @@ export function ProjectPage() {
     setDemoNotice(null)
     setDemoFailures([])
     try {
-      const { REAL_STORM_PROJECT_NAME, seedStormProject } = await import('../shared/stormDemo')
+      const { DEMO_STORM_PROJECT_NAME, seedStormProject } = await import('../shared/stormDemo')
       const update = await supabase
         .from('projects')
-        .update({ name: REAL_STORM_PROJECT_NAME, system_type: 'storm', work_type: 'new' })
+        .update({ name: DEMO_STORM_PROJECT_NAME, system_type: 'storm', work_type: 'new' })
         .eq('id', id)
       if (update.error) throw update.error
       const result = await seedStormProject(id, {
@@ -389,7 +390,7 @@ export function ProjectPage() {
           <div className="export-progress" role="status" aria-live="polite">
             <span className="export-progress-spinner" aria-hidden="true" />
             <div className="export-progress-copy">
-              <strong>{demoStage ?? 'Загружаются данные проекта 2024-51-НК'}</strong>
+              <strong>{demoStage ?? 'Загружается синтетическая учебная модель'}</strong>
               <span>Полный набор отметок DWG, ограничения, ОС, ЛНС, геология, каталог и расчётная трасса</span>
             </div>
             {demoCanCancel && <button type="button" className="btn btn-ghost btn-sm" onClick={() => demoCancelRef.current?.()}>Отменить расчёт</button>}
@@ -457,10 +458,16 @@ export function ProjectPage() {
                 pipes={pipes}
                 normsDataset={datasets.normative}
                 geologyDataset={datasets.geology}
-                basisDataset={datasets.basis}
+                topographyDataset={datasets.topography}
+                constraintsDataset={datasets.route_constraints}
+                routeAuditDataset={datasets.route_audit}
+                manholeCatalogDataset={datasets.manhole_catalog}
+                boreholes={boreholes}
                 parcels={parcels}
                 activeCatalogId={project.active_catalog_id ?? null}
                 routeStatus={effectiveRouteStatus}
+                routeBlockers={project.route_blockers ?? []}
+                routeRevision={project.network_revision ?? 0}
                 onChanged={load}
               />
             </>
@@ -475,10 +482,16 @@ export function ProjectPage() {
               pipes={pipes}
               normsDataset={datasets.normative}
               geologyDataset={datasets.geology}
-              basisDataset={datasets.basis}
+              topographyDataset={datasets.topography}
+              constraintsDataset={datasets.route_constraints}
+              routeAuditDataset={datasets.route_audit}
+              manholeCatalogDataset={datasets.manhole_catalog}
+              boreholes={boreholes}
               parcels={parcels}
               activeCatalogId={project.active_catalog_id ?? null}
               routeStatus={effectiveRouteStatus}
+              routeBlockers={project.route_blockers ?? []}
+              routeRevision={project.network_revision ?? 0}
               onChanged={load}
             />
           )}
@@ -575,12 +588,15 @@ export function ProjectPage() {
           )}
           <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
           {!isWater && (
-            <CatalogSection
-              projectId={project.id}
-              catalogs={catalogs}
-              activeCatalogId={project.active_catalog_id ?? null}
-              onChanged={load}
-            />
+            <>
+              <CatalogSection
+                projectId={project.id}
+                catalogs={catalogs}
+                activeCatalogId={project.active_catalog_id ?? null}
+                onChanged={load}
+              />
+              <ManholeCatalogSection projectId={project.id} dataset={datasets.manhole_catalog} onSaved={load} />
+            </>
           )}
           <BuildingsSection
             projectId={project.id}

@@ -9,6 +9,8 @@ import type { GravityProfile } from './norms/gravity'
 import { manholeLabels, picketLabel } from './norms/gravity'
 import type { SewerSchedule } from './norms/gravity'
 import { planWindows, profileSheetSpecs } from './norms/sheetset'
+import type { SelectedManholeConstruction } from './manhole-catalog'
+import type { CrossingRecord } from './working-drawings'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -152,9 +154,8 @@ export function buildNetworkDxf(input: ExportInput): string {
 
 // ============================================================
 // General data and specification sheets (requirements update 3, change 5).
-// SPDS spirit (GOST 21.101 / 21.704 / 21.110). The title block and form
-// dimensions are simplified and marked "форма уточняется" until the official
-// form is supplied.
+// Common SPDS frame used by the vector sheets. Project-specific participants
+// are supplied through project metadata rather than copied from a reference.
 // ============================================================
 
 const SHEET_LAYER = 'Оформление'
@@ -179,7 +180,7 @@ function drawSheetFrame(dxf: DxfWriter, sheetTitle: string, projectName: string)
     dxf.addText(p3(x, y), h, s, { secondAlignmentPoint: p3(x, y) })
   txt(tbX + 3, tbY + tbH - 8, 3.2, sheetTitle)
   txt(tbX + 3, tbY + tbH - 15, 2.4, projectName)
-  txt(tbX + 3, tbY + 4, 2, 'Штамп по ГОСТ 21.101 — форма уточняется')
+  txt(tbX + 3, tbY + 4, 2, 'Основная надпись · реквизиты проекта')
   // Title above content.
   txt(SHEET_MARGIN + 2, SHEET_H - SHEET_MARGIN - 6, 4, sheetTitle)
   return SHEET_H - SHEET_MARGIN - 16
@@ -475,6 +476,8 @@ export function buildSewerProfileDxf(input: {
   profile: GravityProfile
   /** Sheet caption; defaults to the whole-collector title. Per-picket sheets pass «Профиль К2 ПК…-ПК…». */
   sheetTitle?: string
+  /** Surveyed utility/road/water crossings located by absolute route chainage. */
+  crossings?: CrossingRecord[]
 }): string {
   const dxf = new DxfWriter()
   dxf.addLayer(SEWER_PROFILE_LAYER, Colors.Black, LineTypes.Continuous)
@@ -492,15 +495,28 @@ export function buildSewerProfileDxf(input: {
   const plotLeft = gutterX
   const plotRight = SHEET_W - SHEET_MARGIN - 3
   const plotWidth = plotRight - plotLeft
-  const total = input.profile.totalLengthM || 1
-  const xFor = (chainage: number) => plotLeft + (chainage / total) * plotWidth
+  // A sliced profile keeps absolute project chainages. Each sheet must still
+  // begin at plotLeft; chainage / fragmentLength moved later sheets off-frame.
+  const fromChainageM = stations[0].chainageM
+  const toChainageM = stations[stations.length - 1].chainageM
+  const total = Math.max(toChainageM - fromChainageM, 1)
+  const xFor = (chainage: number) => plotLeft + ((chainage - fromChainageM) / total) * plotWidth
+  const crossings = (input.crossings ?? [])
+    .filter((item) => item.stationM >= fromChainageM - 1e-6 && item.stationM <= toChainageM + 1e-6)
+    .sort((a, b) => a.stationM - b.stationM)
 
   // Vertical band for the profile graph, sitting above the form-2 table.
   const tableTopY = SHEET_MARGIN + 48
   const profileBottom = tableTopY + 8
   const profileTop = topY - 8
-  const grounds = stations.map((s) => s.groundElevationM)
-  const inverts = stations.map((s) => s.invertElevationM)
+  const grounds = [
+    ...stations.map((s) => s.groundElevationM),
+    ...crossings.flatMap((item) => item.existingElevationM === undefined ? [] : [item.existingElevationM]),
+  ]
+  const inverts = [
+    ...stations.map((s) => s.invertElevationM),
+    ...crossings.flatMap((item) => item.designInvertElevationM === undefined ? [] : [item.designInvertElevationM]),
+  ]
   const datum = Math.floor(Math.min(...inverts) - 0.5)
   const maxElev = Math.max(...grounds)
   const span = Math.max(maxElev - datum, 0.5)
@@ -529,6 +545,29 @@ export function buildSewerProfileDxf(input: {
     dxf.addText(p3(xm, ym + 1.5), 1.4, `Ø${stations[i].diameterMm} безн.`, {
       horizontalAlignment: TextHorizontalAlignment.Center,
       secondAlignmentPoint: p3(xm, ym + 1.5),
+    })
+  }
+
+  // Draw only source-backed crossing elevations and clearances. Missing
+  // attributes remain working-drawing blockers instead of being guessed.
+  for (const crossing of crossings) {
+    const x = xFor(crossing.stationM)
+    const existingY = crossing.existingElevationM === undefined ? undefined : yFor(crossing.existingElevationM)
+    const designY = crossing.designInvertElevationM === undefined ? undefined : yFor(crossing.designInvertElevationM)
+    if (existingY !== undefined && designY !== undefined) {
+      dxf.addLine(p3(x, designY), p3(x, existingY))
+      dxf.addLine(p3(x - 2, existingY), p3(x + 2, existingY))
+      dxf.addLine(p3(x - 2, designY), p3(x + 2, designY))
+    }
+    const labelY = Math.min(profileTop - 1, (existingY ?? designY ?? profileBottom) + 2.5)
+    const details = [
+      crossing.id,
+      crossing.kind,
+      crossing.clearanceM === undefined ? undefined : `просвет ${crossing.clearanceM.toFixed(2)} м`,
+    ].filter((value): value is string => Boolean(value)).join('; ')
+    dxf.addText(p3(x, labelY), 1.4, details, {
+      horizontalAlignment: TextHorizontalAlignment.Center,
+      secondAlignmentPoint: p3(x, labelY),
     })
   }
 
@@ -669,10 +708,18 @@ export function buildProfileSheetSetDxf(
   profile: GravityProfile,
   system: 'sewer' | 'storm' = 'storm',
   targetPerSheetM = 850,
+  crossings: CrossingRecord[] = [],
 ): ProfileSheetFile[] {
   return profileSheetSpecs(profile, system, targetPerSheetM).map((spec) => ({
     title: spec.title,
-    dxf: buildSewerProfileDxf({ projectName, profile: spec.profile, sheetTitle: spec.title }),
+    dxf: buildSewerProfileDxf({
+      projectName,
+      profile: spec.profile,
+      sheetTitle: spec.title,
+      crossings: crossings.filter((item) => (
+        item.stationM >= spec.interval.fromM - 1e-6 && item.stationM <= spec.interval.toM + 1e-6
+      )),
+    }),
   }))
 }
 
@@ -687,8 +734,10 @@ export function buildProfileSheetSetDxf(
 export function buildManholeMaterialSheetsDxf(
   projectName: string,
   schedule: SewerSchedule,
+  constructions: SelectedManholeConstruction[] = [],
   perSheet = 30,
 ): ProfileSheetFile[] {
+  const constructionByLabel = new Map(constructions.map((item) => [item.manholeLabel, item]))
   const sheets: ProfileSheetFile[] = []
   for (let start = 0; start < schedule.manholes.length; start += perSheet) {
     const part = schedule.manholes.slice(start, start + perSheet)
@@ -698,24 +747,129 @@ export function buildManholeMaterialSheetsDxf(
     let y = drawSheetFrame(dxf, title, projectName)
     const x0 = SHEET_MARGIN + 4
     const rightX = SHEET_W - SHEET_MARGIN - 4
-    dxf.addText(p3(x0, y), 2.2, 'Расход элементов сборного ж/б — по типовому проекту (серия уточняется)', {
+    dxf.addText(p3(x0, y), 2.2, 'Расход элементов сформирован из параметрического каталога', {
       secondAlignmentPoint: p3(x0, y),
     })
     y -= 6
     drawTextTable(
       dxf, x0, y, [0, 30, 70, 110, 150], rightX,
-      ['Марка', 'Пикет', 'Глубина, м', 'Ду, мм', 'Элементы сборного ж/б'],
-      part.map((m) => [
-        m.label,
-        m.picket,
-        (m.depthMm / 1000).toFixed(2),
-        String(m.pipeDiameterMm),
-        'по т.пр. (уточняется)',
-      ]),
+      ['Марка', 'Пикет', 'Глубина, м', 'Ду, мм', 'Тип / расчётный состав'],
+      part.map((m) => {
+        const selected = constructionByLabel.get(m.label)
+        return [
+          m.label,
+          m.picket,
+          (m.depthMm / 1000).toFixed(2),
+          String(m.pipeDiameterMm),
+          selected
+            ? `${selected.typeCode}: ${selected.components.map((item) => `${item.name} ${item.quantity} ${item.unit}`).join('; ')}`
+            : 'не подобрано — выпуск заблокирован',
+        ]
+      }),
     )
     sheets.push({ title, dxf: dxf.stringify() })
   }
   return sheets
+}
+
+/** Parameter-driven well/chamber selection sheet with catalog provenance. */
+export function buildManholeConstructionDetailDxf(
+  projectName: string,
+  schedule: SewerSchedule,
+  constructions: SelectedManholeConstruction[],
+): string {
+  const dxf = new DxfWriter()
+  const title = 'Колодцы и камеры. Параметрические решения'
+  let y = drawSheetFrame(dxf, title, projectName)
+  const x0 = SHEET_MARGIN + 4
+  const rightX = SHEET_W - SHEET_MARGIN - 4
+  const selectedByLabel = new Map(constructions.map((item) => [item.manholeLabel, item]))
+  dxf.addText(p3(x0, y), 2.2, 'Тип выбран по расчётной глубине, диаметру трубы и подтверждённому каталогу', {
+    secondAlignmentPoint: p3(x0, y),
+  })
+  y -= 6
+  drawTextTable(
+    dxf, x0, y, [0, 28, 57, 89, 120, 163], rightX,
+    ['Марка', 'Пикет', 'Глубина, м', 'Ду, мм', 'Тип', 'Состав / источник'],
+    schedule.manholes.map((manhole) => {
+      const selected = selectedByLabel.get(manhole.label)
+      return [
+        manhole.label,
+        manhole.picket,
+        (manhole.depthMm / 1000).toFixed(2),
+        String(manhole.pipeDiameterMm),
+        selected?.typeCode ?? 'не подобрано',
+        selected ? `${selected.components.map((item) => `${item.name} ${item.quantity} ${item.unit}`).join('; ')}; ${selected.source}` : 'выпуск заблокирован',
+      ]
+    }),
+  )
+  return dxf.stringify()
+}
+
+/** Structured crossing cards; missing values remain visible instead of being invented. */
+export function buildCrossingDetailDxf(
+  projectName: string,
+  crossings: CrossingRecord[],
+  title = 'Пересечения с существующими коммуникациями',
+): string {
+  const dxf = new DxfWriter()
+  let y = drawSheetFrame(dxf, title, projectName)
+  const x0 = SHEET_MARGIN + 4
+  const rightX = SHEET_W - SHEET_MARGIN - 4
+  dxf.addText(p3(x0, y), 2.2, 'Отметки и просветы выводятся только из карточек исходных данных', { secondAlignmentPoint: p3(x0, y) })
+  y -= 6
+  drawTextTable(
+    dxf, x0, y, [0, 25, 52, 82, 111, 141, 170, 200, 230], rightX,
+    ['ID', 'Пикет, м', 'Объект', 'Владелец', 'Размер', 'Отм. сети', 'Отм. трубы', 'Просвет', 'Решение / источник'],
+    crossings.map((crossing) => [
+      crossing.id,
+      crossing.stationM.toFixed(2),
+      crossing.kind,
+      crossing.owner ?? 'нет данных',
+      crossing.size ?? 'нет данных',
+      crossing.existingElevationM?.toFixed(2) ?? 'нет данных',
+      crossing.designInvertElevationM?.toFixed(2) ?? 'нет данных',
+      crossing.clearanceM?.toFixed(2) ?? 'нет данных',
+      `${crossing.method ?? 'нет данных'}; ${crossing.source ?? 'источник не указан'}`,
+    ]),
+  )
+  return dxf.stringify()
+}
+
+/** Dynamic specification from the pipe schedule and selected well components. */
+export function buildWorkingDrawingSpecificationDxf(
+  projectName: string,
+  schedule: SewerSchedule,
+  constructions: SelectedManholeConstruction[],
+): string {
+  const dxf = new DxfWriter()
+  const title = 'Спецификация оборудования, изделий и материалов'
+  let y = drawSheetFrame(dxf, title, projectName)
+  const x0 = SHEET_MARGIN + 4
+  const rightX = SHEET_W - SHEET_MARGIN - 4
+  const totals = new Map<string, { name: string; code: string; unit: string; quantity: number }>()
+  for (const construction of constructions) {
+    for (const component of construction.components) {
+      const key = `${component.catalogCode ?? ''}\u0000${component.name}\u0000${component.unit}`
+      const current = totals.get(key)
+      totals.set(key, {
+        name: component.name,
+        code: component.catalogCode ?? '—',
+        unit: component.unit,
+        quantity: (current?.quantity ?? 0) + component.quantity,
+      })
+    }
+  }
+  const rows = [
+    ...schedule.pipes.map((pipe) => [pipe.designation, pipe.agskCode || '—', 'м', pipe.lengthM.toFixed(2)]),
+    ...[...totals.values()].map((item) => [item.name, item.code, item.unit, item.quantity.toFixed(3)]),
+  ]
+  drawTextTable(
+    dxf, x0, y, [0, 140, 205, 235], rightX,
+    ['Наименование', 'Код', 'Ед.', 'Количество'],
+    rows,
+  )
+  return dxf.stringify()
 }
 
 /**
@@ -725,7 +879,7 @@ export function buildManholeMaterialSheetsDxf(
  * the agreed изделие, so this sheet holds the sketch, the count and the
  * coating requirement, marked «чертёж изделия уточняется».
  */
-export function buildProtectiveGrilleSheetDxf(projectName: string, manholeCount: number): string {
+export function buildProtectiveGrilleSheetDxf(projectName: string, quantity: number, source: string): string {
   const dxf = new DxfWriter()
   const title = 'Защитная сетка для колодцев'
   let y = drawSheetFrame(dxf, title, projectName)
@@ -734,9 +888,9 @@ export function buildProtectiveGrilleSheetDxf(projectName: string, manholeCount:
     dxf.addText(p3(x0, y), h, s, { secondAlignmentPoint: p3(x0, y) })
     y -= 6
   }
-  line(`Количество: ${manholeCount} шт (по одной на каждый смотровой колодец, ТЗ п. 6.1)`)
-  line('Покрытие: антикоррозийное (агрессивность грунтовых вод к стали — высокая по отчёту ИГИ)')
-  line('Чертёж изделия уточняется по согласованному производителю', 2)
+  line(`Количество: ${quantity.toFixed(3)} шт (по активному каталогу)`)
+  line(`Источник: ${source}`, 2)
+  line('Материал, покрытие и размеры — строго по указанному источнику', 2)
   // Sketch: a square frame with a bar grid, marked as a sketch.
   const gx = x0 + 10
   const gy = y - 66
@@ -753,6 +907,94 @@ export function buildProtectiveGrilleSheetDxf(projectName: string, manholeCount:
   return dxf.stringify()
 }
 
+type DrawingWindow = { minX: number; minY: number; maxX: number; maxY: number }
+type DrawingPoint = { x: number; y: number }
+
+function orderedPipeAlignment(
+  pipe: TracedNetwork['pipes'][number],
+  from: NetworkNode,
+  to: NetworkNode,
+): DrawingPoint[] {
+  let alignment = pipe.alignment && pipe.alignment.length >= 2
+    ? pipe.alignment.map(({ x, y }) => ({ x, y }))
+    : [{ x: from.x, y: from.y }, { x: to.x, y: to.y }]
+  const forward = Math.hypot(alignment[0].x - from.x, alignment[0].y - from.y)
+    + Math.hypot(alignment[alignment.length - 1].x - to.x, alignment[alignment.length - 1].y - to.y)
+  const reverse = Math.hypot(alignment[0].x - to.x, alignment[0].y - to.y)
+    + Math.hypot(alignment[alignment.length - 1].x - from.x, alignment[alignment.length - 1].y - from.y)
+  if (reverse < forward) alignment = [...alignment].reverse()
+  if (Math.hypot(alignment[0].x - from.x, alignment[0].y - from.y) > 0.01) alignment.unshift({ x: from.x, y: from.y })
+  if (Math.hypot(alignment[alignment.length - 1].x - to.x, alignment[alignment.length - 1].y - to.y) > 0.01) alignment.push({ x: to.x, y: to.y })
+  return alignment
+}
+
+function pointInsideWindow(point: DrawingPoint, window: DrawingWindow): boolean {
+  return point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY
+}
+
+/** Liang–Barsky segment clipping in model coordinates. */
+function clipSegmentToWindow(a: DrawingPoint, b: DrawingPoint, window: DrawingWindow): [DrawingPoint, DrawingPoint] | null {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const p = [-dx, dx, -dy, dy]
+  const q = [a.x - window.minX, window.maxX - a.x, a.y - window.minY, window.maxY - a.y]
+  let t0 = 0
+  let t1 = 1
+  for (let index = 0; index < 4; index++) {
+    if (Math.abs(p[index]) < 1e-12) {
+      if (q[index] < 0) return null
+      continue
+    }
+    const ratio = q[index] / p[index]
+    if (p[index] < 0) t0 = Math.max(t0, ratio)
+    else t1 = Math.min(t1, ratio)
+    if (t0 > t1) return null
+  }
+  return [
+    { x: a.x + t0 * dx, y: a.y + t0 * dy },
+    { x: a.x + t1 * dx, y: a.y + t1 * dy },
+  ]
+}
+
+function sameDrawingPoint(a: DrawingPoint, b: DrawingPoint): boolean {
+  return Math.hypot(a.x - b.x, a.y - b.y) <= 1e-7
+}
+
+function clipPolylineToWindow(points: DrawingPoint[], window: DrawingWindow): DrawingPoint[][] {
+  const fragments: DrawingPoint[][] = []
+  for (let index = 1; index < points.length; index++) {
+    const clipped = clipSegmentToWindow(points[index - 1], points[index], window)
+    if (!clipped) continue
+    const previous = fragments[fragments.length - 1]
+    if (previous && sameDrawingPoint(previous[previous.length - 1], clipped[0])) previous.push(clipped[1])
+    else fragments.push(clipped)
+  }
+  return fragments.filter((fragment) => fragment.length >= 2)
+}
+
+function polylineLength(points: DrawingPoint[]): number {
+  return points.slice(1).reduce((sum, point, index) => sum + Math.hypot(
+    point.x - points[index].x,
+    point.y - points[index].y,
+  ), 0)
+}
+
+function polylineMidpoint(points: DrawingPoint[]): DrawingPoint & { dx: number; dy: number } {
+  const target = polylineLength(points) / 2
+  let walked = 0
+  for (let index = 1; index < points.length; index++) {
+    const a = points[index - 1]
+    const b = points[index]
+    const length = Math.hypot(b.x - a.x, b.y - a.y)
+    if (walked + length >= target || index === points.length - 1) {
+      const ratio = (target - walked) / Math.max(length, 1e-9)
+      return { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio, dx: b.x - a.x, dy: b.y - a.y }
+    }
+    walked += length
+  }
+  return { ...points[0], dx: 0, dy: 0 }
+}
+
 export function buildSewerPlanDxf(input: {
   projectName: string
   network: TracedNetwork
@@ -760,6 +1002,8 @@ export function buildSewerPlanDxf(input: {
   buildingLabels?: Map<string, string>
   /** Sheet caption; per-picket sheets pass «План К2 ПК…-ПК…. М1:500». */
   sheetTitle?: string
+  /** Model-space window used by per-picket plan sheets. */
+  window?: DrawingWindow
 }): string {
   const dxf = new DxfWriter()
   dxf.addLayer(K1_LAYERS.network, Colors.Blue, LineTypes.Continuous)
@@ -776,6 +1020,7 @@ export function buildSewerPlanDxf(input: {
   dxf.setCurrentLayerName(K1_LAYERS.buildings)
   for (const n of input.network.nodes) {
     if (n.kind !== 'building') continue
+    if (input.window && !pointInsideWindow(n, input.window)) continue
     dxf.addRectangle({ x: n.x - 7, y: n.y - 5 }, { x: n.x + 7, y: n.y + 5 })
     const label = n.buildingId ? input.buildingLabels?.get(n.buildingId) : undefined
     if (label) {
@@ -786,18 +1031,27 @@ export function buildSewerPlanDxf(input: {
     }
   }
 
-  // Pipes with diameter labels and a flow arrow toward the outlet.
+  // Pipes with diameter labels and a flow arrow toward the outlet. A saved
+  // alignment is the design axis and must never be replaced by the endpoint
+  // chord: that shortcut can cut across buildings, water and other obstacles.
   for (const p of input.network.pipes) {
     const a = nodeById.get(p.fromNode)
     const b = nodeById.get(p.toNode)
     if (!a || !b) continue
+    const alignment = orderedPipeAlignment(p, a, b)
+    const fragments = input.window ? clipPolylineToWindow(alignment, input.window) : [alignment]
+    if (fragments.length === 0) continue
+
     dxf.setCurrentLayerName(K1_LAYERS.network)
-    dxf.addLine(p3(a.x, a.y), p3(b.x, b.y))
-    const mx = (a.x + b.x) / 2
-    const my = (a.y + b.y) / 2
+    for (const fragment of fragments) dxf.addLWPolyline(fragment.map(({ x, y }) => ({ point: { x, y } })))
+
+    const visibleAlignment = [...fragments].sort((left, right) => polylineLength(right) - polylineLength(left))[0]
+    const midpoint = polylineMidpoint(visibleAlignment)
+    const mx = midpoint.x
+    const my = midpoint.y
     const d = input.pipeDiameterMm.get(p.id)
     if (d) {
-      const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
+      const angle = (Math.atan2(midpoint.dy, midpoint.dx) * 180) / Math.PI
       const rotation = angle > 90 || angle < -90 ? angle + 180 : angle
       dxf.setCurrentLayerName(K1_LAYERS.annotation)
       dxf.addText(p3(mx, my + 1.5), 1.8, `Ø${d} безн. L${p.lengthM.toFixed(1)}`, {
@@ -807,7 +1061,8 @@ export function buildSewerPlanDxf(input: {
     }
     // Arrowhead at the midpoint pointing to the downstream (lower-dist) node.
     const downstream = (dist.get(a.id) ?? Infinity) < (dist.get(b.id) ?? Infinity) ? a : b
-    drawFlowArrow(dxf, mx, my, downstream.x - mx, downstream.y - my)
+    const towardB = downstream.id === b.id
+    drawFlowArrow(dxf, mx, my, towardB ? midpoint.dx : -midpoint.dx, towardB ? midpoint.dy : -midpoint.dy)
   }
 
   // Manholes: junctions ВК-n, outlet «Вып.».
@@ -817,12 +1072,13 @@ export function buildSewerPlanDxf(input: {
     .sort((x, y) => (dist.get(y.id) ?? 0) - (dist.get(x.id) ?? 0)) // head first
   dxf.setCurrentLayerName(K1_LAYERS.wells)
   for (const n of junctions) {
+    if (input.window && !pointInsideWindow(n, input.window)) continue
     dxf.addCircle(p3(n.x, n.y), 1.6)
     dxf.addText(p3(n.x + 2.5, n.y + 2.5), 1.8, `ВК-${++wk}`, {
       secondAlignmentPoint: p3(n.x + 2.5, n.y + 2.5),
     })
   }
-  if (outlet) {
+  if (outlet && (!input.window || pointInsideWindow(outlet, input.window))) {
     dxf.setCurrentLayerName(K1_LAYERS.outlet)
     dxf.addRectangle({ x: outlet.x - 5, y: outlet.y - 5 }, { x: outlet.x + 5, y: outlet.y + 5 })
     dxf.addText(p3(outlet.x, outlet.y + 7), 2.4, 'Вып.', {
@@ -831,8 +1087,8 @@ export function buildSewerPlanDxf(input: {
     })
   }
 
-  const xs = input.network.nodes.map((n) => n.x)
-  const ys = input.network.nodes.map((n) => n.y)
+  const xs = input.window ? [input.window.minX, input.window.maxX] : input.network.nodes.map((n) => n.x)
+  const ys = input.window ? [input.window.minY, input.window.maxY] : input.network.nodes.map((n) => n.y)
   dxf.setCurrentLayerName(K1_LAYERS.annotation)
   const caption = input.sheetTitle ?? 'Сеть К1. План'
   dxf.addText(p3(Math.min(...xs), Math.max(...ys) + 12), 4, `AquaScheme. ${caption}. ${input.projectName}`, {
@@ -860,27 +1116,16 @@ export function buildPlanSheetSetDxf(input: {
 }): ProfileSheetFile[] {
   const mark = (input.system ?? 'storm') === 'storm' ? 'К2' : 'К1'
   return planWindows(input.mainPath, input.targetPerSheetM ?? 550, input.marginM ?? 60).map((w) => {
-    const inWindow = new Set(
-      input.network.nodes.filter((n) => n.x >= w.minX && n.x <= w.maxX && n.y >= w.minY && n.y <= w.maxY).map((n) => n.id),
-    )
-    // Keep pipes with at least one end inside; pull the other end in so the
-    // pipe is drawn complete instead of dangling at the window edge.
-    const keepNodes = new Set(inWindow)
-    const pipes = input.network.pipes.filter((p) => inWindow.has(p.fromNode) || inWindow.has(p.toNode))
-    for (const p of pipes) {
-      keepNodes.add(p.fromNode)
-      keepNodes.add(p.toNode)
-    }
-    const nodes = input.network.nodes.filter((n) => keepNodes.has(n.id))
     const title = `План ${mark} ${w.label}. М1:500`
     return {
       title,
       dxf: buildSewerPlanDxf({
         projectName: input.projectName,
-        network: { nodes, pipes, totalLengthM: pipes.reduce((s, p) => s + p.lengthM, 0) },
+        network: input.network,
         pipeDiameterMm: input.pipeDiameterMm,
         buildingLabels: input.buildingLabels,
         sheetTitle: title,
+        window: w,
       }),
     }
   })
@@ -941,6 +1186,7 @@ export function buildSituationDxf(input: SituationInput): string {
   // into the content area, preserving aspect ratio.
   const pts: Array<{ x: number; y: number }> = [
     ...input.network.nodes,
+    ...input.network.pipes.flatMap((pipe) => pipe.alignment ?? []),
     ...(input.buildings ?? []),
     ...(input.surveyPoints ?? []),
   ]
@@ -986,7 +1232,15 @@ export function buildSituationDxf(input: SituationInput): string {
     const a = nodeById.get(p.fromNode)
     const b = nodeById.get(p.toNode)
     if (!a || !b) continue
-    thickLine(dxf, tx(a.x), ty(a.y), tx(b.x), ty(b.y), 0.35)
+    const alignment = orderedPipeAlignment(p, a, b)
+    for (let index = 1; index < alignment.length; index++) {
+      thickLine(
+        dxf,
+        tx(alignment[index - 1].x), ty(alignment[index - 1].y),
+        tx(alignment[index].x), ty(alignment[index].y),
+        0.35,
+      )
+    }
   }
   // Diameter labels rotated along the route (генплановская manner).
   if (input.pipeDiameterMm) {
@@ -998,9 +1252,10 @@ export function buildSituationDxf(input: SituationInput): string {
       const b = nodeById.get(p.toNode)
       if (!d || !a || !b || d === last) continue
       last = d
-      const mx = (tx(a.x) + tx(b.x)) / 2
-      const my = (ty(a.y) + ty(b.y)) / 2
-      let angle = (Math.atan2(ty(b.y) - ty(a.y), tx(b.x) - tx(a.x)) * 180) / Math.PI
+      const midpoint = polylineMidpoint(orderedPipeAlignment(p, a, b))
+      const mx = tx(midpoint.x)
+      const my = ty(midpoint.y)
+      let angle = (Math.atan2(midpoint.dy, midpoint.dx) * 180) / Math.PI
       if (angle > 90 || angle < -90) angle += 180
       dxf.addText(p3(mx, my + 1.2), 2, `Ø${d}`, {
         rotation: angle,

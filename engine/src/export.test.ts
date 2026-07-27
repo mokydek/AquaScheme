@@ -7,6 +7,7 @@ import { sizeNetwork } from './sizing'
 import { traceNetwork } from './trace'
 import {
   buildGeneralDataDxf,
+  buildManholeMaterialSheetsDxf,
   buildNetworkDxf,
   buildPlanSheetSetDxf,
   buildProfileSheetSetDxf,
@@ -130,13 +131,27 @@ describe('picket profile sheet set (benchmark G-1)', () => {
       outletInvertElevationM: 348,
       totalLengthM: 1600,
     }
-    const sheets = buildProfileSheetSetDxf('Тестовый коллектор', profile, 'storm', 850)
+    const sheets = buildProfileSheetSetDxf('Тестовый коллектор', profile, 'storm', 850, [{
+      id: 'X-1',
+      stationM: 1200,
+      kind: 'существующая сеть',
+      existingElevationM: 349,
+      designInvertElevationM: 346.2,
+      clearanceM: 1.8,
+      approved: true,
+    }])
     expect(sheets.length).toBeGreaterThan(1)
     expect(sheets[0].title).toMatch(/^Профиль К2 ПК0 - ПК\d/)
     for (const sheet of sheets) {
       expect(sheet.dxf).toContain(sheet.title)
       expect(sheet.dxf.trimEnd().endsWith('EOF')).toBe(true)
+      const xCoordinates = [...sheet.dxf.matchAll(/\r?\n10\r?\n(-?\d+(?:\.\d+)?)/g)]
+        .map((match) => Number(match[1]))
+      expect(Math.max(...xCoordinates)).toBeLessThanOrEqual(430)
     }
+    expect(sheets[0].dxf).not.toContain('X-1')
+    expect(sheets[1].dxf).toContain('X-1')
+    expect(sheets[1].dxf).toContain('просвет 1.80 м')
   }, 60000)
 })
 
@@ -179,6 +194,52 @@ describe('picket plan sheet set (benchmark G-1)', () => {
       expect(sheet.dxf.trimEnd().endsWith('EOF')).toBe(true)
     }
   }, 60000)
+
+  it('keeps a long curved pipe visible on intermediate windows and clips it to every sheet', () => {
+    const nodes = [
+      { id: 'A', kind: 'junction' as const, x: 0, y: 0, groundElevation: 100 },
+      { id: 'B', kind: 'source' as const, x: 1200, y: 0, groundElevation: 98 },
+    ]
+    const alignment = [
+      { x: 0, y: 0 }, { x: 300, y: 80 }, { x: 600, y: -60 }, { x: 900, y: 70 }, { x: 1200, y: 0 },
+    ]
+    const pipe = { id: 'AB', kind: 'gravity_collector' as const, fromNode: 'A', toNode: 'B', lengthM: 1260, alignment }
+    const sheets = buildPlanSheetSetDxf({
+      projectName: 'Synthetic collector',
+      network: { nodes, pipes: [pipe], totalLengthM: pipe.lengthM },
+      pipeDiameterMm: new Map([['AB', 1200]]),
+      mainPath: alignment,
+      system: 'storm',
+      targetPerSheetM: 400,
+      marginM: 20,
+    })
+    expect(sheets.length).toBeGreaterThan(2)
+    for (const sheet of sheets) {
+      expect(sheet.dxf).toContain('Ø1200')
+      expect(sheet.dxf).toContain('L1260.0')
+      expect(sheet.dxf.trimEnd().endsWith('EOF')).toBe(true)
+    }
+  })
+})
+
+describe('unified situation geometry', () => {
+  it('draws every segment of the saved alignment instead of an endpoint chord', () => {
+    const nodes = [
+      { id: 'A', kind: 'junction' as const, x: 0, y: 0, groundElevation: 100 },
+      { id: 'B', kind: 'source' as const, x: 100, y: 0, groundElevation: 99 },
+    ]
+    const basePipe = { id: 'AB', kind: 'gravity_collector' as const, fromNode: 'A', toNode: 'B', lengthM: 140 }
+    const make = (alignment?: Array<{ x: number; y: number }>) => buildSituationDxf({
+      projectName: 'Synthetic collector',
+      systemType: 'storm',
+      network: { nodes, pipes: [{ ...basePipe, alignment }], totalLengthM: 140 },
+      pipeDiameterMm: new Map([['AB', 800]]),
+    })
+    const chordLines = make().match(/\r?\nLINE\r?\n/g)?.length ?? 0
+    const alignmentLines = make([{ x: 0, y: 0 }, { x: 40, y: 30 }, { x: 70, y: -20 }, { x: 100, y: 0 }])
+      .match(/\r?\nLINE\r?\n/g)?.length ?? 0
+    expect(alignmentLines).toBe(chordLines + 6)
+  })
 })
 
 describe('general data and specification sheets (update 3, O1)', () => {
@@ -191,7 +252,7 @@ describe('general data and specification sheets (update 3, O1)', () => {
     expect(dxf).toContain('Общие указания')
     expect(dxf).toContain('СП РК 4.01-101-2012') // referenced documents
     expect(dxf).toContain('требует проверки') // unverified marked
-    expect(dxf).toContain('форма уточняется') // simplified title block
+    expect(dxf).toContain('Основная надпись · реквизиты проекта')
     expect(dxf.trimEnd().endsWith('EOF')).toBe(true)
   }, 60000)
 
@@ -233,6 +294,29 @@ describe('specification', () => {
 })
 
 describe('sewer K1 longitudinal profile DXF (form 2)', () => {
+  it('exports the saved design alignment instead of an endpoint chord', () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'J', kind: 'junction', x: 100, y: 0, groundElevation: 99 },
+      ],
+      pipes: [{
+        id: 'p1',
+        kind: 'main',
+        fromNode: 'S',
+        toNode: 'J',
+        lengthM: 128,
+        alignment: [{ x: 0, y: 0 }, { x: 50, y: 40 }, { x: 100, y: 0 }],
+      }],
+      totalLengthM: 128,
+    }
+    const plan = buildSewerPlanDxf({ projectName: 'Тест', network, pipeDiameterMm: new Map([['p1', 800]]) })
+    // One LWPOLYLINE with all three saved alignment vertices. A two-point
+    // chord would contain group 90 = 2 instead.
+    expect(plan).toMatch(/90\r?\n3\r?\n/)
+    expect(plan).toMatch(/10\r?\n50\r?\n20\r?\n40\r?\n/)
+  })
+
   it('draws the GOST 21.704 form 2 side table from the computed profile', () => {
     const network: TracedNetwork = {
       nodes: [
@@ -305,6 +389,26 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
     expect(general).toContain('актов освидетельствования')
     expect(general).toContain('гидравлического испытания безнапорного трубопровода')
     expect(general).toContain('СН РК 4.01-03-2013')
+  })
+})
+
+describe('parameter-driven manhole DXF sheets', () => {
+  it('uses selected catalog components and never inserts an unspecified typical design', () => {
+    const sheets = buildManholeMaterialSheetsDxf('Synthetic project', {
+      manholes: [{ label: 'К-1', picket: 'ПК1', depthMm: 2400, pipeDiameterMm: 500 }],
+      pipes: [],
+      totalPipeLengthM: 0,
+    }, [{
+      manholeLabel: 'К-1',
+      typeCode: 'TEST-WELL',
+      chamberDiameterMm: 1500,
+      source: 'Synthetic catalog sheet',
+      components: [{ name: 'Кольцо', unit: 'шт', baseQuantity: 1, quantity: 3, catalogCode: 'RING' }],
+    }])
+    expect(sheets).toHaveLength(1)
+    expect(sheets[0].dxf).toContain('TEST-WELL')
+    expect(sheets[0].dxf).toContain('Кольцо 3 шт')
+    expect(sheets[0].dxf).not.toContain('уточняется')
   })
 })
 

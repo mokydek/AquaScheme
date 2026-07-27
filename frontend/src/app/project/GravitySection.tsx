@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   assessLiftStationNeed,
+  buildWorkingDrawingSet,
   buildSewerSchedule,
   buildSewerSpecification,
   checkRouteInCorridor,
   computeNetworkDemand,
   NORMATIVE_DEFAULTS,
   ringFromGeoJsonGeometry,
+  selectManholeConstructions,
   solveGravityNetwork,
+  unverifiedClauses,
 } from '@aquascheme/engine'
-import type { CorridorCheck } from '@aquascheme/engine'
+import type { Borehole, CorridorCheck, CrossingRecord, ManholeCatalogEntry, RouteConstraintInput, SurveyPoint } from '@aquascheme/engine'
 import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
@@ -19,14 +22,13 @@ import { loadActiveCatalogNominalDiameters } from '../../shared/catalog'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import {
   generateSewerGeneralDataDxf,
-  generateManholeSheetsDxf,
-  generatePlanSheetSetDxf,
   generateProjectAlbumPdf,
-  generateProfileSheetSetDxf,
+  generateProjectSheetPdf,
+  generateWorkingDrawingSheetDxf,
+  generateWorkingDrawingSetDxfs,
   generateSewerNotePdf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
-  generateReferencePipeScheduleXlsx,
   generateSewerSpecSheetDxf,
   generateSewerSpecXlsx,
   generateSewerScheduleXlsx,
@@ -68,10 +70,16 @@ export function GravitySection({
   pipes,
   normsDataset,
   geologyDataset,
-  basisDataset,
+  topographyDataset,
+  constraintsDataset,
+  routeAuditDataset,
+  manholeCatalogDataset,
+  boreholes,
   parcels,
   activeCatalogId,
   routeStatus = 'stale',
+  routeBlockers = [],
+  routeRevision = 0,
   onChanged,
 }: {
   projectId: string
@@ -82,11 +90,17 @@ export function GravitySection({
   pipes: PipeRow[]
   normsDataset?: DatasetRow
   geologyDataset?: DatasetRow
-  basisDataset?: DatasetRow
+  topographyDataset?: DatasetRow
+  constraintsDataset?: DatasetRow
+  routeAuditDataset?: DatasetRow
+  manholeCatalogDataset?: DatasetRow
+  boreholes?: Borehole[]
   /** Project parcels; kind 'right_of_way' rings form the corridor to check. */
   parcels?: ParcelRow[]
   activeCatalogId?: string | null
   routeStatus?: 'stale' | 'blocked' | 'preliminary' | 'calculated'
+  routeBlockers?: Array<{ code?: string; message?: string } | string>
+  routeRevision?: number
   /** Reload the project data after the demo seeding. */
   onChanged?: () => Promise<void>
 }) {
@@ -102,7 +116,6 @@ export function GravitySection({
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [catalogDiameters, setCatalogDiameters] = useState<readonly number[] | undefined>(undefined)
-  const finalOutputAllowed = routeStatus === 'calculated' && Boolean(activeCatalogId) && (catalogDiameters?.length ?? 0) > 0
 
   useEffect(() => {
     let active = true
@@ -137,6 +150,8 @@ export function GravitySection({
       buildingLabelById.get(engineToBuilding.get(engineId) ?? '') || engineId
   }, [nodes, buildings])
 
+  const network = useMemo(() => networkFromRows(nodes, pipes), [nodes, pipes])
+
   const result = useMemo(() => {
     if (pipes.length === 0) return null
     const norms: NormativeParams = {
@@ -159,7 +174,6 @@ export function GravitySection({
       )
       for (const b of demand.buildings) if (b.id) buildingFlowLps.set(b.id, b.designFlowLps)
     }
-    const network = networkFromRows(nodes, pipes)
     const freezingDepthM =
       ((geologyDataset?.content ?? {}) as { freezingDepthM?: number }).freezingDepthM ?? 1.5
     return solveGravityNetwork({
@@ -171,7 +185,7 @@ export function GravitySection({
       outletNodeId: network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'pumping_station')?.id,
       allowedDiametersMm: activeCatalogId ? catalogDiameters ?? [] : undefined,
     })
-  }, [buildings, nodes, pipes, normsDataset, geologyDataset, systemType, strategy, activeCatalogId, catalogDiameters])
+  }, [buildings, network, normsDataset, geologyDataset, systemType, strategy, activeCatalogId, catalogDiameters])
 
   const rows = useMemo(() => {
     if (!result) return []
@@ -179,32 +193,116 @@ export function GravitySection({
   }, [result])
 
   const schedule = useMemo(() => (result ? buildSewerSchedule(result) : null), [result])
-  const referenceSchedule = useMemo(() => {
-    const content = basisDataset?.content as { designSchedule?: Array<{ system: string; designation: string; standard: string; diameterMm: number; lengthM: number }> } | null
-    return content?.designSchedule ?? []
-  }, [basisDataset])
-  const referenceProject = useMemo(() => {
-    const content = basisDataset?.content as { project?: { code?: string } } | null
-    return content?.project
-  }, [basisDataset])
+  const manholeCatalog = useMemo(
+    () => ((manholeCatalogDataset?.content ?? {}) as { entries?: ManholeCatalogEntry[] }).entries ?? [],
+    [manholeCatalogDataset],
+  )
+  const manholeSelection = useMemo(
+    () => schedule ? selectManholeConstructions(schedule.manholes, manholeCatalog) : { selected: [], unmatched: [] },
+    [schedule, manholeCatalog],
+  )
+  const constraints = useMemo(
+    () => (constraintsDataset?.content ?? null) as (RouteConstraintInput & { crossings?: CrossingRecord[] }) | null,
+    [constraintsDataset],
+  )
+  const surveyPoints = useMemo<SurveyPoint[]>(() => {
+    const topography = (topographyDataset?.content ?? null) as { points?: SurveyPoint[] } | null
+    return constraints?.surveyPoints?.length ? constraints.surveyPoints : topography?.points ?? []
+  }, [constraints, topographyDataset])
+  const unresolvedLayerCount = useMemo(() => {
+    const audit = (routeAuditDataset?.content ?? null) as { unresolved?: { layers?: number } } | null
+    return audit?.unresolved?.layers ?? constraints?.unresolvedLayers?.length ?? 0
+  }, [constraints, routeAuditDataset])
+  const workingDrawingSet = useMemo(() => {
+    const applicableUnverifiedClauses = unverifiedClauses()
+      .filter((clause) => clause.appliesSystem.includes(systemType))
+    return buildWorkingDrawingSet({
+      system: systemType,
+      network,
+      profile: result?.profile ?? null,
+      schedule,
+      routeStatus,
+      routeBlockers,
+      georeference: constraints?.georeference ?? null,
+      surveyPoints,
+      unresolvedLayerCount,
+      catalogReady: Boolean(activeCatalogId) && (catalogDiameters?.length ?? 0) > 0,
+      catalogFingerprint: { activeCatalogId, catalogDiameters },
+      hydraulicsReady: Boolean(result?.profile) && (result?.pipes.every((pipe) => pipe.issues.length === 0) ?? false),
+      utilityFeatureCount: constraints?.utilityLines?.length ?? 0,
+      crossings: constraints?.crossings,
+      spatialBoreholeCount: (boreholes ?? []).filter((borehole) =>
+        Number.isFinite(borehole.x) && Number.isFinite(borehole.y) && borehole.layers.length > 0,
+      ).length,
+      geologyFingerprint: { dataset: geologyDataset?.content, boreholes },
+      manholeCatalogReady: schedule
+        ? schedule.manholes.length > 0
+          && manholeSelection.selected.length === schedule.manholes.length
+          && manholeSelection.unmatched.length === 0
+        : false,
+      manholeCatalogMissingLabels: manholeSelection.unmatched,
+      manholeCatalogFingerprint: { entries: manholeCatalog, selection: manholeSelection },
+      normsVerified: applicableUnverifiedClauses.length === 0,
+      normsFingerprint: {
+        dataset: normsDataset?.content,
+        unresolvedApplicableClauseIds: applicableUnverifiedClauses.map((clause) => clause.id),
+      },
+      revision: routeRevision,
+    })
+  }, [
+    activeCatalogId,
+    boreholes,
+    catalogDiameters,
+    constraints,
+    geologyDataset,
+    manholeCatalog,
+    manholeSelection,
+    network,
+    normsDataset,
+    result,
+    routeBlockers,
+    routeRevision,
+    routeStatus,
+    schedule,
+    surveyPoints,
+    systemType,
+    unresolvedLayerCount,
+  ])
+  const finalOutputAllowed = workingDrawingSet.summary.finalExportAllowed
+
+  const projectAlbumInput = () => {
+    if (!result?.profile || !schedule) throw new Error('Не рассчитаны профиль и ведомость.')
+    return {
+      projectName,
+      projectCode: systemType === 'storm' ? 'К2' : 'К1',
+      system: systemType,
+      network,
+      profile: result.profile,
+      schedule,
+      drawingSet: workingDrawingSet,
+      surveyPoints,
+      boreholes,
+      constraints,
+      manholeConstructions: manholeSelection.selected,
+      pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
+      buildingLabels: new Map(buildings.map((building) => [building.id, building.label ?? building.id])),
+      outletFlowLps: result.outletFlowLps,
+    }
+  }
 
   // The full К1 sheet set, mirroring the professional НК album: общие данные,
   // ситуационная схема, план, продольный профиль, ведомость колодцев и труб.
   const exportBundle = async () => {
     if (!result?.profile || !schedule) return
+    if (!finalOutputAllowed) {
+      setBundleError('Финальный комплект заблокирован: устраните стоп-факторы в реестре рабочих листов.')
+      return
+    }
     setExporting(true)
     setBundleError(null)
     try {
-      const network = networkFromRows(nodes, pipes)
       const pipeDiameterMm = new Map(result.pipes.map((p) => [p.id, p.diameterMm]))
       const buildingLabels = new Map(buildings.map((b) => [b.id, b.label ?? '']))
-      // The main collector path in station order, for the per-picket windows.
-      const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
-      const mainPath = result.profile.stations
-        .map((s) => nodeById.get(s.nodeId))
-        .filter((n): n is NonNullable<typeof n> => !!n)
-        .map((n) => ({ x: n.x, y: n.y }))
-      const sheetSystem = systemType === 'storm' ? ('storm' as const) : ('sewer' as const)
       // Specification НК.С: lift station from the profile depths (ТЗ rule),
       // the waterproofing set when the water table sits above the deepest
       // excavation (dataset geology, groundwaterDepthM).
@@ -214,7 +312,7 @@ export function GravitySection({
         liftStation: assessLiftStationNeed(result.profile.stations.map((s) => s.depthM)).needed.value,
         highGroundwater: groundwaterDepthM !== undefined && groundwaterDepthM < result.profile.maxDepthM,
       })
-      const [general, situation, plan, profile, xlsx, referenceXlsx, specSheet, specXlsx, planSheets, profileSheets, manholeSheets] = await Promise.all([
+      const [general, situation, plan, profile, xlsx, specSheet, specXlsx, drawingFiles] = await Promise.all([
         generateSewerGeneralDataDxf({
           projectName,
           schedule,
@@ -229,16 +327,11 @@ export function GravitySection({
           pipeDiameterMm,
         }),
         generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels }),
-        generateSewerProfileDxf({ projectName, profile: result.profile }),
-        generateSewerScheduleXlsx(schedule),
-        referenceSchedule.length > 0 ? generateReferencePipeScheduleXlsx(referenceSchedule) : Promise.resolve(null),
+        generateSewerProfileDxf({ projectName, profile: result.profile, crossings: constraints?.crossings ?? [] }),
+        generateSewerScheduleXlsx(schedule, manholeSelection.selected),
         generateSewerSpecSheetDxf(projectName, specItems),
         generateSewerSpecXlsx(specItems),
-        mainPath.length >= 2
-          ? generatePlanSheetSetDxf({ projectName, network, pipeDiameterMm, mainPath, buildingLabels, system: sheetSystem })
-          : Promise.resolve([]),
-        generateProfileSheetSetDxf(projectName, result.profile, sheetSystem),
-        generateManholeSheetsDxf(projectName, schedule),
+        generateWorkingDrawingSetDxfs(projectAlbumInput()),
       ])
       const files: Record<string, string | Uint8Array> = {
         [`${slug}_01_общие_данные.dxf`]: general,
@@ -249,20 +342,15 @@ export function GravitySection({
         [`${slug}_06_спецификация_НК.dxf`]: specSheet,
         [`${slug}_06_спецификация_НК.xlsx`]: specXlsx,
       }
-      if (referenceXlsx) files[`${slug}_05А_проектная_спецификация_2024-51-НК.С.xlsx`] = referenceXlsx
-      // Per-picket sheets follow the summary sheets, numbered like the album.
-      let sheetNo = 7
       const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.()]+/g, '_')
-      for (const sheet of [...planSheets, ...profileSheets, ...manholeSheets.tables]) {
-        files[`${slug}_${String(sheetNo).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
-        sheetNo++
+      for (const sheet of drawingFiles) {
+        files[`${slug}_${String(sheet.sheetNumber).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
       }
-      files[`${slug}_${String(sheetNo).padStart(2, '0')}_защитная_сетка_для_колодцев.dxf`] = manholeSheets.grille
       const zip = await zipBundle(files)
       const url = URL.createObjectURL(zip)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${slug}_комплект_К1.zip`
+      a.download = `${slug}_комплект_${systemType === 'storm' ? 'К2' : 'К1'}.zip`
       document.body.append(a)
       a.click()
       a.remove()
@@ -274,9 +362,8 @@ export function GravitySection({
     }
   }
 
-  // Seed a WHOLE ready demo project (benchmark-shaped): inflow sources, the
-  // ~15.8 km trunk, geology with boreholes, seismicity, norms, the corridor
-  // and the permitting-documents checklist — all panels at once.
+  // Seed a wholly synthetic project for UI demonstration. It is deliberately
+  // unsuitable for acceptance against the confidential control project.
   const [seeding, setSeeding] = useState(false)
   const [seedNotice, setSeedNotice] = useState<string | null>(null)
   const seedDemo = async () => {
@@ -300,12 +387,7 @@ export function GravitySection({
   // right-of-way rings loaded/drawn in the parcels section.
   const runCorridorCheck = () => {
     if (!result?.profile) return
-    const network = networkFromRows(nodes, pipes)
-    const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
-    const mainPath = result.profile.stations
-      .map((s) => nodeById.get(s.nodeId))
-      .filter((n): n is NonNullable<typeof n> => !!n)
-      .map((n) => ({ x: n.x, y: n.y }))
+    const mainPath = workingDrawingSet.mainPath.map(({ x, y }) => ({ x, y }))
     const rings = (parcels ?? [])
       .filter((p) => p.kind === 'right_of_way')
       .map((p) => ringFromGeoJsonGeometry(p.geometry))
@@ -352,37 +434,16 @@ export function GravitySection({
     if (!schedule) return
     setExporting(true)
     try {
-      const bytes = await generateSewerScheduleXlsx(schedule)
+      const bytes = await generateSewerScheduleXlsx(schedule, manholeSelection.selected)
       const blob = new Blob([bytes], { type: XLSX_TYPE })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${slug}_ведомость_К1.xlsx`
+      a.download = `${slug}_ведомость_${systemType === 'storm' ? 'К2' : 'К1'}.xlsx`
       document.body.append(a)
       a.click()
       a.remove()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  const exportReferenceSchedule = async () => {
-    if (referenceSchedule.length === 0) return
-    setExporting(true)
-    try {
-      const bytes = await generateReferencePipeScheduleXlsx(referenceSchedule)
-      const blob = new Blob([bytes], { type: XLSX_TYPE })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${slug}_проектная_спецификация_2024-51-НК.С.xlsx`
-      document.body.append(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch (error) {
-      setBundleError(error instanceof Error ? `Не удалось сформировать рабочий комплект: ${error.message}` : 'Не удалось сформировать рабочий комплект')
     } finally {
       setExporting(false)
     }
@@ -407,7 +468,7 @@ export function GravitySection({
     if (!result?.profile) return
     setExporting(true)
     try {
-      const dxf = await generateSewerProfileDxf({ projectName, profile: result.profile })
+      const dxf = await generateSewerProfileDxf({ projectName, profile: result.profile, crossings: constraints?.crossings ?? [] })
       downloadText(`${slug}_профиль_К1.dxf`, dxf, 'application/dxf')
     } finally {
       setExporting(false)
@@ -449,29 +510,20 @@ export function GravitySection({
 
   const exportAlbum = async () => {
     if (!result?.profile || !schedule) return
+    if (!finalOutputAllowed) {
+      setAlbumError('Финальный PDF заблокирован: устраните стоп-факторы в реестре рабочих листов.')
+      return
+    }
     setAlbumExporting(true)
     setAlbumError(null)
     try {
       // Allow the busy indicator to paint before pdfmake starts its CPU-heavy layout pass.
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-      const network = networkFromRows(nodes, pipes)
-      const pipeDiameterMm = new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm]))
-      const blob = await generateProjectAlbumPdf({
-        projectName,
-        projectCode: referenceProject?.code ?? 'НК',
-        system: systemType,
-        network,
-        profile: result.profile,
-        schedule,
-        pipeDiameterMm,
-        buildingLabels: new Map(buildings.map((building) => [building.id, building.label ?? building.id])),
-        outletFlowLps: result.outletFlowLps,
-        designSchedule: referenceSchedule,
-      })
+      const blob = await generateProjectAlbumPdf(projectAlbumInput())
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `${slug}_${referenceProject?.code ?? 'НК'}_альбом_61_лист.pdf`
+      anchor.download = `${slug}_рабочие_чертежи_${workingDrawingSet.summary.total}_листов.pdf`
       document.body.append(anchor)
       anchor.click()
       anchor.remove()
@@ -483,11 +535,49 @@ export function GravitySection({
     }
   }
 
+  const exportAlbumSheet = async (sheetId: string) => {
+    setAlbumExporting(true)
+    setAlbumError(null)
+    try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      const sheet = workingDrawingSet.sheets.find((item) => item.id === sheetId)
+      const blob = await generateProjectSheetPdf(projectAlbumInput(), sheetId)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${slug}_лист_${sheet?.sheetNumber ?? sheetId}.pdf`
+      document.body.append(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      setAlbumError(error instanceof Error ? `Не удалось сформировать лист: ${error.message}` : 'Не удалось сформировать лист')
+    } finally {
+      setAlbumExporting(false)
+    }
+  }
+
+  const exportAlbumSheetDxf = async (sheetId: string) => {
+    setExporting(true)
+    setAlbumError(null)
+    try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      const sheet = workingDrawingSet.sheets.find((item) => item.id === sheetId)
+      const dxf = await generateWorkingDrawingSheetDxf(projectAlbumInput(), sheetId)
+      const safeTitle = (sheet?.title ?? sheetId).replace(/[^\p{L}\p{N}_.-]+/gu, '_').slice(0, 80)
+      downloadText(`${slug}_лист_${sheet?.sheetNumber ?? sheetId}_${safeTitle}.dxf`, dxf, 'application/dxf')
+    } catch (error) {
+      setAlbumError(error instanceof Error ? `Не удалось сформировать DXF листа: ${error.message}` : 'Не удалось сформировать DXF листа')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.gravity.hint')}</p>
       {!finalOutputAllowed && result && (
-        <p className="notice error">Расчёт доступен для проверки, но выпуск финальных файлов заблокирован: статус трассы «{routeStatus}», активный каталог {activeCatalogId && catalogDiameters?.length ? 'загружен' : 'не готов'}.</p>
+        <p className="notice error">Расчёт доступен для проверки, но финальный выпуск заблокирован: {workingDrawingSet.summary.blocked} листов со стоп-факторами, {workingDrawingSet.summary.stale} устаревших. Причины перечислены в реестре ниже.</p>
       )}
       {!result && (
         <>
@@ -594,12 +684,19 @@ export function GravitySection({
 
           {result.profile && schedule && (
             <AlbumSheetSet
+              drawingSet={workingDrawingSet}
+              surveyPoints={surveyPoints}
+              profile={result.profile}
+              schedule={schedule}
+              constraints={constraints}
+              manholeConstructions={manholeSelection.selected}
               pdfBusy={albumExporting}
               zipBusy={exporting}
               onPdf={() => void exportAlbum()}
+              onSheetPdf={(sheetId) => void exportAlbumSheet(sheetId)}
+              onSheetDxf={(sheetId) => void exportAlbumSheetDxf(sheetId)}
               onZip={() => void exportBundle()}
               error={albumError ?? bundleError}
-              disabled={!finalOutputAllowed}
             />
           )}
 
@@ -701,24 +798,6 @@ export function GravitySection({
               <p className="stat-line">{t('project.gravity.pipeTotal', { value: schedule.totalPipeLengthM })}</p>
               <p className="hint">{t('project.gravity.agskNote')}</p>
               <p className="hint">{t('project.gravity.scheduleNote')}</p>
-              {referenceSchedule.length > 0 && (
-                <>
-                  <h4 className="subhead" style={{ marginTop: 16 }}>Проектная спецификация 2024-51-НК.С</h4>
-                  <p className="hint">Контрольные количества из листов 1–3 итогового альбома; они не заменяются результатом автоматического подбора.</p>
-                  <div className="table-wrap" style={{ marginTop: 8 }}>
-                    <table className="data-table">
-                      <thead><tr><th>Система</th><th>Наименование</th><th>Стандарт</th><th className="num">Ø, мм</th><th className="num">Длина, м</th></tr></thead>
-                      <tbody>
-                        {referenceSchedule.map((item, index) => (
-                          <tr key={`${item.designation}-${index}`}><td>{item.system}</td><td>{item.designation}</td><td>{item.standard}</td><td className="num">{item.diameterMm}</td><td className="num">{item.lengthM}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="stat-line">Итого по проектной спецификации: {referenceSchedule.reduce((sum, item) => sum + item.lengthM, 0).toLocaleString('ru-RU')} м</p>
-                  <div className="section-actions"><button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportReferenceSchedule()}>Скачать проектную спецификацию XLSX</button></div>
-                </>
-              )}
               <div className="section-actions" style={{ marginTop: 12 }}>
                 <button type="button" className="btn btn-sm" disabled={exporting || !finalOutputAllowed} onClick={() => void exportSchedule()}>
                   {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSchedule')}
