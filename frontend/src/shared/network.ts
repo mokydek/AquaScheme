@@ -176,6 +176,8 @@ export async function replaceNetwork(
     if (/replace_project_network|schema cache|function/i.test(error.message)) {
       throw new Error('Требуется применить миграцию backend/migrations/0012_engineering_route.sql в Supabase.')
     }
-    throw error
+    const parts = [error.code, error.message, error.details, error.hint]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    throw new Error(parts.join(' · ') || 'Supabase отклонил сохранение инженерной сети.')
   }
 }

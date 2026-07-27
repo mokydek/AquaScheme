@@ -50,7 +50,10 @@ export function bindStormDemoBuildingIds(
       missing.push(node.id)
       return node
     }
-    return { ...node, buildingId }
+    // Keep the database representation compatible with installations whose
+    // legacy nodes_kind_check does not include "building" yet. Gravity flow
+    // remains attached through buildingId, which is the authoritative link.
+    return { ...node, kind: 'junction' as const, buildingId }
   })
   if (missing.length > 0) {
     throw new Error(`Не найдены сохранённые здания для узлов: ${missing.join(', ')}.`)

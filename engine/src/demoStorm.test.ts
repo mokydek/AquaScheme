@@ -28,8 +28,9 @@ describe('buildStormDemo', () => {
       y: node.y,
     }))
     const bound = bindStormDemoBuildingIds(demo.network, persisted)
-    expect(bound.nodes.filter((node) => node.kind === 'building').map((node) => node.buildingId))
+    expect(bound.nodes.filter((node) => node.buildingId).map((node) => node.buildingId))
       .toEqual(persisted.map((row) => row.id))
+    expect(bound.nodes.filter((node) => node.buildingId).every((node) => node.kind === 'junction')).toBe(true)
     expect(demo.network.nodes.filter((node) => node.kind === 'building').every((node) => node.buildingId === undefined)).toBe(true)
   })
 
