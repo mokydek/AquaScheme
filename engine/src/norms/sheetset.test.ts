@@ -52,6 +52,7 @@ function profileOf(stations: number[]): GravityProfile {
     maxDepthM: 2 + stations[stations.length - 1] * 0.001,
     outletInvertElevationM: 348,
     totalLengthM: stations[stations.length - 1],
+    pipeIds: stations.slice(1).map((_, index) => `P${index}`),
   }
 }
 
@@ -78,6 +79,21 @@ describe('planWindows', () => {
 
   it('returns nothing for a degenerate path', () => {
     expect(planWindows([{ x: 0, y: 0 }])).toEqual([])
+  })
+
+  it('uses canonical profile chainage and snaps sheet breaks to supplied nodes, not alignment vertices', () => {
+    const path = [
+      { x: 0, y: 0, chainageM: 0 },
+      { x: 50, y: 0, chainageM: 200 },
+      { x: 100, y: 0, chainageM: 500 },
+      { x: 150, y: 0, chainageM: 800 },
+      { x: 200, y: 0, chainageM: 1200 },
+      { x: 250, y: 0, chainageM: 1600 },
+    ]
+    const nodeChainages = [0, 800, 1600]
+    const windows = planWindows(path, 550, 60, nodeChainages)
+    expect(windows.map(({ fromM, toM }) => [fromM, toM])).toEqual([[0, 800], [800, 1600]])
+    expect(windows.flatMap(({ fromM, toM }) => [fromM, toM]).every((value) => nodeChainages.includes(value))).toBe(true)
   })
 })
 

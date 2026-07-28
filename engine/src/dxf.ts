@@ -10,7 +10,7 @@ import { manholeLabels, picketLabel } from './norms/gravity'
 import type { SewerSchedule } from './norms/gravity'
 import { planWindows, profileSheetSpecs } from './norms/sheetset'
 import type { SelectedManholeConstruction } from './manhole-catalog'
-import type { CrossingRecord } from './working-drawings'
+import type { CrossingRecord, ProtectiveGridDesign } from './working-drawings'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -841,6 +841,7 @@ export function buildWorkingDrawingSpecificationDxf(
   projectName: string,
   schedule: SewerSchedule,
   constructions: SelectedManholeConstruction[],
+  range?: { start: number; end: number; total?: number },
 ): string {
   const dxf = new DxfWriter()
   const title = 'Спецификация оборудования, изделий и материалов'
@@ -864,10 +865,14 @@ export function buildWorkingDrawingSpecificationDxf(
     ...schedule.pipes.map((pipe) => [pipe.designation, pipe.agskCode || '—', 'м', pipe.lengthM.toFixed(2)]),
     ...[...totals.values()].map((item) => [item.name, item.code, item.unit, item.quantity.toFixed(3)]),
   ]
+  if (range?.total !== undefined && range.total !== rows.length) {
+    throw new Error(`Реестр спецификации устарел: ${range.total} строк в реестре, ${rows.length} в модели.`)
+  }
+  const selectedRows = range ? rows.slice(range.start, range.end) : rows
   drawTextTable(
     dxf, x0, y, [0, 140, 205, 235], rightX,
     ['Наименование', 'Код', 'Ед.', 'Количество'],
-    rows,
+    selectedRows,
   )
   return dxf.stringify()
 }
@@ -891,17 +896,57 @@ export function buildProtectiveGrilleSheetDxf(projectName: string, quantity: num
   line(`Количество: ${quantity.toFixed(3)} шт (по активному каталогу)`)
   line(`Источник: ${source}`, 2)
   line('Материал, покрытие и размеры — строго по указанному источнику', 2)
-  // Sketch: a square frame with a bar grid, marked as a sketch.
-  const gx = x0 + 10
-  const gy = y - 66
-  const size = 60
-  dxf.addRectangle({ x: gx, y: gy }, { x: gx + size, y: gy + size })
-  for (let i = 1; i < 6; i++) {
-    const offset = (size / 6) * i
-    dxf.addLine(p3(gx + offset, gy), p3(gx + offset, gy + size))
-    dxf.addLine(p3(gx, gy + offset), p3(gx + size, gy + offset))
+  line('Геометрический эскиз не сформирован: отсутствуют структурированные размеры изделия.', 2)
+  return dxf.stringify()
+}
+
+/** A construction sheet built only from an explicit, verified product design. */
+export function buildProtectiveGridDetailDxf(
+  projectName: string,
+  design: ProtectiveGridDesign,
+): string {
+  const numeric = [design.quantity, design.overallWidthMm, design.overallHeightMm, design.barSpacingMm]
+  if (numeric.some((value) => !Number.isFinite(value) || value <= 0)) {
+    throw new Error('Параметры защитной сетки должны быть положительными числами.')
   }
-  dxf.addText(p3(gx, gy - 5), 2, 'Эскиз. Размеры по месту установки', {
+  if (!design.verified) throw new Error('Конструкция защитной сетки не подтверждена.')
+  const required = [design.frameProfile, design.barProfile, design.material, design.coating, design.fixing, design.source]
+  if (required.some((value) => !value.trim())) throw new Error('Конструкция защитной сетки заполнена не полностью.')
+
+  const dxf = new DxfWriter()
+  const title = 'Защитная сетка для смотровых колодцев'
+  let y = drawSheetFrame(dxf, title, projectName)
+  const x0 = SHEET_MARGIN + 4
+  const line = (value: string, height = 2.2) => {
+    dxf.addText(p3(x0, y), height, value, { secondAlignmentPoint: p3(x0, y) })
+    y -= 6
+  }
+  line(`Количество: ${design.quantity.toFixed(3)} шт.`)
+  line(`Габарит: ${design.overallWidthMm}×${design.overallHeightMm} мм; шаг стержней: ${design.barSpacingMm} мм`)
+  line(`Рама: ${design.frameProfile}; стержни: ${design.barProfile}`)
+  line(`Материал: ${design.material}; покрытие: ${design.coating}`)
+  line(`Крепление: ${design.fixing}`)
+  line(`Источник: ${design.source}`, 1.9)
+
+  const maxDrawingWidth = 115
+  const maxDrawingHeight = 90
+  const scale = Math.min(maxDrawingWidth / design.overallWidthMm, maxDrawingHeight / design.overallHeightMm)
+  const width = design.overallWidthMm * scale
+  const height = design.overallHeightMm * scale
+  const gx = x0 + 8
+  const gy = Math.max(SHEET_MARGIN + 42, y - height - 8)
+  dxf.addRectangle({ x: gx, y: gy }, { x: gx + width, y: gy + height })
+  const verticalBars = Math.max(0, Math.floor(design.overallWidthMm / design.barSpacingMm) - 1)
+  const horizontalBars = Math.max(0, Math.floor(design.overallHeightMm / design.barSpacingMm) - 1)
+  for (let index = 1; index <= verticalBars; index++) {
+    const offset = Math.min(index * design.barSpacingMm * scale, width)
+    if (offset < width) dxf.addLine(p3(gx + offset, gy), p3(gx + offset, gy + height))
+  }
+  for (let index = 1; index <= horizontalBars; index++) {
+    const offset = Math.min(index * design.barSpacingMm * scale, height)
+    if (offset < height) dxf.addLine(p3(gx, gy + offset), p3(gx + width, gy + offset))
+  }
+  dxf.addText(p3(gx, gy - 5), 2, `Габарит ${design.overallWidthMm}×${design.overallHeightMm}; шаг ${design.barSpacingMm}`, {
     secondAlignmentPoint: p3(gx, gy - 5),
   })
   return dxf.stringify()
@@ -1108,14 +1153,21 @@ export function buildPlanSheetSetDxf(input: {
   network: TracedNetwork
   pipeDiameterMm: Map<string, number>
   /** Vertices of the main collector in order, for chainage windows. */
-  mainPath: Array<{ x: number; y: number }>
+  mainPath: Array<{ x: number; y: number; chainageM?: number }>
   buildingLabels?: Map<string, string>
   system?: 'sewer' | 'storm'
   targetPerSheetM?: number
   marginM?: number
+  /** Approved manhole/profile stations used as the only legal sheet breaks. */
+  stationChainagesM?: number[]
 }): ProfileSheetFile[] {
   const mark = (input.system ?? 'storm') === 'storm' ? 'К2' : 'К1'
-  return planWindows(input.mainPath, input.targetPerSheetM ?? 550, input.marginM ?? 60).map((w) => {
+  return planWindows(
+    input.mainPath,
+    input.targetPerSheetM ?? 550,
+    input.marginM ?? 60,
+    input.stationChainagesM,
+  ).map((w) => {
     const title = `План ${mark} ${w.label}. М1:500`
     return {
       title,

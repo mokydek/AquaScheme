@@ -14,7 +14,17 @@
     "dev": "npm run dev --workspace frontend",
     "build": "npm run build --workspace frontend",
     "test": "npm run test --workspace engine",
+    "test:frontend": "node ./node_modules/vitest/vitest.mjs run frontend/src --pool=forks --poolOptions.forks.singleFork",
+    "test:converter": "npm test --prefix converter",
+    "test:benchmark": "node --test scripts/visual-score.test.mjs",
+    "test:all": "npm run test && npm run test:frontend && npm run test:converter && npm run test:benchmark",
     "typecheck": "npm run typecheck --workspace frontend && npm run typecheck --workspace engine",
-    "benchmark": "node scripts/benchmark.mjs"
+    "benchmark": "node scripts/benchmark.mjs",
+    "benchmark:required": "node scripts/benchmark.mjs --required",
+    "benchmark:visual": "node scripts/visual-benchmark.mjs",
+    "validate:release": "npm run test:all && npm run typecheck && npm run build && npm run benchmark:required"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "0.1.100"
   }
 }

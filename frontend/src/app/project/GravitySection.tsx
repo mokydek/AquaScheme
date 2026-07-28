@@ -5,15 +5,28 @@ import {
   buildWorkingDrawingSet,
   buildSewerSchedule,
   buildSewerSpecification,
+  calculateStormRunoff,
   checkRouteInCorridor,
   computeNetworkDemand,
+  DEFAULT_FREEZING_DEPTH_M,
   NORMATIVE_DEFAULTS,
   ringFromGeoJsonGeometry,
   selectManholeConstructions,
   solveGravityNetwork,
   unverifiedClauses,
+  workingDrawingSpecificationItemCount,
 } from '@aquascheme/engine'
-import type { Borehole, CorridorCheck, CrossingRecord, ManholeCatalogEntry, RouteConstraintInput, SurveyPoint } from '@aquascheme/engine'
+import type {
+  Borehole,
+  CorridorCheck,
+  CrossingRecord,
+  ManholeCatalogEntry,
+  ProtectiveGridDesign,
+  RouteConstraintInput,
+  SurveyPoint,
+  StormRunoffInput,
+  WorkingDrawingDeliverableRequirements,
+} from '@aquascheme/engine'
 import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
@@ -39,8 +52,45 @@ import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
 import { AlbumSheetSet } from './AlbumSheetSet'
+import { freezingDepthStatus } from '../../shared/geologyStatus'
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+interface PlanPoint {
+  x: number
+  y: number
+}
+
+interface ProfileGeologyCoverage {
+  maxOffsetM?: number
+  status: 'missing' | 'unverified' | 'verified'
+  source?: string
+}
+
+function isFinitePlanPoint(point: { x?: number; y?: number } | null | undefined): point is PlanPoint {
+  return point != null && Number.isFinite(point.x) && Number.isFinite(point.y)
+}
+
+function pointToSegmentDistance(point: PlanPoint, start: PlanPoint, end: PlanPoint): number {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const lengthSquared = dx * dx + dy * dy
+  if (lengthSquared === 0) return Math.hypot(point.x - start.x, point.y - start.y)
+  const projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+  const ratio = Math.max(0, Math.min(1, projection))
+  return Math.hypot(point.x - (start.x + dx * ratio), point.y - (start.y + dy * ratio))
+}
+
+function distanceToActualAlignment(point: PlanPoint, alignment: Array<{ x: number; y: number }>): number | null {
+  let minimum = Number.POSITIVE_INFINITY
+  for (let index = 1; index < alignment.length; index++) {
+    const start = alignment[index - 1]
+    const end = alignment[index]
+    if (!isFinitePlanPoint(start) || !isFinitePlanPoint(end)) continue
+    minimum = Math.min(minimum, pointToSegmentDistance(point, start, end))
+  }
+  return Number.isFinite(minimum) ? minimum : null
+}
 
 function downloadText(filename: string, text: string, type: string): void {
   const blob = new Blob([text], { type })
@@ -70,6 +120,7 @@ export function GravitySection({
   pipes,
   normsDataset,
   geologyDataset,
+  drainageDataset,
   topographyDataset,
   constraintsDataset,
   routeAuditDataset,
@@ -90,6 +141,7 @@ export function GravitySection({
   pipes: PipeRow[]
   normsDataset?: DatasetRow
   geologyDataset?: DatasetRow
+  drainageDataset?: DatasetRow
   topographyDataset?: DatasetRow
   constraintsDataset?: DatasetRow
   routeAuditDataset?: DatasetRow
@@ -151,6 +203,83 @@ export function GravitySection({
   }, [nodes, buildings])
 
   const network = useMemo(() => networkFromRows(nodes, pipes), [nodes, pipes])
+  const freezingDepth = useMemo(() => freezingDepthStatus(geologyDataset), [geologyDataset])
+  const geologyCoverage = useMemo<ProfileGeologyCoverage>(() => {
+    const content = (geologyDataset?.content ?? {}) as {
+      profileGeologyMaxOffsetM?: number
+      profileGeologySource?: string
+      profileGeologyVerified?: boolean
+    }
+    const maxOffsetM = Number.isFinite(content.profileGeologyMaxOffsetM)
+      && (content.profileGeologyMaxOffsetM ?? 0) > 0
+      ? content.profileGeologyMaxOffsetM
+      : undefined
+    const source = typeof content.profileGeologySource === 'string'
+      ? content.profileGeologySource.trim()
+      : ''
+    const status = maxOffsetM == null
+      ? 'missing'
+      : content.profileGeologyVerified === true && source
+        ? 'verified'
+        : 'unverified'
+    return { maxOffsetM, status, source: source || undefined }
+  }, [geologyDataset])
+  const spatialBoreholeCount = useMemo(() => {
+    if (geologyCoverage.maxOffsetM == null) return 0
+    const alignments = network.pipes
+      .map((pipe) => pipe.alignment)
+      .filter((alignment): alignment is Array<{ x: number; y: number }> => Array.isArray(alignment) && alignment.length >= 2)
+    if (alignments.length === 0) return 0
+    return (boreholes ?? []).filter((borehole) => {
+      if (!isFinitePlanPoint(borehole) || !Array.isArray(borehole.layers) || borehole.layers.length === 0) return false
+      return alignments.some((alignment) => {
+        const distance = distanceToActualAlignment(borehole, alignment)
+        return distance != null && distance <= geologyCoverage.maxOffsetM!
+      })
+    }).length
+  }, [boreholes, geologyCoverage.maxOffsetM, network.pipes])
+
+  const stormCatchments = useMemo(
+    () => (((drainageDataset?.content ?? {}) as {
+      stormCatchments?: Array<StormRunoffInput & { inflowId: string }>
+    }).stormCatchments ?? []),
+    [drainageDataset],
+  )
+  const stormRunoffResults = useMemo(
+    () => stormCatchments.map((catchment) => ({
+      inflowId: catchment.inflowId,
+      result: calculateStormRunoff(catchment),
+    })),
+    [stormCatchments],
+  )
+  const stormRainPeriodYears = useMemo(() => {
+    if (stormCatchments.length === 0 || stormCatchments.some((item) => !item.rain.verified || !item.rain.source.trim())) {
+      return undefined
+    }
+    const periods = [...new Set(stormCatchments.map((item) => item.rain.designPeriodYears))]
+    return periods.length === 1 && Number.isFinite(periods[0]) && periods[0] > 0 ? periods[0] : undefined
+  }, [stormCatchments])
+  const stormRunoffByInflow = useMemo(
+    () => new Map(stormRunoffResults.map((item) => [item.inflowId, item.result])),
+    [stormRunoffResults],
+  )
+  const stormRunoffStatus = useMemo(() => {
+    if (systemType !== 'storm') return undefined
+    const matched = buildings.map((building) => ({ building, result: stormRunoffByInflow.get(building.id) }))
+    const verifiedCount = matched.filter((item) => item.result?.verified && item.result.calculatedFlowLps !== null).length
+    const missing = matched.filter((item) => !item.result).map((item) => item.building.label ?? item.building.id)
+    const blockers = [
+      ...stormRunoffResults.flatMap((item) => item.result.blockers.map((message) => `${item.result.catchmentId}: ${message}`)),
+      ...(missing.length > 0 ? [`Нет структурированного водосбора для: ${missing.join(', ')}.`] : []),
+    ]
+    return {
+      available: stormCatchments.length > 0,
+      verified: matched.length > 0 && verifiedCount === matched.length && blockers.length === 0,
+      source: drainageDataset?.file_name ?? 'dataset:drainage',
+      detail: `${verifiedCount} из ${matched.length} водосборов подтверждены`,
+      blockers,
+    }
+  }, [buildings, drainageDataset?.file_name, stormCatchments.length, stormRunoffByInflow, stormRunoffResults, systemType])
 
   const result = useMemo(() => {
     if (pipes.length === 0) return null
@@ -160,9 +289,18 @@ export function GravitySection({
     }
     const buildingFlowLps = new Map<string, number>()
     if (systemType === 'storm') {
-      // Storm inflows are catchment/treatment-plant flows entered directly,
-      // not domestic demand: the residents field holds the inflow in L/s.
-      for (const b of buildings) buildingFlowLps.set(b.id, b.design_flow_lps ?? b.specific_demand_lpd ?? b.residents ?? 0)
+      // A verified N05 catchment calculation is authoritative. An explicit
+      // manual inflow remains usable for a draft calculation, but the drawing
+      // register blocks final issue until every catchment is verified.
+      for (const b of buildings) {
+        const runoff = stormRunoffByInflow.get(b.id)
+        buildingFlowLps.set(
+          b.id,
+          runoff?.verified && runoff.calculatedFlowLps !== null
+            ? runoff.calculatedFlowLps
+            : b.design_flow_lps ?? b.specific_demand_lpd ?? b.residents ?? 0,
+        )
+      }
     } else {
       const demand = computeNetworkDemand(
         buildings.map((b) => ({
@@ -174,18 +312,20 @@ export function GravitySection({
       )
       for (const b of demand.buildings) if (b.id) buildingFlowLps.set(b.id, b.designFlowLps)
     }
-    const freezingDepthM =
-      ((geologyDataset?.content ?? {}) as { freezingDepthM?: number }).freezingDepthM ?? 1.5
+    // Keep draft calculations inspectable, but never present this fallback as
+    // verified project geology. The drawing register blocks final issue.
+    const freezingDepthM = freezingDepth.valueM ?? DEFAULT_FREEZING_DEPTH_M
     return solveGravityNetwork({
       network,
       buildingFlowLps,
       system: systemType,
       freezingDepthM,
       strategy,
+      stormRainPeriodYears,
       outletNodeId: network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'pumping_station')?.id,
       allowedDiametersMm: activeCatalogId ? catalogDiameters ?? [] : undefined,
     })
-  }, [buildings, network, normsDataset, geologyDataset, systemType, strategy, activeCatalogId, catalogDiameters])
+  }, [buildings, network, normsDataset, freezingDepth, systemType, strategy, activeCatalogId, catalogDiameters, stormRainPeriodYears, stormRunoffByInflow])
 
   const rows = useMemo(() => {
     if (!result) return []
@@ -202,7 +342,11 @@ export function GravitySection({
     [schedule, manholeCatalog],
   )
   const constraints = useMemo(
-    () => (constraintsDataset?.content ?? null) as (RouteConstraintInput & { crossings?: CrossingRecord[] }) | null,
+    () => (constraintsDataset?.content ?? null) as (RouteConstraintInput & {
+      crossings?: CrossingRecord[]
+      deliverableRequirements?: WorkingDrawingDeliverableRequirements
+      protectiveGridDesign?: ProtectiveGridDesign
+    }) | null,
     [constraintsDataset],
   )
   const surveyPoints = useMemo<SurveyPoint[]>(() => {
@@ -229,12 +373,25 @@ export function GravitySection({
       catalogReady: Boolean(activeCatalogId) && (catalogDiameters?.length ?? 0) > 0,
       catalogFingerprint: { activeCatalogId, catalogDiameters },
       hydraulicsReady: Boolean(result?.profile) && (result?.pipes.every((pipe) => pipe.issues.length === 0) ?? false),
+      stormRunoff: stormRunoffStatus,
+      freezingDepth: {
+        valueM: freezingDepth.valueM,
+        status: freezingDepth.verified ? 'verified' : freezingDepth.available ? 'unverified' : 'missing',
+        source: freezingDepth.source,
+      },
       utilityFeatureCount: constraints?.utilityLines?.length ?? 0,
       crossings: constraints?.crossings,
-      spatialBoreholeCount: (boreholes ?? []).filter((borehole) =>
-        Number.isFinite(borehole.x) && Number.isFinite(borehole.y) && borehole.layers.length > 0,
-      ).length,
-      geologyFingerprint: { dataset: geologyDataset?.content, boreholes },
+      constraintsFingerprint: constraints,
+      deliverableRequirements: constraints?.deliverableRequirements,
+      protectiveGridDesign: constraints?.protectiveGridDesign,
+      spatialBoreholeCount,
+      geologyCoverage,
+      geologyFingerprint: {
+        dataset: geologyDataset?.content,
+        boreholes,
+        coverage: geologyCoverage,
+        spatialBoreholeCount,
+      },
       manholeCatalogReady: schedule
         ? schedule.manholes.length > 0
           && manholeSelection.selected.length === schedule.manholes.length
@@ -242,6 +399,7 @@ export function GravitySection({
         : false,
       manholeCatalogMissingLabels: manholeSelection.unmatched,
       manholeCatalogFingerprint: { entries: manholeCatalog, selection: manholeSelection },
+      specificationItemCount: workingDrawingSpecificationItemCount(schedule, manholeSelection.selected),
       normsVerified: applicableUnverifiedClauses.length === 0,
       normsFingerprint: {
         dataset: normsDataset?.content,
@@ -254,6 +412,8 @@ export function GravitySection({
     boreholes,
     catalogDiameters,
     constraints,
+    freezingDepth,
+    geologyCoverage,
     geologyDataset,
     manholeCatalog,
     manholeSelection,
@@ -265,6 +425,8 @@ export function GravitySection({
     routeStatus,
     schedule,
     surveyPoints,
+    stormRunoffStatus,
+    spatialBoreholeCount,
     systemType,
     unresolvedLayerCount,
   ])
@@ -282,6 +444,7 @@ export function GravitySection({
       drawingSet: workingDrawingSet,
       surveyPoints,
       boreholes,
+      geologyMaxOffsetM: geologyCoverage.maxOffsetM,
       constraints,
       manholeConstructions: manholeSelection.selected,
       pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
@@ -576,6 +739,57 @@ export function GravitySection({
   return (
     <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.gravity.hint')}</p>
+      <div className="drawing-audit" style={{ marginBottom: 12 }}>
+        <div>
+          <h5>Глубина промерзания для профиля</h5>
+          <p className={`stat-line${freezingDepth.verified ? ' ok' : ' warn'}`}>
+            {freezingDepth.verified
+              ? `Подтверждено: ${freezingDepth.detail}.`
+              : `Черновой режим: ${freezingDepth.detail}; для предварительного расчёта используется ${
+                (freezingDepth.valueM ?? DEFAULT_FREEZING_DEPTH_M).toFixed(2)
+              } м.`}
+          </p>
+          {!freezingDepth.verified && freezingDepth.blockers.map((message) => (
+            <p className="stat-line warn" key={message}>{message}</p>
+          ))}
+        </div>
+      </div>
+      {systemType === 'storm' && stormRunoffStatus && (
+        <div className="drawing-audit" style={{ marginBottom: 12 }}>
+          <div>
+            <h5>Расчёт дождевого стока по N05, п. 5.4</h5>
+            <p className={`stat-line${stormRunoffStatus.verified ? ' ok' : ' warn'}`}>
+              {stormRunoffStatus.detail}. Подтверждённый расчёт имеет приоритет над ручным расходом.
+            </p>
+            {!stormRunoffStatus.verified && (
+              <p className="notice error">
+                Ручные расходы используются только для черновой гидравлики. Финальный выпуск заблокирован до загрузки
+                `drainage.stormCatchments` с подтверждёнными q20, n, m_r, gamma, P, площадями/типами покрытий и временем добегания.
+              </p>
+            )}
+            {stormRunoffStatus.blockers?.map((message) => <p className="stat-line warn" key={message}>{message}</p>)}
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th>Водосбор</th><th className="num">F, га</th><th className="num">z mid</th><th className="num">t r, мин</th><th className="num">q cal, л/с</th><th>Статус</th></tr></thead>
+              <tbody>
+                {stormRunoffResults.length === 0 ? (
+                  <tr><td colSpan={6}>Структурированные водосборы не загружены.</td></tr>
+                ) : stormRunoffResults.map(({ inflowId, result: runoff }) => (
+                  <tr key={`${inflowId}-${runoff.catchmentId}`} className={runoff.verified ? undefined : 'row-warn'}>
+                    <td>{runoff.catchmentId} → {inflowId}</td>
+                    <td className="num mono">{runoff.areaHa.toFixed(3)}</td>
+                    <td className="num mono">{runoff.coefficientZMid?.toFixed(4) ?? '—'}</td>
+                    <td className="num mono">{runoff.durationMin?.toFixed(3) ?? '—'}</td>
+                    <td className="num mono">{runoff.calculatedFlowLps?.toFixed(3) ?? '—'}</td>
+                    <td>{runoff.verified ? 'проверен' : 'заблокирован'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
       {!finalOutputAllowed && result && (
         <p className="notice error">Расчёт доступен для проверки, но финальный выпуск заблокирован: {workingDrawingSet.summary.blocked} листов со стоп-факторами, {workingDrawingSet.summary.stale} устаревших. Причины перечислены в реестре ниже.</p>
       )}

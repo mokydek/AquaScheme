@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 
 /**
  * Benchmark gate (docs/benchmark/SCORECARD.md). The real-object sources are
@@ -14,20 +15,23 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const BM = join(ROOT, 'docs', 'benchmark')
+const requiredGate = process.argv.includes('--required') || process.env.BENCHMARK_REQUIRED === '1'
 
 // Local-only manifests list confidential input paths and their roles. Keeping
 // project filenames here would itself leak acceptance-object information.
 const manifestPath = join(BM, 'manifest.json')
-const REQUIRED_INPUTS = existsSync(manifestPath)
-  ? JSON.parse(readFileSync(manifestPath, 'utf8')).requiredInputs ?? []
-  : ['manifest.json']
+const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : null
+const REQUIRED_INPUTS = manifest?.requiredInputs ?? ['manifest.json']
 
-const missing = REQUIRED_INPUTS.filter((p) => !existsSync(join(BM, p)))
+const inputPath = (value) => isAbsolute(value) ? value : join(BM, value)
+const missing = REQUIRED_INPUTS.filter((p) => !existsSync(inputPath(p)))
 if (missing.length > 0) {
   console.log('benchmark: конфиденциальные исходники недоступны на этой машине:')
   for (const m of missing) console.log('  -', m)
-  console.log('Скрипт пропущен (не ошибка): бенчмарк выполняется локально у владельца данных.')
-  process.exit(0)
+  console.log(requiredGate
+    ? 'Обязательный release-gate не пройден.'
+    : 'Скрипт пропущен: бенчмарк выполняется локально у владельца данных.')
+  process.exit(requiredGate ? 1 : 0)
 }
 
 // Generated set to score: docs/benchmark/out/ (exported from the app for the
@@ -38,7 +42,22 @@ if (!existsSync(OUT)) {
   console.log('benchmark: исходники на месте, но сгенерированный комплект docs/benchmark/out/ отсутствует.')
   console.log('Прогоните сквозной сценарий в приложении и выгрузите комплект в docs/benchmark/out/.')
   console.log('SCORE: не считался (итерация 0).')
-  process.exit(0)
+  process.exit(requiredGate ? 1 : 0)
+}
+
+// When both PDFs are declared, visual comparison is a mandatory automatic
+// gate. It stays separate from the manually reviewed engineering fields.
+if (manifest?.referencePdf && manifest?.generatedPdf) {
+  const visual = spawnSync(process.execPath, [join(ROOT, 'scripts', 'visual-benchmark.mjs'), manifestPath], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+  if (visual.stdout) process.stdout.write(visual.stdout)
+  if (visual.stderr) process.stderr.write(visual.stderr)
+  if (visual.status !== 0) process.exit(visual.status ?? 1)
+} else {
+  console.log('Visual benchmark: referencePdf/generatedPdf не заданы в локальном manifest.json; метрика сходства не считалась.')
+  if (requiredGate) process.exit(1)
 }
 
 // --- Group 1: composition (25%) — presence of the etalon sheet kinds. ---
@@ -107,4 +126,8 @@ if (counted > 0) {
   console.log(`SCORE (абсолютный, незаполненные = 0): ${(total * 100).toFixed(2)}%`)
 } else {
   console.log('SCORE: не считался — нет ни одной заполненной группы.')
+}
+if (requiredGate && (counted < 1 || total < 0.99)) {
+  console.error('Release-gate не пройден: все группы должны быть заполнены, абсолютная оценка должна быть не ниже 99%.')
+  process.exit(1)
 }

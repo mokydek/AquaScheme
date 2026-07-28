@@ -1,0 +1,129 @@
+{
+  "auditDate": "2026-07-29",
+  "timezone": "Asia/Yekaterinburg",
+  "readOnly": true,
+  "realDwgUploadedExternally": false,
+  "sources": {
+    "dwg": {
+      "sourceId": "P04",
+      "sizeBytes": 1166947,
+      "sha256": "2DEB1AA9AD55022D172AEAB87D275D4E5728596B6AAECDD10FBA4486D5BC6C15",
+      "modifiedLocal": "2026-07-16T22:14:50.0910610+05:00",
+      "signature": "AC1027",
+      "formatFamily": "AutoCAD 2013 DWG",
+      "structureInspection": {
+        "status": "blocked",
+        "reason": "No local ODA/LibreDWG/Docker; confidential real DWG was not sent to public Render",
+        "coordinatesXY": "unavailable",
+        "elevationsZ": "unavailable",
+        "layers": "unavailable",
+        "insertionUnits": "unavailable",
+        "crs": "unavailable"
+      }
+    },
+    "xlsx": {
+      "sourceId": "P06",
+      "sizeBytes": 18376,
+      "sha256": "951B99B353347FB90C96066D00BA67BCD6251EF8870A1E17FB8B07CBF815D817",
+      "modifiedLocal": "2026-07-15T00:42:19.5819081+05:00",
+      "artifactToolInspection": {
+        "status": "blocked",
+        "reason": "codex_app__load_workspace_dependencies did not complete in four attempts",
+        "sheets": "unverified",
+        "usedRanges": "unverified",
+        "values": "unverified",
+        "formulas": "unverified",
+        "visualRender": "unverified"
+      }
+    }
+  },
+  "converter": {
+    "productionUrl": "https://aquascheme.onrender.com",
+    "frontendBundleConfigured": true,
+    "health": {
+      "status": 200,
+      "ok": true,
+      "provider": "oda",
+      "commit": "b02df33"
+    },
+    "ready": {
+      "status": 200,
+      "ok": true,
+      "provider": "oda"
+    },
+    "cors": {
+      "productionOriginAllowed": true,
+      "arbitraryOriginAllowed": true,
+      "risk": "high"
+    },
+    "maxUploadBytes": 26214400,
+    "providers": {
+      "oda": "implemented",
+      "cloudconvert": "declared_but_not_implemented"
+    },
+    "syntheticRoundTrip": {
+      "containsProjectData": false,
+      "dxfToDwg": {
+        "status": 200,
+        "sizeBytes": 11640,
+        "outputSignature": "AC1032"
+      },
+      "dwgToDxf": {
+        "status": 200,
+        "sizeBytes": 75030
+      },
+      "preserved": {
+        "insertionUnitsCode": 6,
+        "layers": ["AUDIT_ROUTE", "AUDIT_TOPO"],
+        "lineVertices": [
+          { "x": 100, "y": 200, "z": 351.25 },
+          { "x": 120, "y": 210, "z": 350.75 }
+        ],
+        "point": { "x": 105, "y": 205, "z": 351 }
+      }
+    }
+  },
+  "localOdaInstaller": {
+    "sourceId": "LOCAL_ODA_INSTALLER",
+    "installed": false,
+    "productName": "ODAFileConverter",
+    "productVersion": "27.1.0",
+    "build": "27.1.0.143450",
+    "manufacturer": "ODA",
+    "architecture": "x64",
+    "language": 1033
+  },
+  "applicationGeologyContract": {
+    "source": "code_only_not_verified_against_supplied_xlsx",
+    "generatedSheetName": "Геология",
+    "generatedExampleRows": 3,
+    "importedSheetPolicy": "first_sheet_only",
+    "headers": [
+      "Скважина",
+      "X",
+      "Y",
+      "Отметка устья, м",
+      "ИГЭ",
+      "Грунт",
+      "Кровля слоя, м",
+      "Подошва слоя, м",
+      "Плотность, г/см3",
+      "Влажность, %",
+      "Угол трения, град",
+      "Сцепление, кПа",
+      "Модуль деформации, МПа",
+      "Коэффициент фильтрации, м/сут",
+      "УГВ, м",
+      "Агрессивность к стали",
+      "Агрессивность к бетону",
+      "Агрессивность к ПЭ"
+    ]
+  },
+  "criticalFindings": [
+    "Production CORS allows arbitrary origins",
+    "Real DWG geometry is unverified because there is no safe local converter",
+    "DXF parser drops Z from LINE/POLYLINE vertices",
+    "DXF parser does not expand INSERT block contents",
+    "XLSX sheets/formulas/render remain unverified because bundled artifact runtime did not load"
+  ]
+}

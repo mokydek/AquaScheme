@@ -59,11 +59,22 @@ function velocityRow(diameterMm: number): MinVelocityRow {
  * PDF) — поэтому storm получает 0,6 независимо от диаметра. Если проект
  * принимает другой период однократного превышения Р, значение уточняется.
  */
-export function minVelocityMps(diameterMm: number, system: 'sewer' | 'storm' = 'sewer'): Justified<number> {
-  if (system === 'storm') {
+export function minVelocityMps(
+  diameterMm: number,
+  system: 'sewer' | 'storm' = 'sewer',
+  stormRainPeriodYears?: number,
+): Justified<number> {
+  if (system === 'storm' && stormRainPeriodYears != null && Math.abs(stormRainPeriodYears - 0.33) < 1e-9) {
     return justified(0.6, ['sewer.velocity.min'], 'normative', 'дождевая сеть при Р=0,33 года — примечание 3 к таблице 5.19')
   }
-  return justified(velocityRow(diameterMm).vMinMps, ['sewer.velocity.min'])
+  return justified(
+    velocityRow(diameterMm).vMinMps,
+    ['sewer.velocity.min'],
+    'normative',
+    system === 'storm'
+      ? 'таблица 5.19; исключение 0,6 м/с не применяется без подтверждённого Р=0,33 года'
+      : undefined,
+  )
 }
 
 /** Таблица 5.19: наибольшее расчётное наполнение H/D, при котором нормирована скорость. */
@@ -82,7 +93,12 @@ export function maxFilling(system: 'sewer' | 'storm', rectangular = false): Just
 
 /** 5.10.3: наибольшие расчётные скорости движения сточных вод. */
 export function maxVelocityMps(system: 'sewer' | 'storm', material: 'metal' | 'nonmetal'): Justified<number> {
-  if (system === 'storm') return justified(10, ['sewer.velocity.max'], 'normative', 'для дождевой сети от 7 до 10 м/сек')
+  if (system === 'storm') return justified(
+    material === 'metal' ? 10 : 7,
+    ['sewer.velocity.max'],
+    'normative',
+    'для дождевой сети: 10 м/с для металлических и 7 м/с для неметаллических труб',
+  )
   return justified(material === 'metal' ? 8 : 4, ['sewer.velocity.max'])
 }
 
@@ -135,16 +151,89 @@ export function sewerRoughnessN(kind: 'gravity' | 'pressure'): Justified<number>
   return justified(value, ['sewer.roughness'])
 }
 
-/** 7.2.4: минимальная глубина заложения лотка относительно глубины промерзания. */
-export function minSewerDepthM(diameterMm: number, freezingDepthM: number): Justified<number> {
-  const reduction = diameterMm <= 500 ? 0.3 : 0.5
-  const depth = Math.max(freezingDepthM - reduction, 0.7)
+export type SewerBurialGoverningConstraint = 'frost' | 'crown-cover' | 'both'
+
+/** All 7.2.4 limits expressed from finished ground down to the pipe invert. */
+export interface SewerBurialDepthConstraints {
+  diameterM: number
+  frostReductionM: number
+  /** Minimum depth from ground to invert derived from freezing depth. */
+  frostInvertDepthM: number
+  /** Minimum cover from ground to pipe crown (top), not to invert. */
+  minimumCrownCoverM: number
+  /** Crown-cover constraint converted to ground-to-invert depth. */
+  crownCoverInvertDepthM: number
+  /** Governing minimum depth from ground to invert. */
+  minimumInvertDepthM: number
+  governingConstraint: SewerBurialGoverningConstraint
+}
+
+const roundDepth = (value: number): number => Math.round(value * 1000) / 1000
+
+function assertBurialInput(name: string, value: number, allowZero: boolean): void {
+  if (!Number.isFinite(value) || (allowZero ? value < 0 : value <= 0)) {
+    throw new RangeError(`${name} must be a ${allowZero ? 'non-negative' : 'positive'} finite number`)
+  }
+}
+
+/** 7.2.4: invert-depth constraint derived only from the design freezing depth. */
+export function minSewerInvertDepthFromFrostM(
+  diameterMm: number,
+  freezingDepthM: number,
+): Justified<number> {
+  assertBurialInput('diameterMm', diameterMm, false)
+  assertBurialInput('freezingDepthM', freezingDepthM, true)
+  const reductionM = diameterMm <= 500 ? 0.3 : 0.5
   return justified(
-    Math.round(depth * 100) / 100,
+    roundDepth(Math.max(0, freezingDepthM - reductionM)),
     ['sewer.depth.min'],
     'normative',
-    diameterMm <= 500
-      ? 'на 0,3 м менее глубины промерзания, но не менее 0,7 м до верха трубы'
-      : 'на 0,5 м менее глубины промерзания, но не менее 0,7 м до верха трубы',
+    `глубина лотка не менее глубины промерзания минус ${reductionM.toFixed(1)} м`,
   )
+}
+
+/** 7.2.4: minimum cover measured from ground to the pipe crown (top). */
+export function minSewerCrownCoverM(): Justified<number> {
+  return justified(0.7, ['sewer.depth.min'], 'normative', 'не менее 0,7 м до верха трубы')
+}
+
+/** Resolve unlike frost/invert and crown-cover limits into one invert-depth contract. */
+export function sewerBurialDepthConstraints(
+  diameterMm: number,
+  freezingDepthM: number,
+): SewerBurialDepthConstraints {
+  const diameterM = roundDepth(diameterMm / 1000)
+  const frost = minSewerInvertDepthFromFrostM(diameterMm, freezingDepthM)
+  const crownCover = minSewerCrownCoverM()
+  const crownCoverInvertDepthM = roundDepth(crownCover.value + diameterM)
+  const minimumInvertDepthM = Math.max(frost.value, crownCoverInvertDepthM)
+  const difference = frost.value - crownCoverInvertDepthM
+  const governingConstraint: SewerBurialGoverningConstraint = Math.abs(difference) < 1e-9
+    ? 'both'
+    : difference > 0 ? 'frost' : 'crown-cover'
+  return {
+    diameterM,
+    frostReductionM: diameterMm <= 500 ? 0.3 : 0.5,
+    frostInvertDepthM: frost.value,
+    minimumCrownCoverM: crownCover.value,
+    crownCoverInvertDepthM,
+    minimumInvertDepthM: roundDepth(minimumInvertDepthM),
+    governingConstraint,
+  }
+}
+
+/** 7.2.4: governing minimum depth from ground to pipe invert. */
+export function minSewerInvertDepthM(diameterMm: number, freezingDepthM: number): Justified<number> {
+  const limits = sewerBurialDepthConstraints(diameterMm, freezingDepthM)
+  return justified(
+    limits.minimumInvertDepthM,
+    ['sewer.depth.min'],
+    'normative',
+    `max(промерзание: ${limits.frostInvertDepthM.toFixed(3)} м; покрытие до верха + диаметр: ${limits.crownCoverInvertDepthM.toFixed(3)} м)`,
+  )
+}
+
+/** @deprecated Use minSewerInvertDepthM; the returned value is depth to invert. */
+export function minSewerDepthM(diameterMm: number, freezingDepthM: number): Justified<number> {
+  return minSewerInvertDepthM(diameterMm, freezingDepthM)
 }

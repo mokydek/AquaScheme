@@ -21,17 +21,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The download requires accepting the ODA license; get the current link from
 # https://www.opendesign.com/guestfiles/oda_file_converter
 ARG ODA_DEB_URL=""
+ARG ODA_DEB_SHA256=""
 RUN test -n "$ODA_DEB_URL" || (echo "ODA_DEB_URL is required; refusing to publish a non-working converter image" >&2; exit 1); \
+    test -n "$ODA_DEB_SHA256" || (echo "ODA_DEB_SHA256 is required; refusing an unverified ODA package" >&2; exit 1); \
     wget -q "$ODA_DEB_URL" -O /tmp/oda.deb && \
+    echo "$ODA_DEB_SHA256  /tmp/oda.deb" | sha256sum -c - && \
     (dpkg -i /tmp/oda.deb || apt-get install -y -f) && rm /tmp/oda.deb
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev
-COPY src ./src
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY --chown=node:node src ./src
 
 ENV ODA_CONVERTER_PATH="xvfb-run -a ODAFileConverter"
-ENV QT_DEBUG_PLUGINS=1
+ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
+USER node
 CMD ["npm", "start"]

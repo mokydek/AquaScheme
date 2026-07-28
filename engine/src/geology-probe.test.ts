@@ -20,10 +20,10 @@ import {
  */
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
-const REPORT = join(ROOT, 'docs', 'benchmark', 'input', 'geologiya-arh-17-08-25.pdf')
+const REPORT = process.env.AQUASCHEME_BENCHMARK_GEOLOGY_PDF ?? ''
 const PDFJS = join(ROOT, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs')
 
-const available = existsSync(REPORT) && existsSync(PDFJS)
+const available = REPORT.length > 0 && existsSync(REPORT) && existsSync(PDFJS)
 
 describe.skipIf(!available)('geology pipeline on the real survey report', () => {
   it('finds candidate tables and parses boreholes without crashing', async () => {

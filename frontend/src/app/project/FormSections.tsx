@@ -283,7 +283,14 @@ export function RegionSection(props: {
       })
       const geology = (props.geologyDataset?.content ?? null) as GeologyInput | null
       if (geology && freezingDepthM !== null) {
-        await saveDataset(props.projectId, 'geology', { ...geology, freezingDepthM })
+        await saveDataset(props.projectId, 'geology', {
+          ...geology,
+          freezingDepthM,
+          freezingDepthSource: `Региональный справочник: ${region?.name ?? content?.name ?? content?.regionId ?? 'не указан'}`,
+          // Applying a regional suggestion invalidates any earlier approval.
+          // An engineer must compare it with the project geology and confirm it.
+          freezingDepthVerified: false,
+        })
       }
       setNotice('applied')
       await props.onSaved()

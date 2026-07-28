@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   assessRouteSurveyCoverage,
   compareRouteToReference,
+  DEFAULT_FREEZING_DEPTH_M,
   ringFromGeoJsonGeometry,
   ROUTE_ALGORITHM_VERSION,
   solveGravityNetwork,
@@ -17,6 +18,7 @@ import { Panel } from './Panel'
 import { PipeCalculationsView } from './PipeCalculationsView'
 import { LiveSituationMap } from './LiveSituationMap'
 import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
+import { freezingDepthStatus } from '../../shared/geologyStatus'
 
 type View = 'inputs' | 'constraints' | 'route' | 'profile' | 'calculations' | 'crossings' | 'blockers' | 'comparison'
 
@@ -125,7 +127,10 @@ export function SituationSchemeSection({
         ? building.design_flow_lps ?? building.specific_demand_lpd ?? 0
         : building.design_flow_lps ?? building.residents ?? 0)
     }
-    const freezingDepthM = ((geologyDataset?.content ?? {}) as { freezingDepthM?: number }).freezingDepthM ?? 1.5
+    const freezing = freezingDepthStatus(geologyDataset)
+    // The fallback is allowed only to keep a visibly preliminary preview
+    // calculable. Working drawings independently block final issue.
+    const freezingDepthM = freezing.valueM ?? DEFAULT_FREEZING_DEPTH_M
     const lns = network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'pumping_station')
     const gravity = solveGravityNetwork({
       network,
@@ -160,6 +165,7 @@ export function SituationSchemeSection({
         ...pressureRows.flatMap((pipe) => pipe.diameterMm ? [[pipe.id, pipe.diameterMm] as const] : []),
       ]),
       outletFlowLps: totalFlow,
+      freezingDepth: freezing,
     }
   }, [systemType, buildings, nodes, pipes, geologyDataset, activeCatalogId, catalogDiameters, constraints, routeState.status])
 

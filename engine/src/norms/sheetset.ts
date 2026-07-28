@@ -78,6 +78,7 @@ export function sliceProfile(profile: GravityProfile, fromM: number, toM: number
     maxDepthM: stations.reduce((m, s) => Math.max(m, s.depthM), 0),
     outletInvertElevationM: profile.outletInvertElevationM,
     totalLengthM: toM - fromM,
+    pipeIds: profile.pipeIds,
   }
 }
 
@@ -95,14 +96,21 @@ export interface PlanWindow extends SheetInterval {
  * inside the box belongs on the sheet «План К2 ПК…-ПК…».
  */
 export function planWindows(
-  mainPath: Array<{ x: number; y: number }>,
+  mainPath: Array<{ x: number; y: number; chainageM?: number }>,
   targetPerSheetM = 550,
   marginM = 60,
+  stationChainagesM?: number[],
 ): PlanWindow[] {
   if (mainPath.length < 2) return []
-  const chain: number[] = [0]
-  for (let i = 1; i < mainPath.length; i++) {
-    chain.push(chain[i - 1] + Math.hypot(mainPath[i].x - mainPath[i - 1].x, mainPath[i].y - mainPath[i - 1].y))
+  const explicitChainage = mainPath.map((point) => point.chainageM)
+  const hasCanonicalChainage = explicitChainage.every((value) => Number.isFinite(value))
+    && explicitChainage.every((value, index) => index === 0 || Number(value) >= Number(explicitChainage[index - 1]))
+    && Number(explicitChainage[explicitChainage.length - 1]) > Number(explicitChainage[0])
+  const chain: number[] = hasCanonicalChainage ? explicitChainage.map(Number) : [0]
+  if (!hasCanonicalChainage) {
+    for (let i = 1; i < mainPath.length; i++) {
+      chain.push(chain[i - 1] + Math.hypot(mainPath[i].x - mainPath[i - 1].x, mainPath[i].y - mainPath[i - 1].y))
+    }
   }
   const pointAt = (m: number): { x: number; y: number } => {
     for (let i = 1; i < chain.length; i++) {
@@ -116,7 +124,10 @@ export function planWindows(
     }
     return mainPath[mainPath.length - 1]
   }
-  return paginateByStations(chain, targetPerSheetM).map((interval) => {
+  const boundaries = stationChainagesM?.filter((value) =>
+    Number.isFinite(value) && value >= chain[0] - 1e-9 && value <= chain[chain.length - 1] + 1e-9)
+  const paginationStations = boundaries && boundaries.length >= 2 ? boundaries : chain
+  return paginateByStations(paginationStations, targetPerSheetM).map((interval) => {
     const pts = [
       pointAt(interval.fromM),
       ...mainPath.filter((_, i) => chain[i] > interval.fromM + 1e-9 && chain[i] < interval.toM - 1e-9),

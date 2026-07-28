@@ -21,6 +21,8 @@ export interface ProjectAlbumInput {
   drawingSet: WorkingDrawingSet
   surveyPoints: SurveyPoint[]
   boreholes?: Borehole[]
+  /** Confirmed maximum perpendicular distance from the design axis for profile geology. */
+  geologyMaxOffsetM?: number
   constraints?: (RouteConstraintInput & { crossings?: CrossingRecord[] }) | null
   manholeConstructions: SelectedManholeConstruction[]
   pipeDiameterMm: Map<string, number>
@@ -108,6 +110,57 @@ function planSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="930" height="445"/></clipPath></defs><rect width="1000" height="500" fill="#fff"/><rect x="35" y="15" width="930" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${topoSvg}<polyline points="${route}" fill="none" stroke="#1746b5" stroke-width="5" stroke-linejoin="round"/>${bounds}</g><g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="810" y="35" width="150" height="90" fill="#fff" stroke="#111"/><polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/><text x="817" y="120" font-size="7">Положение листа</text></g><text x="40" y="485" font-size="8">Основание: классифицированная ось DWG; рельеф: ${input.surveyPoints.length} точек топосъёмки. Вымышленные дороги и горизонтали не добавляются.</text></svg>`
 }
 
+function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
+  const networkPaths = input.drawingSet.networkPaths
+  const routePoints = networkPaths.flatMap((path) => path.points)
+  if (routePoints.length < 2) throw new Error(`Лист ${sheet.sheetNumber}: отсутствует подтверждённая геометрия сети.`)
+  const contextPoints = [
+    ...(input.constraints?.hardObstacleRings ?? []).flat(),
+    ...(input.constraints?.waterRings ?? []).flat(),
+    ...(input.constraints?.corridorRings ?? []).flat(),
+    ...(input.constraints?.roadLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.waterLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.utilityLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.redLines ?? []).flatMap((line) => line.points),
+  ]
+  const allPoints = [...routePoints, ...contextPoints]
+  const rawMinX = Math.min(...allPoints.map((point) => point.x))
+  const rawMaxX = Math.max(...allPoints.map((point) => point.x))
+  const rawMinY = Math.min(...allPoints.map((point) => point.y))
+  const rawMaxY = Math.max(...allPoints.map((point) => point.y))
+  const margin = Math.max(Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY) * 0.04, 10)
+  const minX = rawMinX - margin
+  const maxX = rawMaxX + margin
+  const minY = rawMinY - margin
+  const maxY = rawMaxY + margin
+  const scale = Math.min(900 / Math.max(maxX - minX, 1), 410 / Math.max(maxY - minY, 1))
+  const x = (value: number) => 45 + (value - minX) * scale
+  const y = (value: number) => 445 - (value - minY) * scale
+  const linePoints = (points: Array<{ x: number; y: number }>) => points
+    .map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`)
+    .join(' ')
+  const constraints = [
+    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e2e2e2" stroke="#555"/>`),
+    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
+    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="8 5"/>`),
+    ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#8b734f" stroke-width="3"/>`),
+    ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#2685b5" stroke-width="2"/>`),
+    ...(input.constraints?.utilityLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="6 4"/>`),
+    ...(input.constraints?.redLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#d22" stroke-width="2"/>`),
+  ].join('')
+  const topo = input.surveyPoints.filter((point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY)
+  const topoStride = Math.max(1, Math.ceil(topo.length / 420))
+  const topoSvg = topo.filter((_, index) => index % topoStride === 0)
+    .map((point) => `<circle cx="${x(point.x).toFixed(1)}" cy="${y(point.y).toFixed(1)}" r="1" fill="#777"/>`)
+    .join('')
+  const networkSvg = networkPaths.map((path) => {
+    const middle = path.points[Math.floor(path.points.length / 2)]
+    const diameter = input.pipeDiameterMm.get(path.pipeId)
+    return `<polyline points="${linePoints(path.points)}" fill="none" stroke="#1746b5" stroke-width="4" stroke-linejoin="round"/><text x="${(x(middle.x) + 5).toFixed(1)}" y="${(y(middle.y) - 5).toFixed(1)}" font-size="8" fill="#1746b5">${xmlText(path.pipeId)}${diameter ? ` · Ø${diameter}` : ''}</text>`
+  }).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500"><defs><clipPath id="network-${sheet.sequence}"><rect x="35" y="15" width="930" height="445"/></clipPath></defs><rect width="1000" height="500" fill="#fff"/><rect x="35" y="15" width="930" height="445" fill="none" stroke="#111"/><g clip-path="url(#network-${sheet.sequence})">${constraints}${topoSvg}${networkSvg}</g><g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><text x="40" y="485" font-size="8">Сводный план построен по ${networkPaths.length} подтверждённым полилиниям сети; прямые хорды не используются в финальном выпуске.</text></svg>`
+}
+
 function profileStationAt(profile: GravityProfile, chainageM: number) {
   if (chainageM <= profile.stations[0].chainageM) return { ...profile.stations[0], chainageM }
   for (let index = 1; index < profile.stations.length; index++) {
@@ -129,7 +182,11 @@ function profileStationAt(profile: GravityProfile, chainageM: number) {
   return { ...profile.stations[profile.stations.length - 1], chainageM }
 }
 
-function nearestPathChainage(path: PathPoint[], x: number, y: number): number | null {
+function nearestPathProjection(
+  path: PathPoint[],
+  x: number,
+  y: number,
+): { chainageM: number; distanceM: number } | null {
   if (path.length < 2) return null
   let nearest: { distance: number; chainageM: number } | null = null
   for (let index = 1; index < path.length; index++) {
@@ -145,7 +202,19 @@ function nearestPathChainage(path: PathPoint[], x: number, y: number): number | 
     const chainageM = a.chainageM + ratio * (b.chainageM - a.chainageM)
     if (!nearest || distance < nearest.distance) nearest = { distance, chainageM }
   }
-  return nearest?.chainageM ?? null
+  return nearest ? { chainageM: nearest.chainageM, distanceM: nearest.distance } : null
+}
+
+function boreholeProfileProjection(
+  input: ProjectAlbumInput,
+  borehole: Borehole,
+): { chainageM: number; distanceM: number } | null {
+  const maxOffsetM = input.geologyMaxOffsetM
+  if (!Number.isFinite(maxOffsetM) || Number(maxOffsetM) <= 0) return null
+  if (!Number.isFinite(borehole.x) || !Number.isFinite(borehole.y) || borehole.layers.length === 0) return null
+  const projection = nearestPathProjection(input.drawingSet.mainPath, borehole.x!, borehole.y!)
+  if (!projection || projection.distanceM > Number(maxOffsetM) + 1e-9) return null
+  return projection
 }
 
 function profileSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
@@ -185,9 +254,10 @@ function profileSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): strin
       return `<line x1="${crossingX}" y1="45" x2="${crossingX}" y2="335" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 4"/><circle cx="${crossingX}" cy="${designY}" r="4" fill="#fff" stroke="#9b2c8c"/><path d="M${crossingX - 5} ${existingY} L${crossingX + 5} ${existingY}" stroke="#9b2c8c" stroke-width="2"/><text x="${crossingX + 5}" y="55" font-size="7" fill="#7c226f">${xmlText(crossing.id)} · ${xmlText(crossing.kind)}</text><text x="${crossingX + 5}" y="66" font-size="7" fill="#7c226f">просвет ${Number.isFinite(crossing.clearanceM) ? crossing.clearanceM!.toFixed(2) + ' м' : 'нет данных'}</text>`
     }).join('')
   const geology = (input.boreholes ?? []).flatMap((borehole) => {
-    if (!Number.isFinite(borehole.x) || !Number.isFinite(borehole.y) || !Number.isFinite(borehole.mouthElevationM) || borehole.layers.length === 0) return []
-    const chainageM = nearestPathChainage(input.drawingSet.mainPath, borehole.x!, borehole.y!)
-    if (chainageM === null || chainageM < fromM || chainageM > toM) return []
+    if (!Number.isFinite(borehole.mouthElevationM)) return []
+    const projection = boreholeProfileProjection(input, borehole)
+    if (!projection || projection.chainageM < fromM || projection.chainageM > toM) return []
+    const chainageM = projection.chainageM
     const boreholeX = x(chainageM)
     const mouthElevationM = borehole.mouthElevationM!
     const deepest = Math.max(...borehole.layers.map((layer) => layer.bottomDepthM))
@@ -215,6 +285,124 @@ function basicTable(headers: string[], rows: Array<Array<string | number>>, widt
     },
     layout: 'lightHorizontalLines',
     fontSize: 8,
+  }
+}
+
+function generalDataOverviewSvg(input: ProjectAlbumInput): string {
+  const path = input.drawingSet.mainPath
+  if (path.length < 2) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 430"><rect width="420" height="430" fill="#fff" stroke="#111"/><text x="210" y="215" text-anchor="middle" font-size="12">Нет подтверждённой геометрии трассы</text></svg>'
+  }
+  const constraintPoints = [
+    ...(input.constraints?.hardObstacleRings ?? []).flat(),
+    ...(input.constraints?.waterRings ?? []).flat(),
+    ...(input.constraints?.corridorRings ?? []).flat(),
+    ...(input.constraints?.roadLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.waterLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.utilityLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.redLines ?? []).flatMap((line) => line.points),
+  ]
+  const allPoints = [...path, ...constraintPoints]
+  const minX = Math.min(...allPoints.map((point) => point.x))
+  const maxX = Math.max(...allPoints.map((point) => point.x))
+  const minY = Math.min(...allPoints.map((point) => point.y))
+  const maxY = Math.max(...allPoints.map((point) => point.y))
+  const width = Math.max(maxX - minX, 1)
+  const height = Math.max(maxY - minY, 1)
+  const scale = Math.min(365 / width, 350 / height)
+  const x = (value: number) => 28 + (value - minX) * scale
+  const y = (value: number) => 385 - (value - minY) * scale
+  const linePoints = (points: Array<{ x: number; y: number }>) => points
+    .map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`)
+    .join(' ')
+  const constraints = [
+    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e5e5e5" stroke="#555"/>`),
+    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
+    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="7 4"/>`),
+    ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#8b734f" stroke-width="3"/>`),
+    ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#2685b5" stroke-width="2"/>`),
+    ...(input.constraints?.utilityLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 3"/>`),
+    ...(input.constraints?.redLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#d22" stroke-width="2"/>`),
+  ].join('')
+  const route = linePoints(path)
+  const first = path[0]
+  const last = path[path.length - 1]
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 430"><rect x="1" y="1" width="418" height="428" fill="#fff" stroke="#111"/><text x="210" y="22" text-anchor="middle" font-size="13" font-weight="700">Ситуационная схема</text><g>${constraints}<polyline points="${route}" fill="none" stroke="#1746b5" stroke-width="5" stroke-linejoin="round"/><circle cx="${x(first.x)}" cy="${y(first.y)}" r="5" fill="#fff" stroke="#1746b5" stroke-width="2"/><circle cx="${x(last.x)}" cy="${y(last.y)}" r="5" fill="#1746b5"/><text x="${x(first.x) + 7}" y="${y(first.y) - 7}" font-size="9">Начало трассы</text><text x="${x(last.x) - 7}" y="${y(last.y) - 7}" text-anchor="end" font-size="9">Выпуск</text></g><g transform="translate(26 44)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(16 398)"><line x1="0" y1="0" x2="24" y2="0" stroke="#1746b5" stroke-width="4"/><text x="31" y="3" font-size="8">проектная ось</text><line x1="130" y1="0" x2="154" y2="0" stroke="#d33232" stroke-dasharray="6 3"/><text x="161" y="3" font-size="8">ограничения</text></g></svg>`
+}
+
+function generalDataPage(input: ProjectAlbumInput): PdfNode {
+  const spatialBoreholes = (input.boreholes ?? []).filter((borehole) =>
+    boreholeProfileProjection(input, borehole) !== null)
+  const crossings = input.constraints?.crossings ?? []
+  const verifiedSources = new Map<string, { label: string; available: boolean; verified: boolean; detail: string }>()
+  for (const sheet of input.drawingSet.sheets) {
+    for (const source of sheet.sources) {
+      const current = verifiedSources.get(source.requirement)
+      verifiedSources.set(source.requirement, {
+        label: source.label,
+        available: current ? current.available && source.available : source.available,
+        verified: current ? current.verified && source.verified : source.verified,
+        detail: source.detail ?? current?.detail ?? '—',
+      })
+    }
+  }
+  const sourceRows = [...verifiedSources.values()].map((source) => [
+    source.label,
+    source.detail,
+    source.available ? 'есть' : 'нет',
+    source.verified ? 'проверено' : 'не проверено',
+  ])
+  const generalNotes = [
+    'Плановое положение сети формируется только по подтверждённым полилиниям оси и пространственным ограничениям исходного проекта.',
+    'Отметки земли принимаются из топографической поверхности; отметки лотка, уклоны и диаметры — из текущего расчёта.',
+    'Планы, профили, ведомости и спецификации используют одну инженерную модель и пересчитываются совместно после изменения входных данных.',
+    'Неподтверждённые исходные данные не заменяются значениями из эталонного альбома и блокируют зависимые листы.',
+    'Окончательные проектные решения подлежат проверке ответственным инженером и согласованию в установленном порядке.',
+  ]
+  return {
+    pageBreak: 'before',
+    stack: [
+      {
+        table: {
+          widths: [920, 70],
+          body: [[
+            { text: 'Общие данные', bold: true, fontSize: 13 },
+            { text: 'Лист 2', alignment: 'right', fontSize: 9 },
+          ]],
+        },
+        layout: 'noBorders',
+        margin: [0, 0, 0, 8],
+      },
+      {
+        columns: [
+          {
+            width: 640,
+            stack: [
+              { text: 'Общие указания', bold: true, fontSize: 11, margin: [0, 0, 0, 6] },
+              { ul: generalNotes, fontSize: 8.5, margin: [0, 0, 0, 10] },
+              { text: 'Основные показатели', bold: true, fontSize: 11, margin: [0, 2, 0, 6] },
+              basicTable(['Показатель', 'Значение'], [
+                ['Система', input.system === 'storm' ? 'ливневая канализация К2' : 'бытовая канализация К1'],
+                ['Участки сети', input.network.pipes.length],
+                ['Протяжённость, м', input.schedule.totalPipeLengthM.toFixed(2)],
+                ['Расход на выпуске, л/с', input.outletFlowLps.toFixed(2)],
+                ['Точки топографической съёмки', input.surveyPoints.length],
+                ['Скважины с координатами', spatialBoreholes.length],
+                ['Карточки пересечений', crossings.length],
+                ['Хэш расчётных исходных данных', input.drawingSet.inputHash],
+              ], [260, '*']),
+              { text: 'Готовность источников', bold: true, fontSize: 11, margin: [0, 10, 0, 6] },
+              basicTable(['Раздел', 'Состав', 'Наличие', 'Проверка'], sourceRows, [145, '*', 65, 82]),
+            ],
+          },
+          {
+            width: '*',
+            stack: [{ svg: generalDataOverviewSvg(input), fit: [370, 430] }],
+          },
+        ],
+        columnGap: 18,
+      },
+    ],
   }
 }
 
@@ -247,12 +435,11 @@ function rangeFor(sheets: WorkingDrawingSheet[], kind: WorkingDrawingSheet['kind
 
 function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): PdfNode[] {
   if (sheet.kind === 'plan') return [{ svg: planSvg(input, sheet), fit: [1080, 500] }]
+  if (sheet.kind === 'network_plan') return [{ svg: networkPlanSvg(input, sheet), fit: [1080, 500] }]
   if (sheet.kind === 'profile') return [{ svg: profileSvg(input, sheet), fit: [1080, 500] }]
   if (sheet.kind === 'material_table') {
-    const materialSheets = input.drawingSet.sheets.filter((item) => item.kind === 'material_table')
-    const part = Math.max(0, materialSheets.findIndex((item) => item.id === sheet.id))
-    const rowsPerSheet = Math.max(1, Math.ceil(input.schedule.manholes.length / Math.max(materialSheets.length, 1)))
-    const rows = input.schedule.manholes.slice(part * rowsPerSheet, (part + 1) * rowsPerSheet)
+    const range = sheet.dataRange ?? { start: 0, end: input.schedule.manholes.length, total: input.schedule.manholes.length }
+    const rows = input.schedule.manholes.slice(range.start, range.end)
     const selectedByLabel = new Map(input.manholeConstructions.map((item) => [item.manholeLabel, item]))
     return [
       { text: 'Количества сформированы из текущей расчётной ведомости и подтверждённого каталога конструкций.', fontSize: 9, margin: [0, 0, 0, 10] },
@@ -260,17 +447,39 @@ function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet):
     ]
   }
   if (sheet.kind === 'detail') {
-    if (sheet.id.startsWith('structures-')) {
-      const selectedByLabel = new Map(input.manholeConstructions.map((item) => [item.manholeLabel, item]))
+    if (sheet.variant === 'protective_grid') {
+      const design = input.drawingSet.protectiveGridDesign
+      if (!design || !design.verified) {
+        throw new Error(`Лист ${sheet.sheetNumber}: отсутствует подтверждённая конструкция защитной сетки.`)
+      }
+      const drawingWidth = Math.min(650, 320 * design.overallWidthMm / Math.max(design.overallHeightMm, 1))
+      const drawingHeight = Math.min(320, 650 * design.overallHeightMm / Math.max(design.overallWidthMm, 1))
+      const x0 = 80
+      const y0 = 50
+      const verticalBars = Math.max(0, Math.floor(design.overallWidthMm / design.barSpacingMm) - 1)
+      const horizontalBars = Math.max(0, Math.floor(design.overallHeightMm / design.barSpacingMm) - 1)
+      const vertical = Array.from({ length: verticalBars }, (_, index) => {
+        const x = x0 + (index + 1) * design.barSpacingMm / design.overallWidthMm * drawingWidth
+        return `<line x1="${x.toFixed(2)}" y1="${y0}" x2="${x.toFixed(2)}" y2="${(y0 + drawingHeight).toFixed(2)}" stroke="#111" stroke-width="1"/>`
+      }).join('')
+      const horizontal = Array.from({ length: horizontalBars }, (_, index) => {
+        const y = y0 + (index + 1) * design.barSpacingMm / design.overallHeightMm * drawingHeight
+        return `<line x1="${x0}" y1="${y.toFixed(2)}" x2="${(x0 + drawingWidth).toFixed(2)}" y2="${y.toFixed(2)}" stroke="#111" stroke-width="1"/>`
+      }).join('')
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430"><rect width="900" height="430" fill="white"/><rect x="${x0}" y="${y0}" width="${drawingWidth.toFixed(2)}" height="${drawingHeight.toFixed(2)}" fill="none" stroke="#111" stroke-width="4"/>${vertical}${horizontal}<text x="${x0}" y="${(y0 + drawingHeight + 28).toFixed(2)}" font-family="Roboto" font-size="16">Габарит ${xmlText(design.overallWidthMm)}×${xmlText(design.overallHeightMm)} мм; шаг ${xmlText(design.barSpacingMm)} мм</text></svg>`
       return [
-        { text: 'Параметрические конструкции выбираются из активного каталога по расчётной глубине и диаметру подключений.', fontSize: 9, margin: [0, 0, 0, 10] },
+        { text: 'Геометрия листа построена только по подтверждённым параметрам изделия.', fontSize: 9, margin: [0, 0, 0, 8] },
+        { svg, fit: [760, 320], margin: [0, 0, 0, 8] },
         basicTable(
-          ['Сооружение', 'Пикет', 'Глубина, мм', 'Ø трубы, мм', 'Тип / источник'],
-          input.schedule.manholes.map((row) => {
-            const selected = selectedByLabel.get(row.label)
-            return [row.label, row.picket, row.depthMm, row.pipeDiameterMm, selected ? `${selected.typeCode}; ${selected.source}` : 'не подобрано']
-          }),
-          [90, 90, 85, 85, '*'],
+          ['Параметр', 'Значение'],
+          [
+            ['Количество', `${design.quantity.toFixed(3)} шт.`],
+            ['Рама / стержни', `${design.frameProfile} / ${design.barProfile}`],
+            ['Материал / покрытие', `${design.material} / ${design.coating}`],
+            ['Крепление', design.fixing],
+            ['Источник', design.source],
+          ],
+          [160, '*'],
         ),
       ]
     }
@@ -301,11 +510,16 @@ function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet):
       ...input.schedule.pipes.map((row) => [row.designation, row.agskCode || '—', 'м', row.lengthM.toFixed(2)]),
       ...[...componentTotals.values()].map((row) => [row.name, row.code, row.unit, row.quantity.toFixed(3)]),
     ]
+    const range = sheet.dataRange ?? { start: 0, end: rows.length, total: rows.length }
+    if (range.total !== rows.length) {
+      throw new Error(`Лист ${sheet.sheetNumber}: реестр спецификации устарел (${range.total} строк, модель ${rows.length}).`)
+    }
+    const selectedRows = rows.slice(range.start, range.end)
     return [
       { text: 'Спецификация пересчитана из текущей инженерной модели и активных каталогов.', fontSize: 9, margin: [0, 0, 0, 10] },
       basicTable(
         ['Поз.', 'Наименование', 'Код', 'Ед.', 'Количество'],
-        rows.map((row, index) => [index + 1, ...row]),
+        selectedRows.map((row, index) => [range.start + index + 1, ...row]),
         [45, '*', 100, 55, 90],
       ),
     ]
@@ -316,9 +530,9 @@ function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet):
 export function buildProjectSheetDoc(input: ProjectAlbumInput, sheetId: string): PdfNode {
   const sheet = input.drawingSet.sheets.find((item) => item.id === sheetId)
   if (!sheet) throw new Error('Лист не найден в текущем реестре.')
-  if (sheet.status !== 'CALCULATED' && sheet.status !== 'VERIFIED') {
-    throw new Error(`Лист ${sheet.sheetNumber} нельзя выпустить со статусом ${sheet.status}.`)
-  }
+  if (sheet.status !== 'VERIFIED') throw new Error(
+    `Лист ${sheet.sheetNumber} нельзя выпустить как отдельный финальный документ со статусом ${sheet.status}.`,
+  )
   return {
     pageSize: 'A3',
     pageOrientation: 'landscape',
@@ -349,7 +563,7 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
   if (!input.drawingSet.summary.finalExportAllowed) {
     throw new Error(`Финальный выпуск запрещён: заблокировано ${input.drawingSet.summary.blocked}, устарело ${input.drawingSet.summary.stale}.`)
   }
-  const totalSheets = input.drawingSet.sheets.length + 2
+  const totalSheets = input.drawingSet.sheets.length + 3
   const content: PdfNode[] = [
     {
       stack: [
@@ -365,8 +579,9 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
       stack: [
         { text: 'Ведомость рабочих чертежей', bold: true, fontSize: 14, margin: [0, 0, 0, 12] },
         basicTable(['Листы', 'Раздел', 'Количество'], [
-          ['1–2', 'Титульный лист и ведомость', 2],
+          ['1–3', 'Титульный лист, ведомость и общие данные', 3],
           [rangeFor(input.drawingSet.sheets, 'plan'), 'Планы трассы по фактической оси DWG', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'plan').length],
+          [rangeFor(input.drawingSet.sheets, 'network_plan'), 'Сводный план всей подтверждённой топологии сети', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'network_plan').length],
           [rangeFor(input.drawingSet.sheets, 'profile'), 'Продольные профили по расчётным отметкам', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'profile').length],
           [rangeFor(input.drawingSet.sheets, 'material_table'), 'Ведомости колодцев и материалов', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'material_table').length],
           [rangeFor(input.drawingSet.sheets, 'detail'), 'Пересечения и конструктивные решения', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'detail').length],
@@ -376,6 +591,7 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
         { text: `\nИсточник плановой геометрии: ${input.network.pipes.length} участков сети, ${input.drawingSet.mainPath.length} вершин оси. Источник рельефа: ${input.surveyPoints.length} точек. Значения эталонного проекта в расчёты не подставлялись.`, fontSize: 9 },
       ],
     },
+    generalDataPage(input),
   ]
 
   for (const sheet of input.drawingSet.sheets) {
@@ -388,7 +604,7 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
     pageMargins: [30, 28, 30, 52],
     defaultStyle: { font: 'Roboto', fontSize: 9, color: '#111' },
     content,
-    footer: (currentPage: number) => ({
+    footer: (currentPage: number) => currentPage === 1 ? { text: '' } : ({
       margin: [30, 0, 30, 10],
       table: { widths: ['*', 150, 85], body: [[
         { text: input.projectName, fontSize: 7 },

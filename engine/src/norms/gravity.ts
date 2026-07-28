@@ -4,7 +4,7 @@ import {
   maxFilling,
   maxVelocityMps,
   minGravityDiameterMm,
-  minSewerDepthM,
+  minSewerInvertDepthM,
   minSlopeForDiameter,
   minVelocityMps,
   sewerRoughnessN,
@@ -134,6 +134,8 @@ export interface GravityDesignOptions {
   strategy?: 'minDiameter' | 'minBurial'
   /** Project catalogue diameters. The solver must not invent absent sizes. */
   allowedDiametersMm?: readonly number[]
+  /** Confirmed design-rain period P; only P=0.33 enables note 3's 0.6 m/s exception. */
+  stormRainPeriodYears?: number
 }
 
 const SLOPE_CAP = 0.1 // 10% — practical steepness bound before drop structures
@@ -189,7 +191,7 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
     let flattest: { D: number; slope: number } | null = null
     for (const D of candidates) {
       const Dm = D / 1000
-      const minV = minVelocityMps(D, system).value
+      const minV = minVelocityMps(D, system, opts.stormRainPeriodYears).value
       const normMin = minSlopeForDiameter(D)?.value ?? 0
       let required: number | null = null
       for (let slope = Math.max(normMin, 0.0003); slope <= SLOPE_CAP + 1e-9; slope *= 1.05) {
@@ -214,7 +216,7 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
 
   for (const D of candidates) {
     const Dm = D / 1000
-    const minV = minVelocityMps(D, system).value
+    const minV = minVelocityMps(D, system, opts.stormRainPeriodYears).value
     const normMin = minSlopeForDiameter(D)?.value ?? 0
     const base = Math.max(groundSlope, normMin, 0.0005)
 
@@ -375,7 +377,7 @@ export function solveGravityNetwork(input: {
   buildingFlowLps: Map<string, number>
   system: 'sewer' | 'storm'
   roughness?: number
-  /** Freezing depth for min burial (п. 7.2.4); default 1.5 m. */
+  /** Freezing depth for min burial (п. 7.2.4). Omission leaves the profile blocked/null. */
   freezingDepthM?: number
   /** Design criterion per segment; see GravityDesignOptions.strategy. */
   strategy?: 'minDiameter' | 'minBurial'
@@ -383,6 +385,8 @@ export function solveGravityNetwork(input: {
   outletNodeId?: string
   /** Project catalogue diameter series. */
   allowedDiametersMm?: readonly number[]
+  /** Confirmed storm design-rain period P for the minimum-velocity check. */
+  stormRainPeriodYears?: number
 }): GravityNetworkResult {
   const isGravityPipe = (pipe: TracedNetwork['pipes'][number]) =>
     pipe.systemType !== 'pressure' && pipe.kind !== 'pressure_main' && pipe.kind !== 'discharge'
@@ -407,26 +411,29 @@ export function solveGravityNetwork(input: {
       groundSlope,
       strategy: input.strategy,
       allowedDiametersMm: input.allowedDiametersMm,
+      stormRainPeriodYears: input.stormRainPeriodYears,
     })
     return { ...design, id: p.id, fromNode: p.fromNode, toNode: p.toNode, lengthM: p.lengthM }
   })
 
   const outletFlowLps = outlet
     ? input.network.pipes
-        .filter((p) => p.fromNode === outlet.id || p.toNode === outlet.id)
-        .reduce((s, p) => Math.max(s, flows.get(p.id) ?? 0), 0)
+        .filter((p) => isGravityPipe(p) && (p.fromNode === outlet.id || p.toNode === outlet.id))
+        .reduce((sum, pipe) => sum + (flows.get(pipe.id) ?? 0), 0)
     : 0
 
   const design = new Map(pipes.map((p) => [p.id, { diameterMm: p.diameterMm, slope: p.slope }]))
-  const profile = computeGravityProfile({
-    network: {
-      nodes: input.network.nodes.map((node) => node.id === outlet?.id ? { ...node, kind: 'source' as const } : node),
-      pipes: input.network.pipes.filter(isGravityPipe),
-      totalLengthM: input.network.pipes.filter(isGravityPipe).reduce((sum, pipe) => sum + pipe.lengthM, 0),
-    },
-    design,
-    freezingDepthM: input.freezingDepthM ?? 1.5,
-  })
+  const profile = input.freezingDepthM == null
+    ? null
+    : computeGravityProfile({
+      network: {
+        nodes: input.network.nodes.map((node) => node.id === outlet?.id ? { ...node, kind: 'source' as const } : node),
+        pipes: input.network.pipes.filter(isGravityPipe),
+        totalLengthM: input.network.pipes.filter(isGravityPipe).reduce((sum, pipe) => sum + pipe.lengthM, 0),
+      },
+      design,
+      freezingDepthM: input.freezingDepthM,
+    })
 
   return { kind: 'gravity', systemType: input.system, pipes, outletFlowLps, profile }
 }
@@ -456,6 +463,8 @@ export interface GravityProfile {
   maxDepthM: number
   outletInvertElevationM: number
   totalLengthM: number
+  /** Pipe ids represented by this longitudinal profile, in head-to-outlet order. */
+  pipeIds: string[]
 }
 
 /**
@@ -513,7 +522,8 @@ export function computeGravityProfile(input: {
     }
     return d || minGravityDiameterMm('sewer', 'street').value
   }
-  const coverToInvert = (D: number): number => minSewerDepthM(D, freezingDepthM).value + D / 1000
+  const minimumInvertDepth = (diameterMm: number): number =>
+    minSewerInvertDepthM(diameterMm, freezingDepthM).value
 
   // Children map (nodes whose parent is this node), for downstream-first order.
   const children = new Map<string, string[]>()
@@ -532,8 +542,8 @@ export function computeGravityProfile(input: {
     const node = nodeById.get(nodeId)
     if (!node) continue
     const D = diameterAt(nodeId)
-    const byCover = node.groundElevation - coverToInvert(D)
-    let inv = byCover
+    const byMinimumDepth = node.groundElevation - minimumInvertDepth(D)
+    let inv = byMinimumDepth
     for (const child of children.get(nodeId) ?? []) {
       const pipeId = parentPipe.get(child)
       const pipe = pipeId ? pipeById.get(pipeId) : undefined
@@ -556,12 +566,15 @@ export function computeGravityProfile(input: {
     }
   }
   const pathHeadToOutlet: string[] = []
+  const pathPipeIds: string[] = []
   let cur = head
   const guard = new Set<string>()
   while (cur && !guard.has(cur)) {
     guard.add(cur)
     pathHeadToOutlet.push(cur)
     if (cur === outlet.id) break
+    const pipeId = parentPipe.get(cur)
+    if (pipeId) pathPipeIds.push(pipeId)
     const next = parentNode.get(cur)
     if (!next) break
     cur = next
@@ -588,6 +601,7 @@ export function computeGravityProfile(input: {
     maxDepthM: Math.round(maxDepthM * 100) / 100,
     outletInvertElevationM: Math.round((invert.get(outlet.id) ?? outlet.groundElevation) * 100) / 100,
     totalLengthM: Math.round(headChainage * 100) / 100,
+    pipeIds: pathPipeIds,
   }
 }
 

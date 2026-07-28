@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
 import { selectProvider } from './providers.js'
+import { createCorsPolicy } from './cors-policy.js'
+import { createConversionGuard } from './conversion-guard.js'
 
 /**
  * Drawing conversion microservice, bidirectional since requirements update 3
@@ -11,13 +13,45 @@ import { selectProvider } from './providers.js'
  */
 
 const app = express()
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean)
+const corsPolicy = createCorsPolicy(process.env)
+const conversionGuard = createConversionGuard(process.env)
+app.set('trust proxy', 1)
+
+// Reject disallowed browser origins before an expensive conversion starts.
+// Requests without Origin remain available to health checks and trusted
+// server-to-server clients; CORS itself is not an authentication mechanism.
+app.use((req, res, next) => {
+  const origin = req.get('Origin')
+  if (origin && !corsPolicy.allows(origin)) {
+    res.vary('Origin')
+    res.status(403).json({ error: 'origin not allowed', code: 'CORS_ORIGIN_DENIED' })
+    return
+  }
+  next()
+})
 app.use(cors({
-  origin: allowedOrigins.length === 0
-    ? true
-    : (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)),
+  origin: (origin, callback) => callback(null, corsPolicy.allows(origin)),
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+  maxAge: 86400,
 }))
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } })
+
+function guardConversion(req, res, next) {
+  if (corsPolicy.production && !req.get('Origin')) {
+    res.status(403).json({ error: 'browser origin required', code: 'CLIENT_ORIGIN_REQUIRED' })
+    return
+  }
+  const admission = conversionGuard.admit(req.ip || req.socket.remoteAddress || 'unknown')
+  if (!admission.ok) {
+    res.setHeader('Retry-After', '60')
+    res.status(429).json({ error: admission.code === 'CONVERTER_BUSY' ? 'converter busy' : 'rate limit exceeded', code: admission.code })
+    return
+  }
+  res.once('finish', admission.release)
+  res.once('close', admission.release)
+  next()
+}
 
 const CONTENT_TYPES = { dwg: 'application/acad', dxf: 'application/dxf' }
 
@@ -49,7 +83,7 @@ app.get('/ready', async (_req, res) => {
   res.status(readiness.ok ? 200 : 503).json({ ...readiness, provider: provider.name })
 })
 
-app.post('/convert', upload.single('file'), async (req, res) => {
+app.post('/convert', guardConversion, upload.single('file'), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'no file' })
     return

@@ -1,0 +1,3110 @@
+{
+  "schema_version": "1.0",
+  "catalog_date": "2026-07-29",
+  "source": {
+    "path": "R01",
+    "sha256": "09ffb1b638c1aeb2b14f85ced81b86a2aaca1fac5ae120732e457996aa7fc5c0",
+    "size_bytes": 48042163,
+    "page_count": 61,
+    "pdf_version": "1.7",
+    "producer": "Acrobat Distiller 11.0 (Windows)",
+    "creator": "PScript5.dll Version 5.2.2",
+    "tagged": false,
+    "encrypted": false,
+    "form": "AcroForm"
+  },
+  "set_structure": {
+    "pdf_page_1": "cover",
+    "pdf_pages_2_58": "R01-MAIN sheets 1-57",
+    "pdf_pages_59_61": "R01-SPEC sheets 1-3"
+  },
+  "extraction_quality": {
+    "page_geometry": "complete for 61/61 pages",
+    "titles": "complete for 61/61 pages from drawing register plus visual checks",
+    "extractable_text": "available on PDF pages 33-52 only (20 longitudinal-profile pages)",
+    "non_profile_text": "not detected in pypdf/pdfplumber samples; most lettering is outlines or rasterized",
+    "visual_reviewed_pdf_pages": [
+      1,
+      2,
+      3,
+      4,
+      33,
+      34,
+      52,
+      58,
+      59,
+      60,
+      61
+    ],
+    "limitation": "catalog identifies sheets and visible structure; it does not prove upstream engineering provenance"
+  },
+  "pages": [
+    {
+      "pdf_page": 1,
+      "drawing_designation": null,
+      "drawing_sheet": null,
+      "drawing_sheet_count": null,
+      "page_type": "cover",
+      "title": "Титульный лист рабочего комплекта",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "visual review of PDF page 1 at 150 dpi",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "project title",
+        "volume and album",
+        "discipline",
+        "approval/signature field",
+        "year"
+      ],
+      "expected_upstream_inputs": [
+        "project metadata",
+        "organization metadata",
+        "volume/album identifiers"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "source fields for approval/signature data are unknown; signatures must not be regenerated"
+      ]
+    },
+    {
+      "pdf_page": 2,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 1,
+      "drawing_sheet_count": 57,
+      "page_type": "general_data",
+      "title": "Общие данные, часть 1",
+      "scale": null,
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "drawing register",
+        "general notes",
+        "design basis",
+        "situational scheme",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "project metadata",
+        "drawing register",
+        "design basis",
+        "geology summary",
+        "network indicators"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "which source document supplies every note and indicator remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 3,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 2,
+      "drawing_sheet_count": 57,
+      "page_type": "general_data",
+      "title": "Общие данные, часть 2",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1729,
+        "height_pt": 842,
+        "width_mm": 609.95,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 609.95,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "drawing register",
+        "general notes",
+        "design basis",
+        "situational scheme",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "project metadata",
+        "drawing register",
+        "design basis",
+        "geology summary",
+        "network indicators"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "which source document supplies every note and indicator remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 4,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 3,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 1. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 4989,
+        "height_pt": 842,
+        "width_mm": 1760.01,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 1760.01,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 5,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 4,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 2. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 6,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 5,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 3. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 7,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 6,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 4. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 8,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 7,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 5. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 9,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 8,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 6. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 10,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 9,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 7. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 4252,
+        "height_pt": 842,
+        "width_mm": 1500.01,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 1500.01,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 11,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 10,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 8. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 12,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 11,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 9. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 13,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 12,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 10. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 14,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 13,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 11. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 15,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 14,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 12. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 1191,
+        "width_mm": 2500.14,
+        "height_mm": 420.16,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 420.16
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 16,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 15,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 13. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 17,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 16,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 14. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 18,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 17,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 15. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 19,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 18,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 16. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 6094,
+        "height_pt": 842,
+        "width_mm": 2149.83,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2149.83,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 20,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 19,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 17. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 21,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 20,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 18. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 22,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 21,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 19. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 23,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 22,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 20. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 24,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 23,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 21. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 25,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 24,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 22. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 26,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 25,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 23. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 5102,
+        "height_pt": 842,
+        "width_mm": 1799.87,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 1799.87,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 27,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 26,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 24. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 28,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 27,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 25. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 29,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 28,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 26. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 30,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 29,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 27. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 31,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 30,
+      "drawing_sheet_count": 57,
+      "page_type": "plan",
+      "title": "План К2, участок 28. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 7087,
+        "height_pt": 842,
+        "width_mm": 2500.14,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2500.14,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "topographic plan",
+        "K2 alignment",
+        "chainage",
+        "structures",
+        "pipe labels",
+        "crossings",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "approved K2 alignment",
+        "topographic base",
+        "stationing",
+        "pipe diameters/materials",
+        "structures and crossings"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source layer/object IDs for alignment, obstacles and labels remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 32,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 31,
+      "drawing_sheet_count": 57,
+      "page_type": "network_plan",
+      "title": "Сводный план сетей К2. М1:500",
+      "scale": {
+        "plan": "1:500"
+      },
+      "media_box": {
+        "width_pt": 5913,
+        "height_pt": 842,
+        "width_mm": 2085.97,
+        "height_mm": 297.04,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 2085.97,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "network plan",
+        "nodes and links",
+        "pipe labels",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "network topology",
+        "topographic base",
+        "structures",
+        "pipe diameters/materials"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "authoritative source topology and object IDs remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 33,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 32,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 1",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 34,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 33,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 2",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 35,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 34,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 3",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6803,
+        "width_mm": 297.04,
+        "height_mm": 2399.95,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2399.95,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 36,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 35,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 4",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 37,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 36,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 5",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6463,
+        "width_mm": 297.04,
+        "height_mm": 2280,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2280,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 38,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 37,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 6",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 39,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 38,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 7",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6463,
+        "width_mm": 297.04,
+        "height_mm": 2280,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2280,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 40,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 39,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 8",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 41,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 40,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 9",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6463,
+        "width_mm": 297.04,
+        "height_mm": 2280,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2280,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 42,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 41,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 10",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6463,
+        "width_mm": 297.04,
+        "height_mm": 2280,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2280,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 43,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 42,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 11",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 44,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 43,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 12",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 5102,
+        "width_mm": 297.04,
+        "height_mm": 1799.87,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 1799.87,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 45,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 44,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 13",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 7370,
+        "width_mm": 297.04,
+        "height_mm": 2599.97,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2599.97,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 46,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 45,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 14",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 47,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 46,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 15",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 48,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 47,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 16",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 49,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 48,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 17",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 50,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 49,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 18",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 51,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 50,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 19",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 5102,
+        "width_mm": 297.04,
+        "height_mm": 1799.87,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 1799.87,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 52,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 51,
+      "drawing_sheet_count": 57,
+      "page_type": "longitudinal_profile",
+      "title": "Продольный профиль К2, участок 20",
+      "scale": {
+        "horizontal": "1:500",
+        "vertical": "1:100"
+      },
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 6236,
+        "width_mm": 297.04,
+        "height_mm": 2199.92,
+        "detected_format": "custom"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 2199.92,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "extractable",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "terrain/profile lines",
+        "pipe invert",
+        "wells/chambers",
+        "elevation and distance rows",
+        "geology",
+        "typical chamber detail",
+        "legend",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "plan alignment",
+        "chainage",
+        "terrain elevations",
+        "invert elevations",
+        "geology",
+        "groundwater",
+        "pipes and structures"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "per-station terrain, invert and geology provenance remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 53,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 52,
+      "drawing_sheet_count": 57,
+      "page_type": "material_schedule",
+      "title": "Ведомость материалов колодцев, часть 1",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "material table",
+        "component rows",
+        "quantities",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "structure schedule",
+        "well/chamber types",
+        "standard component catalog",
+        "calculated quantities"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each table row to calculated structures and catalog items remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 54,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 53,
+      "drawing_sheet_count": 57,
+      "page_type": "material_schedule",
+      "title": "Ведомость материалов колодцев, часть 2",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "material table",
+        "component rows",
+        "quantities",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "structure schedule",
+        "well/chamber types",
+        "standard component catalog",
+        "calculated quantities"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each table row to calculated structures and catalog items remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 55,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 54,
+      "drawing_sheet_count": 57,
+      "page_type": "material_schedule",
+      "title": "Ведомость материалов колодцев, часть 3",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "material table",
+        "component rows",
+        "quantities",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "structure schedule",
+        "well/chamber types",
+        "standard component catalog",
+        "calculated quantities"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each table row to calculated structures and catalog items remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 56,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 55,
+      "drawing_sheet_count": 57,
+      "page_type": "material_schedule",
+      "title": "Ведомость материалов колодцев, часть 4",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "material table",
+        "component rows",
+        "quantities",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "structure schedule",
+        "well/chamber types",
+        "standard component catalog",
+        "calculated quantities"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each table row to calculated structures and catalog items remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 57,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 56,
+      "drawing_sheet_count": 57,
+      "page_type": "material_schedule",
+      "title": "Ведомость материалов колодцев, часть 5",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": false,
+      "observed_components": [
+        "material table",
+        "component rows",
+        "quantities",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "structure schedule",
+        "well/chamber types",
+        "standard component catalog",
+        "calculated quantities"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each table row to calculated structures and catalog items remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 58,
+      "drawing_designation": "R01-MAIN",
+      "drawing_sheet": 57,
+      "drawing_sheet_count": 57,
+      "page_type": "detail",
+      "title": "Параметрический узел защитной сетки для колодцев",
+      "scale": null,
+      "media_box": {
+        "width_pt": 842,
+        "height_pt": 1191,
+        "width_mm": 297.04,
+        "height_mm": 420.16,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 270,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "sheet register on PDF page 2; selected title blocks visually cross-checked",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "light-cover installation section",
+        "heavy-cover installation section",
+        "protective grid plan",
+        "dimensions and callouts",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "selected manhole covers",
+        "protective-grid design",
+        "material and fastening requirements"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "governing standard/detail source and design-selection rule remain unknown"
+      ]
+    },
+    {
+      "pdf_page": 59,
+      "drawing_designation": "R01-SPEC",
+      "drawing_sheet": 1,
+      "drawing_sheet_count": 3,
+      "page_type": "specification",
+      "title": "Спецификация оборудования, изделий и материалов, часть 1",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "visual review of specification pages 59-61 at 100 dpi",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "specification table",
+        "standards/catalog codes",
+        "units",
+        "quantities",
+        "masses",
+        "notes",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "pipe and fitting schedule",
+        "calculated lengths/quantities",
+        "material standards",
+        "catalog codes and masses"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each quantity to network objects and calculation formula remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 60,
+      "drawing_designation": "R01-SPEC",
+      "drawing_sheet": 2,
+      "drawing_sheet_count": 3,
+      "page_type": "specification",
+      "title": "Спецификация оборудования, изделий и материалов, часть 2",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "visual review of specification pages 59-61 at 100 dpi",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "specification table",
+        "standards/catalog codes",
+        "units",
+        "quantities",
+        "masses",
+        "notes",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "pipe and fitting schedule",
+        "calculated lengths/quantities",
+        "material standards",
+        "catalog codes and masses"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each quantity to network objects and calculation formula remains unknown"
+      ]
+    },
+    {
+      "pdf_page": 61,
+      "drawing_designation": "R01-SPEC",
+      "drawing_sheet": 3,
+      "drawing_sheet_count": 3,
+      "page_type": "specification",
+      "title": "Спецификация оборудования, изделий и материалов, часть 3",
+      "scale": null,
+      "media_box": {
+        "width_pt": 1191,
+        "height_pt": 842,
+        "width_mm": 420.16,
+        "height_mm": 297.04,
+        "detected_format": "A3"
+      },
+      "rotation_deg": 0,
+      "display_size_mm": {
+        "width": 420.16,
+        "height": 297.04
+      },
+      "display_orientation": "landscape",
+      "text_layer": "not_detected",
+      "title_source": "visual review of specification pages 59-61 at 100 dpi",
+      "title_confidence": "high",
+      "visual_reviewed": true,
+      "observed_components": [
+        "specification table",
+        "standards/catalog codes",
+        "units",
+        "quantities",
+        "masses",
+        "notes",
+        "title block"
+      ],
+      "expected_upstream_inputs": [
+        "pipe and fitting schedule",
+        "calculated lengths/quantities",
+        "material standards",
+        "catalog codes and masses"
+      ],
+      "traceability_status": "reference_observed_upstream_unresolved",
+      "unresolved": [
+        "object-level lineage from reference value to a specific input file/page/layer is not encoded in the PDF",
+        "normative clause for each generated element is not yet linked",
+        "mapping from each quantity to network objects and calculation formula remains unknown"
+      ]
+    }
+  ]
+}

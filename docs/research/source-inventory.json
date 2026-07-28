@@ -1,0 +1,34 @@
+{
+  "generatedAt": "2026-07-29",
+  "hashAlgorithm": "SHA-256",
+  "confidentiality": "Tracked inventory uses neutral source identifiers; local absolute paths and object names are not stored in Git.",
+  "sourceCount": 21,
+  "uniqueContentCount": 19,
+  "duplicateGroups": [
+    ["N05", "N06"],
+    ["N09", "N10"]
+  ],
+  "sources": [
+    {"id":"P01","role":"architectural-planning assignment","format":"pdf","bytes":113651,"pages":10,"pageSize":"A4","sha256":"1f73c03d5227dd440f68129fb8b87321aee2a831ed8f96e4ee1356bb5cc48b22","status":"available"},
+    {"id":"P02","role":"master-plan collector scheme with diameters","format":"pdf","bytes":598650,"pages":1,"pageSize":"A4","sha256":"8ec28c88caf7669fddc16fc6ab9d8de95863b042d72a24a2713ef5daec497ba3","status":"available"},
+    {"id":"P03","role":"engineering-geology report","format":"pdf","bytes":19817128,"pages":73,"pageSize":"A4","sha256":"f5cb9b0fa1f9ba78ddcf2fbb0249b4670e2c4b87054ae32d52a5748087561b8d","status":"available"},
+    {"id":"P04","role":"combined topographic/master-plan source","format":"dwg","bytes":1166947,"sha256":"2deb1aa9ad55022d172aeab87d275d4e5728596b6aaecdd10fba4486d5bc6c15","status":"available-converter-required"},
+    {"id":"P05","role":"catchment topographic survey","format":"pdf","bytes":3602917,"pages":7,"pageSize":"custom-rotated-270","sha256":"4d619d39baa6074634f548b19373dc4ce5e5891c8363357e9958c1a6a276cf77","status":"available"},
+    {"id":"P06","role":"geology import template","format":"xlsx","bytes":18376,"sha256":"951b99b353347fb90c96066d00ba67bcd6251ef8870a1e17fb8b07cbf815d817","status":"available"},
+    {"id":"N01","role":"land code","format":"pdf","bytes":1012444,"pages":245,"pageSize":"Letter","sha256":"d5baf4587361f7b0202075a47ae057c10693e3921b508a68c7912c4b4393c5c9","status":"available"},
+    {"id":"N02","role":"environmental code","format":"pdf","bytes":1796187,"pages":414,"pageSize":"Letter","sha256":"521ce7688aec8929fe378ada3160c081ee09dc87b69911ba4230a7414088fd86","status":"available"},
+    {"id":"N03","role":"construction code","format":"pdf","bytes":801001,"pages":182,"pageSize":"Letter","sha256":"76fd2def28a48cd307adc23ca5a4c3d388ed5b6392d0ff350b8749d1c002ed25","status":"available"},
+    {"id":"N04","role":"water code","format":"pdf","bytes":515817,"pages":116,"pageSize":"Letter","sha256":"c73198c25963fe3eea9c4f473f107cc5a923da8b669b99f86539a45c13616a31","status":"available"},
+    {"id":"N05","role":"external sewer networks construction norm copy A","format":"pdf","bytes":2351531,"pages":198,"pageSize":"A4","sha256":"29dc9ff74a686261debc4412db811fd23a6c27ddc5e07c85bff24d8dc67092cd","status":"duplicate-primary"},
+    {"id":"N06","role":"external sewer networks construction norm copy B","format":"pdf","bytes":2351531,"pages":198,"pageSize":"A4","sha256":"29dc9ff74a686261debc4412db811fd23a6c27ddc5e07c85bff24d8dc67092cd","status":"duplicate-skip"},
+    {"id":"N07","role":"external sewer networks legacy construction rules","format":"pdf","bytes":3364815,"pages":172,"pageSize":"A4","sha256":"dc8be34ede088edcb9ef77eb1e30c38fa865c624e30c8d16be7e1bc6c32b7bf8","status":"available"},
+    {"id":"N08","role":"external sewer networks design rules","format":"pdf","bytes":1629871,"pages":127,"pageSize":"A4","sha256":"87b654cad61a92158220cbde6b5b12b0e2aafab5a7cd08503b27fc74157c547e","status":"available"},
+    {"id":"N09","role":"design documentation composition norm copy A","format":"pdf","bytes":1225177,"pages":129,"pageSize":"A4","sha256":"9c2cf520c79e760308567b3b1543f49aaafd9e6a7716956d3991c4367d8037bf","status":"duplicate-primary"},
+    {"id":"N10","role":"design documentation composition norm copy B","format":"pdf","bytes":1225177,"pages":129,"pageSize":"A4","sha256":"9c2cf520c79e760308567b3b1543f49aaafd9e6a7716956d3991c4367d8037bf","status":"duplicate-skip"},
+    {"id":"N11","role":"SPDS external water/sewer drawings standard","format":"pdf","bytes":627988,"pages":20,"pageSize":"custom","sha256":"c4e151f9bc4ba12f1365c4fa2f34fdbefdd3aa10c0cb46c0ae4d7e5f1bfd24e8","status":"available"},
+    {"id":"N12","role":"SPDS project and working documentation standard","format":"pdf","bytes":1836545,"pages":69,"pageSize":"custom","sha256":"422746deaec4612e211c84b95dbb59a81d54b6681b9aa0fce3cfdeede306df35","status":"available"},
+    {"id":"N13","role":"SPDS equipment and material specification standard","format":"pdf","bytes":147956,"pages":8,"pageSize":"custom","sha256":"d51477b937fd82347f2ceab40273891ad18edc14c4c8dae007c8e2b0a8be4c57","status":"available"},
+    {"id":"N14","role":"construction cost/classifier catalogue","format":"pdf","bytes":55383356,"pages":14089,"pageSize":"A4","sha256":"f70bd0ab68ebc68ed2930ed6d839726a4019ccf5c9c507608d737359fcbe08cf","status":"available-selective-indexing-required"},
+    {"id":"R01","role":"reference working-documentation album","format":"pdf","bytes":48042163,"pages":61,"pageSize":"mixed-A3-and-custom","sha256":"09ffb1b638c1aeb2b14f85ced81b86a2aaca1fac5ae120732e457996aa7fc5c0","status":"available-validation-only"}
+  ]
+}

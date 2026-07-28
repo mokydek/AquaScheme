@@ -14,6 +14,7 @@ import { saveDataset } from './datasets'
 import { insertParcel } from './parcels'
 import { replaceGeology } from './geology'
 import { deleteCatalog, fetchCatalogs, saveCatalog, setActiveCatalog } from './catalog'
+import { formatAppError } from './errorFormatting'
 
 export const DEMO_STORM_PROJECT_NAME = 'Учебный проект ливневого коллектора'
 
@@ -66,22 +67,6 @@ export interface StormDemoResult {
   failures: string[]
 }
 
-function describeFailure(error: unknown): string {
-  if (error instanceof Error) return error.message
-  if (error && typeof error === 'object') {
-    const item = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown }
-    const parts = [item.code, item.message, item.details, item.hint]
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    if (parts.length > 0) return parts.join(' · ')
-    try {
-      return JSON.stringify(error)
-    } catch {
-      return 'неизвестная ошибка объекта'
-    }
-  }
-  return String(error)
-}
-
 /**
  * Seeds a synthetic project that exercises the complete UI without embedding
  * any acceptance-object values. The route is preliminary by design; only an
@@ -98,7 +83,7 @@ export async function seedStormProject(projectId: string, callbacks?: {
       await action()
       seededSections += 1
     } catch (error) {
-      failures.push(`${name}: ${describeFailure(error)}`)
+      failures.push(`${name}: ${formatAppError(error)}`)
     }
   }
 

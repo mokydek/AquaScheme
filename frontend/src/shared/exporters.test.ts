@@ -1,6 +1,23 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import type { SelectedManholeConstruction, SewerSchedule } from '@aquascheme/engine'
-import { generateSewerScheduleXlsx } from './exporters'
+import {
+  buildWorkingDrawingSet,
+  workingDrawingSpecificationItemCount,
+} from '@aquascheme/engine'
+import type {
+  GravityProfile,
+  SelectedManholeConstruction,
+  SewerSchedule,
+  TracedNetwork,
+} from '@aquascheme/engine'
+import { WorkingDrawingPreview } from '../app/project/WorkingDrawingPreview'
+import {
+  generateProjectSheetPdf,
+  generateSewerScheduleXlsx,
+  generateWorkingDrawingSheetDxf,
+} from './exporters'
+import type { ProjectAlbumInput } from './projectAlbum'
 
 const schedule: SewerSchedule = {
   manholes: [{ label: 'К-1', picket: 'ПК1+25', depthMm: 2500, pipeDiameterMm: 500 }],
@@ -34,4 +51,139 @@ describe('working schedule XLSX', () => {
       expect.objectContaining({ 'Код': 'SLAB', 'Количество': 1 }),
     ]))
   })
+})
+
+describe('multi-sheet specification contract', () => {
+  it('covers more than 40 rows exactly once in three independent PDF, DXF and preview sheets', async () => {
+    const specificationPipes = Array.from({ length: 45 }, (_, index) => ({
+      designation: `SPEC-ROW-${String(index + 1).padStart(3, '0')}`,
+      diameterMm: 500 + index,
+      lengthM: 100 + index,
+      agskCode: `SPEC-CODE-${String(index + 1).padStart(3, '0')}`,
+    }))
+    const specificationSchedule: SewerSchedule = {
+      manholes: [{ label: 'TEST-MH-1', picket: 'PK0', depthMm: 2500, pipeDiameterMm: 500 }],
+      pipes: specificationPipes,
+      totalPipeLengthM: specificationPipes.reduce((sum, pipe) => sum + pipe.lengthM, 0),
+    }
+    const specificationNetwork: TracedNetwork = {
+      nodes: [
+        { id: 'TEST-A', kind: 'ring', x: 0, y: 0, groundElevation: 100 },
+        { id: 'TEST-OUT', kind: 'source', x: 100, y: 0, groundElevation: 99 },
+      ],
+      pipes: [{
+        id: 'TEST-PIPE',
+        kind: 'gravity_collector',
+        fromNode: 'TEST-A',
+        toNode: 'TEST-OUT',
+        lengthM: 100,
+        alignment: [{ x: 0, y: 0 }, { x: 50, y: 8 }, { x: 100, y: 0 }],
+        dataSource: 'synthetic:test',
+      }],
+      totalLengthM: 100,
+    }
+    const specificationProfile: GravityProfile = {
+      stations: [
+        { nodeId: 'TEST-A', chainageM: 0, groundElevationM: 100, invertElevationM: 97, depthM: 3, diameterMm: 500 },
+        { nodeId: 'TEST-OUT', chainageM: 100, groundElevationM: 99, invertElevationM: 96.5, depthM: 2.5, diameterMm: 500 },
+      ],
+      maxDepthM: 3,
+      outletInvertElevationM: 96.5,
+      totalLengthM: 100,
+      pipeIds: ['TEST-PIPE'],
+    }
+    const surveyPoints = [{ x: 0, y: 0, z: 100 }, { x: 100, y: 0, z: 99 }]
+    const specificationItemCount = workingDrawingSpecificationItemCount(specificationSchedule, [])
+    const drawingSet = buildWorkingDrawingSet({
+      system: 'storm',
+      network: specificationNetwork,
+      profile: specificationProfile,
+      schedule: specificationSchedule,
+      routeStatus: 'calculated',
+      georeference: { kind: 'local_anchor', source: 'synthetic:test' },
+      surveyPoints,
+      unresolvedLayerCount: 0,
+      catalogReady: true,
+      hydraulicsReady: true,
+      stormRunoff: { available: true, verified: true, source: 'synthetic catchment calculation' },
+      utilityFeatureCount: 0,
+      crossings: [],
+      spatialBoreholeCount: 1,
+      manholeCatalogReady: true,
+      normsVerified: true,
+      specificationItemCount,
+      options: { specificationRowsPerSheet: 20 },
+    })
+    const input: ProjectAlbumInput = {
+      projectName: 'Synthetic specification pagination',
+      projectCode: 'TEST-SPEC',
+      system: 'storm',
+      network: specificationNetwork,
+      profile: specificationProfile,
+      schedule: specificationSchedule,
+      drawingSet,
+      surveyPoints,
+      manholeConstructions: [],
+      pipeDiameterMm: new Map([['TEST-PIPE', 500]]),
+      outletFlowLps: 1,
+    }
+    const sheets = drawingSet.sheets.filter((sheet) => sheet.kind === 'specification')
+    expect(sheets).toHaveLength(3)
+    expect(sheets.map((sheet) => sheet.dataRange)).toEqual([
+      { start: 0, end: 20, total: 45 },
+      { start: 20, end: 40, total: 45 },
+      { start: 40, end: 45, total: 45 },
+    ])
+
+    const pdfTexts: string[] = []
+    const dxfTexts: string[] = []
+    const previewTexts: string[] = []
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    for (const sheet of sheets) {
+      const pdfBlob = await generateProjectSheetPdf(input, sheet.id)
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(await pdfBlob.arrayBuffer()) }).promise
+      expect(pdf.numPages).toBe(1)
+      const page = await pdf.getPage(1)
+      pdfTexts.push((await page.getTextContent()).items
+        .map((item) => 'str' in item ? item.str : '')
+        .join(''))
+      dxfTexts.push(await generateWorkingDrawingSheetDxf(input, sheet.id))
+      previewTexts.push(renderToStaticMarkup(createElement(WorkingDrawingPreview, {
+        sheet,
+        drawingSet,
+        surveyPoints,
+        profile: specificationProfile,
+        schedule: specificationSchedule,
+        manholeConstructions: [],
+        showFrame: false,
+      })))
+    }
+
+    const occurrenceCount = (text: string, marker: string) => text.split(marker).length - 1
+    for (let rowIndex = 0; rowIndex < specificationPipes.length; rowIndex++) {
+      const marker = specificationPipes[rowIndex].designation
+      const owner = sheets.findIndex((sheet) => (
+        rowIndex >= (sheet.dataRange?.start ?? 0) && rowIndex < (sheet.dataRange?.end ?? 0)
+      ))
+      expect(owner).toBeGreaterThanOrEqual(0)
+      for (let sheetIndex = 0; sheetIndex < sheets.length; sheetIndex++) {
+        const expected = sheetIndex === owner ? 1 : 0
+        expect(occurrenceCount(pdfTexts[sheetIndex], marker), `PDF ownership of ${marker}`).toBe(expected)
+        expect(occurrenceCount(dxfTexts[sheetIndex], marker), `DXF ownership of ${marker}`).toBe(expected)
+        expect(occurrenceCount(previewTexts[sheetIndex], marker), `preview ownership of ${marker}`).toBe(expected)
+      }
+    }
+
+    const staleInput: ProjectAlbumInput = {
+      ...input,
+      schedule: {
+        ...specificationSchedule,
+        pipes: [...specificationSchedule.pipes, {
+          designation: 'TEST-PIPE-LATE', diameterMm: 900, lengthM: 10, agskCode: 'TEST-LATE',
+        }],
+      },
+    }
+    await expect(generateProjectSheetPdf(staleInput, sheets[0].id)).rejects.toThrow(/устарел/)
+    await expect(generateWorkingDrawingSheetDxf(staleInput, sheets[0].id)).rejects.toThrow(/устарел/)
+  }, 30_000)
 })

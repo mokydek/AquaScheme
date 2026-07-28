@@ -7,8 +7,12 @@ import {
   maxVelocityMps,
   minGravityDiameterMm,
   minSlopeForDiameter,
+  minSewerCrownCoverM,
   minSewerDepthM,
+  minSewerInvertDepthFromFrostM,
+  minSewerInvertDepthM,
   minVelocityMps,
+  sewerBurialDepthConstraints,
   sewerRoughnessN,
   stormInletSpacingM,
 } from './sewer'
@@ -45,10 +49,17 @@ describe('СН РК 4.01-03-2013* verified lookups', () => {
     expect(minVelocityMps(2000).value).toBe(1.5)
   })
 
+  it('note 3 to table 5.19 applies 0.6 m/s only to a confirmed storm P=0.33 years', () => {
+    expect(minVelocityMps(200, 'storm', 0.33).value).toBe(0.6)
+    expect(minVelocityMps(200, 'storm', 1).value).toBe(0.7)
+    expect(minVelocityMps(200, 'storm').value).toBe(0.7)
+  })
+
   it('5.10.3 / 5.10.7: velocity and filling caps (PDF p.40..41)', () => {
     expect(maxVelocityMps('sewer', 'metal').value).toBe(8)
     expect(maxVelocityMps('sewer', 'nonmetal').value).toBe(4)
-    expect(maxVelocityMps('storm', 'nonmetal').value).toBe(10)
+    expect(maxVelocityMps('storm', 'metal').value).toBe(10)
+    expect(maxVelocityMps('storm', 'nonmetal').value).toBe(7)
     expect(maxFilling('sewer').value).toBe(0.8)
     expect(maxFilling('sewer', true).value).toBe(0.75)
     expect(maxFilling('storm').value).toBe(1)
@@ -89,9 +100,36 @@ describe('СН РК 4.01-03-2013* verified lookups', () => {
     expect(sewerRoughnessN('pressure').value).toBe(0.013)
   })
 
-  it('7.2.4: minimum burial depth from freezing depth (PDF p.49)', () => {
-    expect(minSewerDepthM(200, 1.8).value).toBe(1.5)
-    expect(minSewerDepthM(600, 1.8).value).toBe(1.3)
-    expect(minSewerDepthM(200, 0.8).value).toBe(0.7)
+  it('7.2.4: keeps frost-to-invert and cover-to-crown constraints semantically separate (PDF p.49)', () => {
+    expect(minSewerInvertDepthFromFrostM(200, 1.8).value).toBe(1.5)
+    expect(minSewerInvertDepthFromFrostM(600, 1.8).value).toBe(1.3)
+    expect(minSewerCrownCoverM().value).toBe(0.7)
+
+    const shallowSmallPipe = sewerBurialDepthConstraints(200, 0.8)
+    expect(shallowSmallPipe.frostInvertDepthM).toBe(0.5)
+    expect(shallowSmallPipe.crownCoverInvertDepthM).toBe(0.9)
+    expect(shallowSmallPipe.minimumInvertDepthM).toBe(0.9)
+    expect(shallowSmallPipe.governingConstraint).toBe('crown-cover')
+
+    const largePipe = sewerBurialDepthConstraints(1200, 1.8)
+    expect(largePipe.frostInvertDepthM).toBe(1.3)
+    expect(largePipe.crownCoverInvertDepthM).toBe(1.9)
+    expect(largePipe.minimumInvertDepthM).toBe(1.9)
+    expect(largePipe.governingConstraint).toBe('crown-cover')
+
+    const deepFrost = sewerBurialDepthConstraints(200, 2.5)
+    expect(deepFrost.minimumInvertDepthM).toBe(2.2)
+    expect(deepFrost.governingConstraint).toBe('frost')
+  })
+
+  it('keeps minSewerDepthM as a depth-to-invert compatibility alias', () => {
+    expect(minSewerDepthM(200, 0.8).value).toBe(minSewerInvertDepthM(200, 0.8).value)
+    expect(minSewerDepthM(200, 0.8).value).toBe(0.9)
+  })
+
+  it('rejects non-physical burial inputs instead of producing a profile', () => {
+    expect(() => minSewerInvertDepthM(0, 1.8)).toThrow(RangeError)
+    expect(() => minSewerInvertDepthM(200, -0.1)).toThrow(RangeError)
+    expect(() => minSewerInvertDepthM(Number.NaN, 1.8)).toThrow(RangeError)
   })
 })

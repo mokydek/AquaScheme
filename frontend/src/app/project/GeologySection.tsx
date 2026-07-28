@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  DEFAULT_FREEZING_DEPTH_M,
   extractTable,
   GEOLOGY_TEMPLATE_EXAMPLE,
   GEOLOGY_TEMPLATE_HEADERS,
@@ -29,7 +28,12 @@ interface GeologyContent {
   soilType: SoilType
   groundwaterDepthM: number
   corrosivity: Corrosivity
-  freezingDepthM: number
+  freezingDepthM?: number
+  freezingDepthSource?: string
+  freezingDepthVerified?: boolean
+  profileGeologyMaxOffsetM?: number
+  profileGeologySource?: string
+  profileGeologyVerified?: boolean
   subsidenceType?: 'I' | 'II' | null
   heaving?: boolean
   swelling?: boolean
@@ -68,7 +72,12 @@ export function GeologySection({
   const [soilType, setSoilType] = useState<SoilType>(content?.soilType ?? 'loam')
   const [groundwater, setGroundwater] = useState(String(content?.groundwaterDepthM ?? ''))
   const [corrosivity, setCorrosivity] = useState<Corrosivity>(content?.corrosivity ?? 'medium')
-  const [freezing, setFreezing] = useState(String(content?.freezingDepthM ?? DEFAULT_FREEZING_DEPTH_M))
+  const [freezing, setFreezing] = useState(content?.freezingDepthM == null ? '' : String(content.freezingDepthM))
+  const [freezingSource, setFreezingSource] = useState(content?.freezingDepthSource ?? content?.sourceFile ?? '')
+  const [freezingVerified, setFreezingVerified] = useState(content?.freezingDepthVerified === true)
+  const [geologyMaxOffset, setGeologyMaxOffset] = useState(content?.profileGeologyMaxOffsetM == null ? '' : String(content.profileGeologyMaxOffsetM))
+  const [geologyCoverageSource, setGeologyCoverageSource] = useState(content?.profileGeologySource ?? '')
+  const [geologyCoverageVerified, setGeologyCoverageVerified] = useState(content?.profileGeologyVerified === true)
   const [subsidence, setSubsidence] = useState<SubsidenceType>(content?.subsidenceType ?? '')
   const [heaving, setHeaving] = useState(Boolean(content?.heaving))
   const [swelling, setSwelling] = useState(Boolean(content?.swelling))
@@ -77,7 +86,12 @@ export function GeologySection({
     setSoilType(content?.soilType ?? 'loam')
     setGroundwater(String(content?.groundwaterDepthM ?? ''))
     setCorrosivity(content?.corrosivity ?? 'medium')
-    setFreezing(String(content?.freezingDepthM ?? DEFAULT_FREEZING_DEPTH_M))
+    setFreezing(content?.freezingDepthM == null ? '' : String(content.freezingDepthM))
+    setFreezingSource(content?.freezingDepthSource ?? content?.sourceFile ?? '')
+    setFreezingVerified(content?.freezingDepthVerified === true)
+    setGeologyMaxOffset(content?.profileGeologyMaxOffsetM == null ? '' : String(content.profileGeologyMaxOffsetM))
+    setGeologyCoverageSource(content?.profileGeologySource ?? '')
+    setGeologyCoverageVerified(content?.profileGeologyVerified === true)
     setSubsidence(content?.subsidenceType ?? '')
     setHeaving(Boolean(content?.heaving))
     setSwelling(Boolean(content?.swelling))
@@ -145,6 +159,8 @@ export function GeologySection({
     setPdfReport(null)
     try {
       const routed = await routeUpload(file, ['pdf'])
+      setFreezingSource(file.name)
+      setFreezingVerified(false)
       const pages = await loadPdfTextByPage(routed.file)
       const items: TextItem[] = pages.flatMap((p) => p.items)
       if (!hasTextLayer(items)) {
@@ -198,7 +214,13 @@ export function GeologySection({
   const saveSummary = async () => {
     const gw = Number(groundwater.replace(',', '.'))
     const fz = Number(freezing.replace(',', '.'))
-    if (!Number.isFinite(gw) || !Number.isFinite(fz)) {
+    const fzSource = freezingSource.trim()
+    const maxOffsetText = geologyMaxOffset.trim()
+    const maxOffset = maxOffsetText === '' ? undefined : Number(maxOffsetText.replace(',', '.'))
+    const coverageSource = geologyCoverageSource.trim()
+    if (!Number.isFinite(gw) || !Number.isFinite(fz) || fz <= 0 || (freezingVerified && !fzSource)
+      || (maxOffset !== undefined && (!Number.isFinite(maxOffset) || maxOffset <= 0))
+      || (geologyCoverageVerified && (maxOffset === undefined || !coverageSource))) {
       setNotice('error')
       return
     }
@@ -211,6 +233,11 @@ export function GeologySection({
         groundwaterDepthM: gw,
         corrosivity,
         freezingDepthM: fz,
+        freezingDepthSource: fzSource || undefined,
+        freezingDepthVerified: freezingVerified,
+        profileGeologyMaxOffsetM: maxOffset,
+        profileGeologySource: coverageSource || undefined,
+        profileGeologyVerified: geologyCoverageVerified,
         subsidenceType: subsidence === '' ? null : subsidence,
         heaving,
         swelling,
@@ -469,7 +496,53 @@ export function GeologySection({
         </label>
         <label className="field">
           <span className="field-label">{t('project.geology.freezing')}</span>
-          <input className="input" inputMode="decimal" value={freezing} onChange={(e) => setFreezing(e.target.value)} />
+          <input
+            className="input"
+            inputMode="decimal"
+            value={freezing}
+            placeholder="Укажите по ИГИ или подтверждённому региональному источнику"
+            onChange={(e) => {
+              setFreezing(e.target.value)
+              setFreezingVerified(false)
+            }}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Источник глубины промерзания</span>
+          <input
+            className="input"
+            value={freezingSource}
+            placeholder="Документ, раздел/страница или подтверждённая таблица"
+            onChange={(e) => {
+              setFreezingSource(e.target.value)
+              setFreezingVerified(false)
+            }}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Допустимое удаление скважины от оси, м</span>
+          <input
+            className="input"
+            inputMode="decimal"
+            value={geologyMaxOffset}
+            placeholder="По программе изысканий / инженерному решению"
+            onChange={(e) => {
+              setGeologyMaxOffset(e.target.value)
+              setGeologyCoverageVerified(false)
+            }}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Источник критерия геологического покрытия</span>
+          <input
+            className="input"
+            value={geologyCoverageSource}
+            placeholder="Программа ИГИ, раздел/страница или подтверждённое решение"
+            onChange={(e) => {
+              setGeologyCoverageSource(e.target.value)
+              setGeologyCoverageVerified(false)
+            }}
+          />
         </label>
         <label className="field">
           <span className="field-label">{t('project.geology.subsidence')}</span>
@@ -487,7 +560,35 @@ export function GeologySection({
           <input type="checkbox" checked={swelling} onChange={(e) => setSwelling(e.target.checked)} />
           <span>{t('project.geology.swelling')}</span>
         </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={freezingVerified}
+            disabled={!freezing.trim() || !freezingSource.trim()}
+            onChange={(e) => setFreezingVerified(e.target.checked)}
+          />
+          <span>Значение и источник проверены ответственным инженером</span>
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={geologyCoverageVerified}
+            disabled={!geologyMaxOffset.trim() || !geologyCoverageSource.trim()}
+            onChange={(e) => setGeologyCoverageVerified(e.target.checked)}
+          />
+          <span>Критерий привязки скважин к профилю проверен инженером</span>
+        </label>
       </div>
+      {!freezingVerified && (
+        <p className="notice warn">
+          Без значения, источника и явного подтверждения глубины промерзания профиль остаётся черновым, финальный выпуск блокируется.
+        </p>
+      )}
+      {!geologyCoverageVerified && (
+        <p className="notice warn">
+          Без подтверждённого допустимого удаления скважины от оси геологические колонки не включаются в финальный профиль.
+        </p>
+      )}
       <div className="section-actions">
         <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void saveSummary()}>
           {t('project.save')}

@@ -35,6 +35,7 @@ import { GravitySection } from './project/GravitySection'
 import { SituationSchemeSection } from './project/SituationSchemeSection'
 import { syncNormRegistry } from '../shared/norms'
 import { syncRegions } from '../shared/regions'
+import { formatAppError } from '../shared/errorFormatting'
 import { NormRegistrySection } from './project/NormRegistrySection'
 import { analyzeParcelViolations } from '@aquascheme/engine'
 import type { ViolationPipe } from '@aquascheme/engine'
@@ -195,7 +196,8 @@ export function ProjectPage() {
       }
       setDemoNotice('demoDone')
       return true
-    } catch {
+    } catch (error) {
+      setDemoFailures([`demo: ${formatAppError(error)}`])
       setDemoNotice('demoError')
       return false
     } finally {
@@ -458,6 +460,7 @@ export function ProjectPage() {
                 pipes={pipes}
                 normsDataset={datasets.normative}
                 geologyDataset={datasets.geology}
+                drainageDataset={datasets.drainage}
                 topographyDataset={datasets.topography}
                 constraintsDataset={datasets.route_constraints}
                 routeAuditDataset={datasets.route_audit}
@@ -482,6 +485,7 @@ export function ProjectPage() {
               pipes={pipes}
               normsDataset={datasets.normative}
               geologyDataset={datasets.geology}
+              drainageDataset={datasets.drainage}
               topographyDataset={datasets.topography}
               constraintsDataset={datasets.route_constraints}
               routeAuditDataset={datasets.route_audit}

@@ -10,6 +10,7 @@ import {
   buildManholeMaterialSheetsDxf,
   buildNetworkDxf,
   buildPlanSheetSetDxf,
+  buildProtectiveGridDetailDxf,
   buildProfileSheetSetDxf,
   buildSewerGeneralDataDxf,
   buildSewerPlanDxf,
@@ -130,6 +131,7 @@ describe('picket profile sheet set (benchmark G-1)', () => {
       maxDepthM: 3.6,
       outletInvertElevationM: 348,
       totalLengthM: 1600,
+      pipeIds: stations.slice(1).map((_, index) => `P${index}`),
     }
     const sheets = buildProfileSheetSetDxf('Тестовый коллектор', profile, 'storm', 850, [{
       id: 'X-1',
@@ -409,6 +411,43 @@ describe('parameter-driven manhole DXF sheets', () => {
     expect(sheets[0].dxf).toContain('TEST-WELL')
     expect(sheets[0].dxf).toContain('Кольцо 3 шт')
     expect(sheets[0].dxf).not.toContain('уточняется')
+  })
+
+  it('draws a protective grid only from the confirmed product dimensions', () => {
+    const dxf = buildProtectiveGridDetailDxf('Synthetic project', {
+      quantity: 2,
+      overallWidthMm: 900,
+      overallHeightMm: 700,
+      barSpacingMm: 100,
+      frameProfile: 'angle profile 50x5',
+      barProfile: 'round bar 12',
+      material: 'structural steel',
+      coating: 'approved coating system',
+      fixing: 'four anchored hinges',
+      source: 'approved product card PG-01',
+      verified: true,
+    })
+    expect(dxf).toContain('900×700')
+    expect(dxf).toContain('шаг стержней: 100')
+    expect(dxf).toContain('angle profile 50x5')
+    expect(dxf).toContain('approved product card PG-01')
+    expect(dxf).not.toContain('Размеры по месту')
+  })
+
+  it('rejects an unverified protective-grid product card', () => {
+    expect(() => buildProtectiveGridDetailDxf('Synthetic project', {
+      quantity: 1,
+      overallWidthMm: 900,
+      overallHeightMm: 700,
+      barSpacingMm: 100,
+      frameProfile: 'frame',
+      barProfile: 'bar',
+      material: 'steel',
+      coating: 'coating',
+      fixing: 'fixing',
+      source: 'draft card',
+      verified: false,
+    })).toThrow('не подтверждена')
   })
 })
 

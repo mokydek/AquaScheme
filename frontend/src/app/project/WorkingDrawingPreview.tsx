@@ -48,7 +48,7 @@ function statusText(status: WorkingDrawingSheet['status']): string {
   return {
     BLOCKED: 'ВЫПУСК ЗАБЛОКИРОВАН',
     PRELIMINARY: 'ПРЕДВАРИТЕЛЬНО',
-    CALCULATED: 'РАССЧИТАНО',
+    CALCULATED: 'ЧЕРНОВИК · РАССЧИТАНО',
     VERIFIED: 'ПРОВЕРЕНО',
     STALE: 'ТРЕБУЕТ ПЕРЕСЧЁТА',
   }[status]
@@ -72,7 +72,7 @@ function DrawingFrame({ sheet, children, showFrame = true }: { sheet: WorkingDra
         <text x="1126" y="758" textAnchor="middle" fontSize="9">{sheet.status}</text>
       </>}
       {children}
-      {sheet.status !== 'VERIFIED' && sheet.status !== 'CALCULATED' && (
+      {sheet.status !== 'VERIFIED' && (
         <text
           x="590"
           y="400"
@@ -177,6 +177,76 @@ function PlanPreview({
   )
 }
 
+function NetworkPlanPreview({
+  sheet,
+  drawingSet,
+  surveyPoints,
+  showTopography,
+  showFrame,
+  constraints,
+}: {
+  sheet: WorkingDrawingSheet
+  drawingSet: WorkingDrawingSet
+  surveyPoints: SurveyPoint[]
+  showTopography: boolean
+  showFrame: boolean
+  constraints?: RouteConstraintInput | null
+}) {
+  const networkPoints = drawingSet.networkPaths.flatMap((path) => path.points)
+  if (networkPoints.length < 2) {
+    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии сети</text></DrawingFrame>
+  }
+  const contextPoints = [
+    ...(constraints?.hardObstacleRings ?? []).flat(),
+    ...(constraints?.waterRings ?? []).flat(),
+    ...(constraints?.corridorRings ?? []).flat(),
+    ...(constraints?.roadLines ?? []).flatMap((line) => line.points),
+    ...(constraints?.waterLines ?? []).flatMap((line) => line.points),
+    ...(constraints?.utilityLines ?? []).flatMap((line) => line.points),
+    ...(constraints?.redLines ?? []).flatMap((line) => line.points),
+  ]
+  const allPoints = [...networkPoints, ...contextPoints]
+  const rawMinX = Math.min(...allPoints.map((point) => point.x))
+  const rawMaxX = Math.max(...allPoints.map((point) => point.x))
+  const rawMinY = Math.min(...allPoints.map((point) => point.y))
+  const rawMaxY = Math.max(...allPoints.map((point) => point.y))
+  const margin = Math.max(Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY) * 0.04, 10)
+  const minX = rawMinX - margin
+  const maxX = rawMaxX + margin
+  const minY = rawMinY - margin
+  const maxY = rawMaxY + margin
+  const content = { x: 55, y: 70, width: 1080, height: 590 }
+  const scale = Math.min(content.width / Math.max(maxX - minX, 1), content.height / Math.max(maxY - minY, 1))
+  const x = (value: number) => content.x + (value - minX) * scale
+  const y = (value: number) => content.y + content.height - (value - minY) * scale
+  const linePoints = (points: Array<{ x: number; y: number }>) => points.map((point) => `${x(point.x)},${y(point.y)}`).join(' ')
+  const topo = surveyPoints.filter((point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY)
+  const stride = Math.max(1, Math.ceil(topo.length / 450))
+  return (
+    <DrawingFrame sheet={sheet} showFrame={showFrame}>
+      <defs><clipPath id={`clip-${sheet.id}`}><rect x={content.x} y={content.y} width={content.width} height={content.height} /></clipPath></defs>
+      <text x="55" y="48" fontSize="17" fontWeight="700">{sheet.title}</text>
+      <g clipPath={`url(#clip-${sheet.id})`}>
+        {(constraints?.hardObstacleRings ?? []).map((ring, index) => <polygon key={`building-${index}`} points={linePoints(ring)} fill="#d7d7d7" stroke="#555" />)}
+        {(constraints?.waterRings ?? []).map((ring, index) => <polygon key={`water-ring-${index}`} points={linePoints(ring)} fill="#d8f1f8" stroke="#2685b5" />)}
+        {(constraints?.corridorRings ?? []).map((ring, index) => <polygon key={`corridor-${index}`} points={linePoints(ring)} fill="none" stroke="#d33232" strokeWidth="1.5" strokeDasharray="8 5" />)}
+        {(constraints?.roadLines ?? []).map((line, index) => <polyline key={`road-${index}`} points={linePoints(line.points)} fill="none" stroke="#8b734f" strokeWidth="3" />)}
+        {(constraints?.waterLines ?? []).map((line, index) => <polyline key={`water-${index}`} points={linePoints(line.points)} fill="none" stroke="#2685b5" strokeWidth="2" />)}
+        {(constraints?.utilityLines ?? []).map((line, index) => <polyline key={`utility-${index}`} points={linePoints(line.points)} fill="none" stroke="#9b2c8c" strokeWidth="1.5" strokeDasharray="6 4" />)}
+        {(constraints?.redLines ?? []).map((line, index) => <polyline key={`red-${index}`} points={linePoints(line.points)} fill="none" stroke="#d22" strokeWidth="2" />)}
+        {showTopography && topo.filter((_, index) => index % stride === 0).map((point, index) => (
+          <circle key={`${point.x}-${point.y}-${index}`} cx={x(point.x)} cy={y(point.y)} r="1" fill="#777" />
+        ))}
+        {drawingSet.networkPaths.map((path) => (
+          <polyline key={path.pipeId} points={linePoints(path.points)} fill="none" stroke="#1746b5" strokeWidth="5" strokeLinejoin="round" />
+        ))}
+      </g>
+      <rect x={content.x} y={content.y} width={content.width} height={content.height} fill="none" stroke="#222" />
+      <text x="62" y="680" fontSize="9">Показаны все {drawingSet.networkPaths.length} полилиний сети, включая ветви вне главного профиля.</text>
+    </DrawingFrame>
+  )
+}
+
 function ProfilePreview({ sheet, profile, showFrame }: { sheet: WorkingDrawingSheet; profile: GravityProfile | null; showFrame: boolean }) {
   const stations = (profile?.stations ?? []).filter((station) => !sheet.interval
     || (station.chainageM >= sheet.interval.fromM - 1e-9 && station.chainageM <= sheet.interval.toM + 1e-9))
@@ -222,11 +292,9 @@ function ProfilePreview({ sheet, profile, showFrame }: { sheet: WorkingDrawingSh
   )
 }
 
-function MaterialPreview({ sheet, drawingSet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; drawingSet: WorkingDrawingSet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
-  const materialSheets = drawingSet.sheets.filter((item) => item.kind === 'material_table')
-  const part = Math.max(0, materialSheets.findIndex((item) => item.id === sheet.id))
-  const rowsPerSheet = Math.max(1, Math.ceil((schedule?.manholes.length ?? 0) / Math.max(materialSheets.length, 1)))
-  const rows = schedule?.manholes.slice(part * rowsPerSheet, (part + 1) * rowsPerSheet) ?? []
+function MaterialPreview({ sheet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
+  const range = sheet.dataRange ?? { start: 0, end: schedule?.manholes.length ?? 0, total: schedule?.manholes.length ?? 0 }
+  const rows = schedule?.manholes.slice(range.start, range.end) ?? []
   const constructionByLabel = new Map(manholeConstructions.map((item) => [item.manholeLabel, item]))
   return (
     <DrawingFrame sheet={sheet} showFrame={showFrame}>
@@ -244,7 +312,42 @@ function MaterialPreview({ sheet, drawingSet, schedule, manholeConstructions, sh
   )
 }
 
-function DetailPreview({ sheet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
+function DetailPreview({ sheet, drawingSet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; drawingSet: WorkingDrawingSet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
+  if (sheet.variant === 'protective_grid') {
+    const design = drawingSet.protectiveGridDesign
+    if (!design) {
+      return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="55" y="80" fontSize="18">Нет подтверждённых параметров защитной сетки.</text></DrawingFrame>
+    }
+    const drawingWidth = Math.min(620, 340 * design.overallWidthMm / Math.max(design.overallHeightMm, 1))
+    const drawingHeight = Math.min(340, 620 * design.overallHeightMm / Math.max(design.overallWidthMm, 1))
+    const x0 = 100
+    const y0 = 125
+    const verticalBars = Math.max(0, Math.floor(design.overallWidthMm / design.barSpacingMm) - 1)
+    const horizontalBars = Math.max(0, Math.floor(design.overallHeightMm / design.barSpacingMm) - 1)
+    return (
+      <DrawingFrame sheet={sheet} showFrame={showFrame}>
+        <text x="55" y="55" fontSize="17" fontWeight="700">{sheet.title}</text>
+        <text x="55" y="82" fontSize="10">Чертёж сформирован из подтверждённой карточки изделия; размеры эталонного проекта не используются.</text>
+        <rect x={x0} y={y0} width={drawingWidth} height={drawingHeight} fill="none" stroke="#111" strokeWidth="4" />
+        {Array.from({ length: verticalBars }, (_, index) => {
+          const x = x0 + (index + 1) * design.barSpacingMm / design.overallWidthMm * drawingWidth
+          return <line key={`v-${index}`} x1={x} y1={y0} x2={x} y2={y0 + drawingHeight} stroke="#111" />
+        })}
+        {Array.from({ length: horizontalBars }, (_, index) => {
+          const y = y0 + (index + 1) * design.barSpacingMm / design.overallHeightMm * drawingHeight
+          return <line key={`h-${index}`} x1={x0} y1={y} x2={x0 + drawingWidth} y2={y} stroke="#111" />
+        })}
+        <text x={x0} y={y0 + drawingHeight + 28} fontSize="12">Габарит {design.overallWidthMm}×{design.overallHeightMm} мм; шаг {design.barSpacingMm} мм</text>
+        <text x="770" y="145" fontSize="11">Количество: {design.quantity.toFixed(3)} шт.</text>
+        <text x="770" y="175" fontSize="11">Рама: {design.frameProfile}</text>
+        <text x="770" y="205" fontSize="11">Стержни: {design.barProfile}</text>
+        <text x="770" y="235" fontSize="11">Материал: {design.material}</text>
+        <text x="770" y="265" fontSize="11">Покрытие: {design.coating}</text>
+        <text x="770" y="295" fontSize="11">Крепление: {design.fixing}</text>
+        <text x="770" y="325" fontSize="9">Источник: {design.source}</text>
+      </DrawingFrame>
+    )
+  }
   const isCrossingSheet = sheet.id.startsWith('crossings-')
   const rows = isCrossingSheet
     ? sheet.sources.map((source) => [source.label, source.detail ?? '—', source.available ? 'есть' : 'нет', source.verified ? 'проверено' : 'не проверено'])
@@ -270,17 +373,35 @@ function DetailPreview({ sheet, schedule, manholeConstructions, showFrame }: { s
   )
 }
 
-function SpecificationPreview({ sheet, schedule, showFrame }: { sheet: WorkingDrawingSheet; schedule: SewerSchedule | null; showFrame: boolean }) {
-  const rows = schedule?.pipes ?? []
+function SpecificationPreview({ sheet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
+  const componentTotals = new Map<string, { name: string; code: string; unit: string; quantity: number }>()
+  for (const construction of manholeConstructions) {
+    for (const component of construction.components) {
+      const key = `${component.catalogCode ?? ''}\u0000${component.name}\u0000${component.unit}`
+      const current = componentTotals.get(key)
+      componentTotals.set(key, {
+        name: component.name,
+        code: component.catalogCode ?? '—',
+        unit: component.unit,
+        quantity: (current?.quantity ?? 0) + component.quantity,
+      })
+    }
+  }
+  const allRows: Array<[string, string, string, string]> = [
+    ...(schedule?.pipes ?? []).map((row): [string, string, string, string] => [row.designation, row.agskCode || '—', 'м', row.lengthM.toFixed(2)]),
+    ...[...componentTotals.values()].map((row): [string, string, string, string] => [row.name, row.code, row.unit, row.quantity.toFixed(3)]),
+  ]
+  const range = sheet.dataRange ?? { start: 0, end: allRows.length, total: allRows.length }
+  const rows = allRows.slice(range.start, range.end)
   return (
     <DrawingFrame sheet={sheet} showFrame={showFrame}>
       <text x="55" y="55" fontSize="17" fontWeight="700">{sheet.title}</text>
       <text x="55" y="82" fontSize="10">Ведомость пересчитывается из геометрии сети, гидравлики и активных параметрических каталогов.</text>
       <g transform="translate(55 110)">
-        {['Позиция', 'Наименование', 'Ø, мм', 'Количество / длина'].map((label, index) => (
+        {['Позиция', 'Наименование', 'Код', 'Ед. / количество'].map((label, index) => (
           <g key={label}><rect x={index * 255} y="0" width="255" height="34" fill="#f2f2f2" stroke="#111" /><text x={index * 255 + 8} y="22" fontSize="10" fontWeight="700">{label}</text></g>
         ))}
-        {rows.slice(0, 14).map((row, rowIndex) => [rowIndex + 1, row.designation, row.diameterMm, `${row.lengthM.toFixed(2)} м`].map((value, colIndex) => (
+        {rows.map((row, rowIndex) => [range.start + rowIndex + 1, row[0], row[1], `${row[2]} / ${row[3]}`].map((value, colIndex) => (
           <g key={`${rowIndex}-${colIndex}`}><rect x={colIndex * 255} y={34 + rowIndex * 34} width="255" height="34" fill="#fff" stroke="#111" /><text x={colIndex * 255 + 8} y={56 + rowIndex * 34} fontSize="9">{value}</text></g>
         )))}
       </g>
@@ -310,8 +431,9 @@ export function WorkingDrawingPreview({
   manholeConstructions: SelectedManholeConstruction[]
 }) {
   if (sheet.kind === 'plan') return <PlanPreview sheet={sheet} drawingSet={drawingSet} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
+  if (sheet.kind === 'network_plan') return <NetworkPlanPreview sheet={sheet} drawingSet={drawingSet} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
   if (sheet.kind === 'profile') return <ProfilePreview sheet={sheet} profile={profile} showFrame={showFrame} />
-  if (sheet.kind === 'material_table') return <MaterialPreview sheet={sheet} drawingSet={drawingSet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
-  if (sheet.kind === 'specification') return <SpecificationPreview sheet={sheet} schedule={schedule} showFrame={showFrame} />
-  return <DetailPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
+  if (sheet.kind === 'material_table') return <MaterialPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
+  if (sheet.kind === 'specification') return <SpecificationPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
+  return <DetailPreview sheet={sheet} drawingSet={drawingSet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
 }

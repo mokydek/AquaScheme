@@ -297,7 +297,7 @@ export async function generateProjectAlbumPdf(input: ProjectAlbumInput): Promise
   return renderPdfDoc(buildProjectAlbumDoc(input))
 }
 
-/** One vector working sheet; BLOCKED/PRELIMINARY/STALE sheets are refused. */
+/** One final vector working sheet; every source and check must be VERIFIED. */
 export async function generateProjectSheetPdf(input: ProjectAlbumInput, sheetId: string): Promise<Blob> {
   return renderPdfDoc(buildProjectSheetDoc(input, sheetId))
 }
@@ -306,9 +306,9 @@ export async function generateProjectSheetPdf(input: ProjectAlbumInput, sheetId:
 export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, sheetId: string): Promise<string> {
   const sheet = input.drawingSet.sheets.find((item) => item.id === sheetId)
   if (!sheet) throw new Error('Лист не найден в текущем реестре.')
-  if (sheet.status !== 'CALCULATED' && sheet.status !== 'VERIFIED') {
-    throw new Error(`Лист ${sheet.sheetNumber} нельзя выпустить со статусом ${sheet.status}.`)
-  }
+  if (sheet.status !== 'VERIFIED') throw new Error(
+    `Лист ${sheet.sheetNumber} нельзя выпустить как отдельный финальный документ со статусом ${sheet.status}.`,
+  )
   const dxf = await import('@aquascheme/engine/dxf')
   if (sheet.kind === 'plan') {
     const sheets = dxf.buildPlanSheetSetDxf({
@@ -318,17 +318,29 @@ export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, s
       mainPath: input.drawingSet.mainPath,
       buildingLabels: input.buildingLabels,
       system: input.system,
+      targetPerSheetM: input.drawingSet.layoutPolicy.planLengthM,
+      marginM: input.drawingSet.layoutPolicy.planMarginM,
+      stationChainagesM: input.profile.stations.map((station) => station.chainageM),
     })
     const index = input.drawingSet.sheets.filter((item) => item.kind === 'plan').findIndex((item) => item.id === sheet.id)
     if (!sheets[index]) throw new Error('Геометрия нарезки DXF не совпала с реестром планов.')
     return sheets[index].dxf
+  }
+  if (sheet.kind === 'network_plan') {
+    return dxf.buildSewerPlanDxf({
+      projectName: input.projectName,
+      network: input.network,
+      pipeDiameterMm: input.pipeDiameterMm,
+      buildingLabels: input.buildingLabels,
+      sheetTitle: sheet.title,
+    })
   }
   if (sheet.kind === 'profile') {
     const sheets = dxf.buildProfileSheetSetDxf(
       input.projectName,
       input.profile,
       input.system,
-      850,
+      input.drawingSet.layoutPolicy.profileLengthM,
       input.constraints?.crossings ?? [],
     )
     const index = input.drawingSet.sheets.filter((item) => item.kind === 'profile').findIndex((item) => item.id === sheet.id)
@@ -336,16 +348,28 @@ export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, s
     return sheets[index].dxf
   }
   if (sheet.kind === 'material_table') {
-    const sheets = dxf.buildManholeMaterialSheetsDxf(input.projectName, input.schedule, input.manholeConstructions, 27)
+    const sheets = dxf.buildManholeMaterialSheetsDxf(
+      input.projectName,
+      input.schedule,
+      input.manholeConstructions,
+      input.drawingSet.layoutPolicy.materialRowsPerSheet,
+    )
     const index = input.drawingSet.sheets.filter((item) => item.kind === 'material_table').findIndex((item) => item.id === sheet.id)
     if (!sheets[index]) throw new Error('Ведомость DXF не совпала с реестром листов.')
     return sheets[index].dxf
   }
   if (sheet.kind === 'specification') {
-    return dxf.buildWorkingDrawingSpecificationDxf(input.projectName, input.schedule, input.manholeConstructions)
+    return dxf.buildWorkingDrawingSpecificationDxf(
+      input.projectName,
+      input.schedule,
+      input.manholeConstructions,
+      sheet.dataRange,
+    )
   }
-  if (sheet.id.startsWith('structures-')) {
-    return dxf.buildManholeConstructionDetailDxf(input.projectName, input.schedule, input.manholeConstructions)
+  if (sheet.variant === 'protective_grid') {
+    const design = input.drawingSet.protectiveGridDesign
+    if (!design) throw new Error('Конструкция защитной сетки отсутствует в реестре листов.')
+    return dxf.buildProtectiveGridDetailDxf(input.projectName, design)
   }
   if (sheet.id.startsWith('crossings-')) {
     const index = input.drawingSet.sheets.filter((item) => item.id.startsWith('crossings-')).findIndex((item) => item.id === sheet.id)
@@ -373,15 +397,29 @@ export async function generateWorkingDrawingSetDxfs(input: ProjectAlbumInput): P
     mainPath: input.drawingSet.mainPath,
     buildingLabels: input.buildingLabels,
     system: input.system,
+    targetPerSheetM: input.drawingSet.layoutPolicy.planLengthM,
+    marginM: input.drawingSet.layoutPolicy.planMarginM,
+    stationChainagesM: input.profile.stations.map((station) => station.chainageM),
   })
   const profileFiles = dxf.buildProfileSheetSetDxf(
     input.projectName,
     input.profile,
     input.system,
-    850,
+    input.drawingSet.layoutPolicy.profileLengthM,
     input.constraints?.crossings ?? [],
   )
-  const materialFiles = dxf.buildManholeMaterialSheetsDxf(input.projectName, input.schedule, input.manholeConstructions, 27)
+  const materialFiles = dxf.buildManholeMaterialSheetsDxf(
+    input.projectName,
+    input.schedule,
+    input.manholeConstructions,
+    input.drawingSet.layoutPolicy.materialRowsPerSheet,
+  )
+  const expectedPlans = input.drawingSet.sheets.filter((sheet) => sheet.kind === 'plan').length
+  const expectedProfiles = input.drawingSet.sheets.filter((sheet) => sheet.kind === 'profile').length
+  const expectedMaterials = input.drawingSet.sheets.filter((sheet) => sheet.kind === 'material_table').length
+  if (planFiles.length !== expectedPlans) throw new Error(`Реестр планов устарел: ${expectedPlans} листов, генератор создал ${planFiles.length}.`)
+  if (profileFiles.length !== expectedProfiles) throw new Error(`Реестр профилей устарел: ${expectedProfiles} листов, генератор создал ${profileFiles.length}.`)
+  if (materialFiles.length !== expectedMaterials) throw new Error(`Реестр ведомостей устарел: ${expectedMaterials} листов, генератор создал ${materialFiles.length}.`)
   let planIndex = 0
   let profileIndex = 0
   let materialIndex = 0
@@ -389,10 +427,26 @@ export async function generateWorkingDrawingSetDxfs(input: ProjectAlbumInput): P
   return input.drawingSet.sheets.map((sheet) => {
     let drawing: string | undefined
     if (sheet.kind === 'plan') drawing = planFiles[planIndex++]?.dxf
+    else if (sheet.kind === 'network_plan') drawing = dxf.buildSewerPlanDxf({
+      projectName: input.projectName,
+      network: input.network,
+      pipeDiameterMm: input.pipeDiameterMm,
+      buildingLabels: input.buildingLabels,
+      sheetTitle: sheet.title,
+    })
     else if (sheet.kind === 'profile') drawing = profileFiles[profileIndex++]?.dxf
     else if (sheet.kind === 'material_table') drawing = materialFiles[materialIndex++]?.dxf
-    else if (sheet.kind === 'specification') drawing = dxf.buildWorkingDrawingSpecificationDxf(input.projectName, input.schedule, input.manholeConstructions)
-    else if (sheet.id.startsWith('structures-')) drawing = dxf.buildManholeConstructionDetailDxf(input.projectName, input.schedule, input.manholeConstructions)
+    else if (sheet.kind === 'specification') drawing = dxf.buildWorkingDrawingSpecificationDxf(
+      input.projectName,
+      input.schedule,
+      input.manholeConstructions,
+      sheet.dataRange,
+    )
+    else if (sheet.variant === 'protective_grid') {
+      const design = input.drawingSet.protectiveGridDesign
+      if (!design) throw new Error('Конструкция защитной сетки отсутствует в реестре листов.')
+      drawing = dxf.buildProtectiveGridDetailDxf(input.projectName, design)
+    }
     else if (sheet.id.startsWith('crossings-')) {
       const crossings = input.constraints?.crossings?.slice(crossingIndex * 8, crossingIndex * 8 + 8) ?? []
       crossingIndex++

@@ -99,6 +99,17 @@ describe('gravity segment design (СН РК 4.01-03-2013*)', () => {
     }
   })
 
+  it('does not silently use the P=0.33 storm velocity exception when P is absent', () => {
+    const regular = designGravitySegment(5, { system: 'storm', level: 'street' })
+    const exceptional = designGravitySegment(5, {
+      system: 'storm',
+      level: 'street',
+      stormRainPeriodYears: 0.33,
+    })
+    expect(regular.velocityMs).toBeGreaterThanOrEqual(0.7)
+    expect(exceptional.velocityMs).toBeGreaterThanOrEqual(0.6)
+  })
+
   it('never invents a diameter when the active catalogue has no usable position', () => {
     const empty = designGravitySegment(20, { system: 'storm', level: 'street', allowedDiametersMm: [] })
     expect(empty.diameterMm).toBe(0)
@@ -139,12 +150,36 @@ describe('network flow accumulation', () => {
       network,
       buildingFlowLps: new Map([['b1', 3], ['b2', 2]]),
       system: 'sewer',
+      freezingDepthM: 1.5,
     })
     expect(result.pipes).toHaveLength(3)
     expect(result.outletFlowLps).toBeCloseTo(5, 6)
     const trunk = result.pipes.find((p) => p.id === 'p_sj')
     expect(trunk?.diameterMm).toBeGreaterThanOrEqual(200)
     expect(result.profile).not.toBeNull()
+  })
+
+  it('sums separate gravity branches that enter the outlet directly', () => {
+    const branched: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'B1', kind: 'building', x: 10, y: 0, groundElevation: 101, buildingId: 'b1' },
+        { id: 'B2', kind: 'building', x: 0, y: 10, groundElevation: 101, buildingId: 'b2' },
+      ],
+      pipes: [
+        { id: 'p1', kind: 'main', fromNode: 'S', toNode: 'B1', lengthM: 10 },
+        { id: 'p2', kind: 'main', fromNode: 'S', toNode: 'B2', lengthM: 10 },
+      ],
+      totalLengthM: 20,
+    }
+    const result = solveGravityNetwork({
+      network: branched,
+      buildingFlowLps: new Map([['b1', 3], ['b2', 2]]),
+      system: 'sewer',
+      freezingDepthM: 1.5,
+    })
+    expect(result.outletFlowLps).toBeCloseTo(5, 6)
+    expect(result.profile?.pipeIds).toHaveLength(1)
   })
 })
 
@@ -182,7 +217,7 @@ describe('longitudinal profile (invert levels, depths — п. 7.2.4)', () => {
     expect(outlet.nodeId).toBe('S')
     expect(outlet.depthM).toBeGreaterThan(head.depthM)
     expect(profile.maxDepthM).toBeGreaterThanOrEqual(outlet.depthM - 1e-9)
-    // Min cover to top: freezing 1.5 − 0.3 = 1.2, plus D; head depth ≈ 1.2 + D/1000.
+    // Frost controls here: depth to invert is freezing 1.5 − 0.3 = 1.2 m.
     expect(head.depthM).toBeGreaterThanOrEqual(1.2)
     // Invert falls monotonically from head to outlet.
     for (let i = 1; i < profile.stations.length; i++) {
@@ -199,6 +234,33 @@ describe('longitudinal profile (invert levels, depths — п. 7.2.4)', () => {
       totalLengthM: 0,
     }
     expect(computeGravityProfile({ network: noOutlet, design: new Map(), freezingDepthM: 1.5 })).toBeNull()
+  })
+
+  it('does not fabricate a longitudinal profile when freezing depth is omitted', () => {
+    const result = solveGravityNetwork({
+      network: flat,
+      buildingFlowLps: new Map([['b1', 6]]),
+      system: 'sewer',
+    })
+    expect(result.profile).toBeNull()
+  })
+
+  it('converts the 0.7 m crown cover to invert depth exactly once for a large pipe', () => {
+    const twoNode: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'H', kind: 'building', x: 100, y: 0, groundElevation: 100, buildingId: 'b1' },
+      ],
+      pipes: [{ id: 'p', kind: 'main', fromNode: 'S', toNode: 'H', lengthM: 100 }],
+      totalLengthM: 100,
+    }
+    const profile = computeGravityProfile({
+      network: twoNode,
+      design: new Map([['p', { diameterMm: 1200, slope: 0 }]]),
+      freezingDepthM: 1.8,
+    })!
+    expect(profile.stations[0].depthM).toBe(1.9)
+    expect(profile.stations[0].depthM - profile.stations[0].diameterMm / 1000).toBeCloseTo(0.7, 9)
   })
 })
 

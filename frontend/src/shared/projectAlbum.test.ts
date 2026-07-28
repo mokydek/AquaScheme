@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWorkingDrawingSet } from '@aquascheme/engine'
+import { buildWorkingDrawingSet, workingDrawingSpecificationItemCount } from '@aquascheme/engine'
 import type { GravityProfile, SelectedManholeConstruction, SewerSchedule, TracedNetwork } from '@aquascheme/engine'
 import { generateProjectAlbumPdf, generateWorkingDrawingSetDxfs, generateWorkingDrawingSheetDxf } from './exporters'
 import { buildProjectAlbumDoc } from './projectAlbum'
@@ -24,6 +24,7 @@ const profile: GravityProfile = {
   maxDepthM: 3,
   outletInvertElevationM: 95,
   totalLengthM: 670,
+  pipeIds: ['AB'],
 }
 
 const schedule: SewerSchedule = {
@@ -50,16 +51,26 @@ function drawingSet(routeStatus: 'calculated' | 'blocked' = 'calculated') {
     catalogReady: true,
     catalogFingerprint: ['800', '1000'],
     hydraulicsReady: true,
+    stormRunoff: { available: true, verified: true, source: 'synthetic catchment calculation', detail: '1 catchment' },
+    freezingDepth: { valueM: 1.8, status: 'verified', source: 'synthetic verified fixture' },
     utilityFeatureCount: 0,
+    deliverableRequirements: {
+      crossingDetailSheets: false,
+      protectiveGridDetail: false,
+      source: 'synthetic approved deliverable register',
+      verified: true,
+    },
     spatialBoreholeCount: 1,
+    geologyCoverage: { maxOffsetM: 100, status: 'verified', source: 'synthetic verified corridor' },
     geologyFingerprint: [{ x: 300, y: 50 }],
     manholeCatalogReady: true,
+    specificationItemCount: workingDrawingSpecificationItemCount(schedule, manholeConstructions),
     normsVerified: true,
   })
 }
 
 describe('project working-drawing album', () => {
-  it('uses the dynamic register and produces no fixed 61-page/reference content', () => {
+  it('uses the dynamic register without embedding reference-album content', () => {
     const set = drawingSet()
     const doc = buildProjectAlbumDoc({
       projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
@@ -73,16 +84,21 @@ describe('project working-drawing album', () => {
         label: 'BH-1', x: 300, y: 50, mouthElevationM: 99,
         layers: [{ igeCode: 'G1', topDepthM: 0, bottomDepthM: 4 }], water: { depthM: 2.5 },
       }],
+      geologyMaxOffsetM: 100,
     }) as { content: unknown[]; info: { subject: string } }
-    expect(doc.content).toHaveLength(set.sheets.length + 2)
-    expect(doc.info.subject).toContain(`${set.sheets.length + 2} листов`)
+    expect(doc.content).toHaveLength(set.sheets.length + 3)
+    expect(doc.info.subject).toContain(`${set.sheets.length + 3} листов`)
     const serialized = JSON.stringify(doc.content)
-    expect(serialized).not.toContain('61 лист')
+    expect(serialized).not.toContain('R01')
     expect(serialized).not.toContain('фиктив')
     expect(serialized).toContain('2.99‰ / 670.00 м')
     expect(serialized).toContain('X-1')
     expect(serialized).toContain('BH-1')
     expect(serialized).toContain('ИГЭ-G1')
+    expect(serialized).toContain('Общие данные')
+    expect(serialized).toContain('Точки топографической съёмки')
+    expect(serialized).toContain('Хэш расчётных исходных данных')
+    expect(serialized).toContain('Начало трассы')
   })
 
   it('refuses to issue an album when any required source is blocked', () => {
@@ -107,6 +123,7 @@ describe('project working-drawing album', () => {
         label: 'BH-1', x: 300, y: 50, mouthElevationM: 99,
         layers: [{ igeCode: 'G1', topDepthM: 0, bottomDepthM: 4 }], water: { depthM: 2.5 },
       }],
+      geologyMaxOffsetM: 100,
     })
     const auditPath = process.env.AQUASCHEME_PDF_AUDIT_PATH
     if (auditPath) {
@@ -115,7 +132,7 @@ describe('project working-drawing album', () => {
     }
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
     const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise
-    expect(pdf.numPages).toBe(set.sheets.length + 2)
+    expect(pdf.numPages).toBe(set.sheets.length + 3)
     let albumText = ''
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       const page = await pdf.getPage(pageNumber)
@@ -126,7 +143,10 @@ describe('project working-drawing album', () => {
     }
     expect(albumText).toContain('X-1')
     expect(albumText).toContain('BH-1')
-    expect(albumText.replace(/\s+/g, '')).toContain('2.99‰/670.00м')
+    const normalizedAlbumText = albumText.replace(/\s+/g, '')
+    expect(normalizedAlbumText).toContain('2.99‰/670.00м')
+    expect(normalizedAlbumText).toContain('Общиеданные')
+    expect(normalizedAlbumText).toContain('Точкитопографическойсъёмки')
     const structuresPage = await pdf.getPage(pdf.numPages - 1)
     const structuresText = (await structuresPage.getTextContent()).items
       .map((item) => 'str' in item ? item.str : '')
@@ -135,6 +155,37 @@ describe('project working-drawing album', () => {
     expect(structuresText).toContain('ПК0')
     expect(structuresText.replace(/\s+/g, '')).toContain('TEST-K-1')
   }, 30_000)
+
+  it('includes only layered boreholes inside an explicitly confirmed profile corridor', () => {
+    const set = drawingSet()
+    const boreholes = [
+      {
+        label: 'BH-NEAR', x: 300, y: 50, mouthElevationM: 99,
+        layers: [{ igeCode: 'NEAR', topDepthM: 0, bottomDepthM: 4 }], water: { depthM: 2.5 },
+      },
+      {
+        label: 'BH-FAR', x: 300, y: 5000, mouthElevationM: 99,
+        layers: [{ igeCode: 'FAR', topDepthM: 0, bottomDepthM: 4 }], water: { depthM: 2.5 },
+      },
+    ]
+    const baseInput = {
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm' as const, network, profile, schedule,
+      drawingSet: set, surveyPoints, manholeConstructions, pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      boreholes,
+    }
+
+    const confirmed = JSON.stringify(buildProjectAlbumDoc({ ...baseInput, geologyMaxOffsetM: 100 }))
+    expect(confirmed).toContain('BH-NEAR')
+    expect(confirmed).toContain('ИГЭ-NEAR')
+    expect(confirmed).not.toContain('BH-FAR')
+    expect(confirmed).not.toContain('ИГЭ-FAR')
+    expect(confirmed).toContain('"text":"Скважины с координатами"},{"text":"1"')
+
+    const unconfirmed = JSON.stringify(buildProjectAlbumDoc(baseInput))
+    expect(unconfirmed).not.toContain('BH-NEAR')
+    expect(unconfirmed).not.toContain('BH-FAR')
+    expect(unconfirmed).toContain('"text":"Скважины с координатами"},{"text":"0"')
+  })
 
   it('exports every calculated register sheet as an independent DXF', async () => {
     const set = drawingSet()

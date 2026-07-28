@@ -1,0 +1,44 @@
+name: Validate AquaScheme
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Install converter dependencies
+        run: npm ci --prefix converter
+
+      - name: Run all automated tests
+        run: npm run test:all
+
+      - name: Type-check application and engine
+        run: npm run typecheck
+
+      - name: Build production frontend
+        run: npm run build
+
+      - name: Explain private acceptance gate
+        run: |
+          echo "The 61-page benchmark requires the private reference and generated project inputs."
+          echo "Run npm run benchmark:required on the controlled acceptance runner before production approval."
