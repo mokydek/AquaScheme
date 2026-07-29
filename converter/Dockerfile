@@ -46,6 +46,9 @@ COPY --chown=node:node src ./src
 
 ENV ODA_CONVERTER_PATH="xvfb-run -a ODAFileConverter"
 ENV NODE_ENV=production
+ENV ALLOWED_ORIGINS="https://aqua-scheme-theta.vercel.app"
+ENV ALLOWED_VERCEL_PREVIEWS="aqua-scheme:mokydeks-projects"
+ENV ALLOW_LOCALHOST=false
 ENV PORT=8080
 EXPOSE 8080
 USER node

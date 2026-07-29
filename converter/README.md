@@ -60,6 +60,9 @@ npm start   # http://localhost:8080/health
    - `MAX_CONCURRENT_CONVERSIONS=1` и `CONVERSION_REQUESTS_PER_MINUTE=6`
      ограничивают нагрузку на ODA. В production `/convert` также требует
      разрешённый browser `Origin`; health/ready остаются доступны мониторингу.
+   Docker-образ уже содержит безопасные значения для текущих доменов проекта:
+   `https://aqua-scheme-theta.vercel.app` и
+   `aqua-scheme:mokydeks-projects`. При смене домена переопределите их в Render.
 5. После изменения этих переменных выберите в Render **Save, rebuild, and
    deploy**, чтобы сервис собрал новый Docker-образ, а не перезапустил старый.
    В логе проверки пакета должна появиться строка `/tmp/oda.deb: OK`. Затем
