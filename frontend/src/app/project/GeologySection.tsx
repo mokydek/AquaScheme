@@ -60,6 +60,8 @@ export function GeologySection({
 }) {
   const { t } = useTranslation()
   const content = (dataset?.content ?? null) as GeologyContent | null
+  const fieldId = (field: string) => `geology-${projectId}-${field}`
+  const fieldName = (field: string) => `geology.${projectId}.${field}`
 
   const [busy, setBusy] = useState(false)
   const [issues, setIssues] = useState<GeologyIssue[]>([])
@@ -259,11 +261,28 @@ export function GeologySection({
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>
           {t('project.geology.template')}
         </button>
-        <input className="file-input" type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={(e) => void onFile(e)} />
+        <input
+          id={fieldId('table-file')}
+          name={fieldName('tableFile')}
+          className="file-input"
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          aria-label={`${t('project.geology.title')}: XLSX/CSV`}
+          disabled={busy}
+          onChange={(e) => void onFile(e)}
+        />
       </div>
       <div className="section-actions">
-        <label className="stat-line" style={{ marginTop: 0 }}>{t('project.geology.pdf.label')}</label>
-        <input className="file-input" type="file" accept=".pdf" disabled={busy || pdfTable !== null} onChange={(e) => void onPdf(e)} />
+        <label htmlFor={fieldId('pdf-file')} className="stat-line" style={{ marginTop: 0 }}>{t('project.geology.pdf.label')}</label>
+        <input
+          id={fieldId('pdf-file')}
+          name={fieldName('pdfFile')}
+          className="file-input"
+          type="file"
+          accept=".pdf"
+          disabled={busy || pdfTable !== null}
+          onChange={(e) => void onPdf(e)}
+        />
       </div>
 
       {uploadMessage && <p className="notice error">{uploadMessage}</p>}
@@ -472,7 +491,13 @@ export function GeologySection({
       <div className="form-grid">
         <label className="field">
           <span className="field-label">{t('project.geology.soil')}</span>
-          <select className="input" value={soilType} onChange={(e) => setSoilType(e.target.value as SoilType)}>
+          <select
+            id={fieldId('soil-type')}
+            name={fieldName('soilType')}
+            className="input"
+            value={soilType}
+            onChange={(e) => setSoilType(e.target.value as SoilType)}
+          >
             {(['sand', 'loam', 'clay', 'rock'] as const).map((soil) => (
               <option key={soil} value={soil}>
                 {t(`project.geology.soils.${soil}`)}
@@ -482,11 +507,24 @@ export function GeologySection({
         </label>
         <label className="field">
           <span className="field-label">{t('project.geology.groundwater')}</span>
-          <input className="input" inputMode="decimal" value={groundwater} onChange={(e) => setGroundwater(e.target.value)} />
+          <input
+            id={fieldId('groundwater-depth')}
+            name={fieldName('groundwaterDepthM')}
+            className="input"
+            inputMode="decimal"
+            value={groundwater}
+            onChange={(e) => setGroundwater(e.target.value)}
+          />
         </label>
         <label className="field">
           <span className="field-label">{t('project.geology.corrosivity')}</span>
-          <select className="input" value={corrosivity} onChange={(e) => setCorrosivity(e.target.value as Corrosivity)}>
+          <select
+            id={fieldId('corrosivity')}
+            name={fieldName('corrosivity')}
+            className="input"
+            value={corrosivity}
+            onChange={(e) => setCorrosivity(e.target.value as Corrosivity)}
+          >
             {(['low', 'medium', 'high'] as const).map((level) => (
               <option key={level} value={level}>
                 {t(`project.geology.corrosivityLevels.${level}`)}
@@ -497,6 +535,8 @@ export function GeologySection({
         <label className="field">
           <span className="field-label">{t('project.geology.freezing')}</span>
           <input
+            id={fieldId('freezing-depth')}
+            name={fieldName('freezingDepthM')}
             className="input"
             inputMode="decimal"
             value={freezing}
@@ -510,6 +550,8 @@ export function GeologySection({
         <label className="field">
           <span className="field-label">Источник глубины промерзания</span>
           <input
+            id={fieldId('freezing-source')}
+            name={fieldName('freezingDepthSource')}
             className="input"
             value={freezingSource}
             placeholder="Документ, раздел/страница или подтверждённая таблица"
@@ -522,6 +564,8 @@ export function GeologySection({
         <label className="field">
           <span className="field-label">Допустимое удаление скважины от оси, м</span>
           <input
+            id={fieldId('profile-max-offset')}
+            name={fieldName('profileGeologyMaxOffsetM')}
             className="input"
             inputMode="decimal"
             value={geologyMaxOffset}
@@ -535,6 +579,8 @@ export function GeologySection({
         <label className="field">
           <span className="field-label">Источник критерия геологического покрытия</span>
           <input
+            id={fieldId('profile-source')}
+            name={fieldName('profileGeologySource')}
             className="input"
             value={geologyCoverageSource}
             placeholder="Программа ИГИ, раздел/страница или подтверждённое решение"
@@ -546,22 +592,42 @@ export function GeologySection({
         </label>
         <label className="field">
           <span className="field-label">{t('project.geology.subsidence')}</span>
-          <select className="input" value={subsidence} onChange={(e) => setSubsidence(e.target.value as SubsidenceType)}>
+          <select
+            id={fieldId('subsidence-type')}
+            name={fieldName('subsidenceType')}
+            className="input"
+            value={subsidence}
+            onChange={(e) => setSubsidence(e.target.value as SubsidenceType)}
+          >
             <option value="">{t('project.geology.subsidenceNone')}</option>
             <option value="I">{t('project.geology.subsidenceI')}</option>
             <option value="II">{t('project.geology.subsidenceII')}</option>
           </select>
         </label>
         <label className="check">
-          <input type="checkbox" checked={heaving} onChange={(e) => setHeaving(e.target.checked)} />
+          <input
+            id={fieldId('heaving')}
+            name={fieldName('heaving')}
+            type="checkbox"
+            checked={heaving}
+            onChange={(e) => setHeaving(e.target.checked)}
+          />
           <span>{t('project.geology.heaving')}</span>
         </label>
         <label className="check">
-          <input type="checkbox" checked={swelling} onChange={(e) => setSwelling(e.target.checked)} />
+          <input
+            id={fieldId('swelling')}
+            name={fieldName('swelling')}
+            type="checkbox"
+            checked={swelling}
+            onChange={(e) => setSwelling(e.target.checked)}
+          />
           <span>{t('project.geology.swelling')}</span>
         </label>
         <label className="check">
           <input
+            id={fieldId('freezing-verified')}
+            name={fieldName('freezingDepthVerified')}
             type="checkbox"
             checked={freezingVerified}
             disabled={!freezing.trim() || !freezingSource.trim()}
@@ -571,6 +637,8 @@ export function GeologySection({
         </label>
         <label className="check">
           <input
+            id={fieldId('profile-verified')}
+            name={fieldName('profileGeologyVerified')}
             type="checkbox"
             checked={geologyCoverageVerified}
             disabled={!geologyMaxOffset.trim() || !geologyCoverageSource.trim()}

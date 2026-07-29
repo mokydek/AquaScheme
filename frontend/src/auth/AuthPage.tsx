@@ -93,6 +93,8 @@ export function AuthPage() {
             <label className="field">
               <span className="field-label">{t('auth.email')}</span>
               <input
+                id="auth-email"
+                name="email"
                 className="input"
                 type="email"
                 autoComplete="email"
@@ -104,6 +106,8 @@ export function AuthPage() {
             <label className="field">
               <span className="field-label">{t('auth.password')}</span>
               <input
+                id="auth-password"
+                name="password"
                 className="input"
                 type="password"
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}

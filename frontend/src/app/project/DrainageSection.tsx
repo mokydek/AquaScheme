@@ -119,6 +119,8 @@ export function DrainageSection({
       <label className="field" style={{ maxWidth: 420 }}>
         <span className="field-label">{t('project.drainage.source')}</span>
         <select
+          id={`drainage-${projectId}-water-source`}
+          name={`drainage-${projectId}-water-source`}
           className="input"
           value={waterSourceProjectId ?? ''}
           disabled={busy}

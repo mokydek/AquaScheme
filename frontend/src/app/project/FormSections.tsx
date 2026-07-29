@@ -112,18 +112,20 @@ function SectionFooter({
 }
 
 function NumberField({
+  id,
   label,
   value,
   onChange,
 }: {
+  id: string
   label: string
   value: string
   onChange: (e: ChangeEvent<HTMLInputElement>) => void
 }) {
   return (
-    <label className="field">
+    <label className="field" htmlFor={id}>
       <span className="field-label">{label}</span>
-      <input className="input" inputMode="decimal" value={value} onChange={onChange} />
+      <input id={id} name={id} className="input" inputMode="decimal" value={value} onChange={onChange} />
     </label>
   )
 }
@@ -151,6 +153,7 @@ export function SourceSection(props: {
         {keys.map((key, i) => (
           <NumberField
             key={key}
+            id={`source-${key}`}
             label={t(`project.source.${labels[i]}`)}
             value={form.values[key] ?? ''}
             onChange={form.set(key)}
@@ -307,9 +310,9 @@ export function RegionSection(props: {
     <Panel title={t('project.region.title')} status={content ? 'filled' : 'empty'}>
       <p className="hint">{t('project.region.hint')}</p>
       <div className="form-grid">
-        <label className="field">
+        <label className="field" htmlFor="project-region">
           <span className="field-label">{t('project.region.select')}</span>
-          <select className="input" value={content?.regionId ?? ''} disabled={busy} onChange={onSelect}>
+          <select id="project-region" name="project-region" className="input" value={content?.regionId ?? ''} disabled={busy} onChange={onSelect}>
             <option value="">{t('project.region.none')}</option>
             {REGIONS_KZ.map((r) => (
               <option key={r.id} value={r.id}>
@@ -455,9 +458,9 @@ export function SeismicSection(props: {
   return (
     <Panel title={t('project.seismic.title')} status={props.dataset ? 'filled' : 'empty'}>
       <div className="form-grid">
-        <label className="field">
+        <label className="field" htmlFor="seismic-intensity">
           <span className="field-label">{t('project.seismic.intensity')}</span>
-          <select className="input" value={intensity} onChange={(e) => setIntensity(e.target.value)}>
+          <select id="seismic-intensity" name="seismic-intensity" className="input" value={intensity} onChange={(e) => setIntensity(e.target.value)}>
             {['6', '7', '8', '9'].map((points) => (
               <option key={points} value={points}>
                 {points}
@@ -465,16 +468,18 @@ export function SeismicSection(props: {
             ))}
           </select>
         </label>
-        <label className="check">
+        <label className="check" htmlFor="seismic-subsidence">
           <input
+            id="seismic-subsidence"
+            name="seismic-subsidence"
             type="checkbox"
             checked={subsidence}
             onChange={(e) => setSubsidence(e.target.checked)}
           />
           <span>{t('project.seismic.subsidence')}</span>
         </label>
-        <label className="check">
-          <input type="checkbox" checked={flood} onChange={(e) => setFlood(e.target.checked)} />
+        <label className="check" htmlFor="seismic-flood">
+          <input id="seismic-flood" name="seismic-flood" type="checkbox" checked={flood} onChange={(e) => setFlood(e.target.checked)} />
           <span>{t('project.seismic.flooding')}</span>
         </label>
       </div>
@@ -483,8 +488,14 @@ export function SeismicSection(props: {
       </p>
       <div className="form-grid" style={{ marginTop: 8 }}>
         {EXTRA_HAZARDS.map((hazard) => (
-          <label className="check" key={hazard}>
-            <input type="checkbox" checked={hazards.includes(hazard)} onChange={toggleHazard(hazard)} />
+          <label className="check" htmlFor={`seismic-hazard-${hazard}`} key={hazard}>
+            <input
+              id={`seismic-hazard-${hazard}`}
+              name={`seismic-hazard-${hazard}`}
+              type="checkbox"
+              checked={hazards.includes(hazard)}
+              onChange={toggleHazard(hazard)}
+            />
             <span>{t(`project.hazard.${hazard}`)}</span>
           </label>
         ))}
@@ -524,6 +535,7 @@ export function NormsSection(props: {
         {fields.map(({ key, label }) => (
           <NumberField
             key={key}
+            id={`normative-${key}`}
             label={t(`project.norms.${label}`)}
             value={form.values[key] ?? ''}
             onChange={form.set(key)}

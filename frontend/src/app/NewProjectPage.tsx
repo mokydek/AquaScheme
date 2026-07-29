@@ -145,6 +145,8 @@ export function NewProjectPage() {
               <label className="field">
                 <span className="field-label">{t('app.namePlaceholder')}</span>
                 <input
+                  id="new-project-name"
+                  name="projectName"
                   className="input"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -154,7 +156,7 @@ export function NewProjectPage() {
               </label>
               <label className="field" style={{ marginTop: 12 }}>
                 <span className="field-label">{t('wizard.regionLabel')}</span>
-                <select className="input" value={regionId} onChange={(e) => setRegionId(e.target.value)}>
+                <select id="new-project-region" name="regionId" className="input" value={regionId} onChange={(e) => setRegionId(e.target.value)}>
                   <option value="">{t('wizard.regionNone')}</option>
                   {REGIONS_KZ.map((r) => (
                     <option key={r.id} value={r.id}>

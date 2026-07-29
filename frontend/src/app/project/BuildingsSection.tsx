@@ -142,9 +142,12 @@ export function BuildingsSection({
       <p className="hint">{tr('hint')}</p>
       <div className="section-actions">
         <input
+          id={`buildings-${projectId}-${mode}-file`}
+          name={`buildings-${projectId}-${mode}-file`}
           className="file-input"
           type="file"
           accept=".csv,.txt"
+          aria-label={`${tr('title')}: CSV`}
           onChange={(e) => void onFile(e)}
         />
       </div>
@@ -191,37 +194,52 @@ export function BuildingsSection({
       )}
       <form className="add-row" onSubmit={(e) => void addBuilding(e)}>
         <input
+          id={`buildings-${projectId}-${mode}-label`}
+          name={`buildings-${projectId}-${mode}-label`}
           className="input input-sm"
           placeholder={tr('thLabel')}
+          aria-label={tr('thLabel')}
           value={draft.label}
           onChange={setField('label')}
         />
         <input
+          id={`buildings-${projectId}-${mode}-x`}
+          name={`buildings-${projectId}-${mode}-x`}
           className="input input-sm"
           placeholder={tr('thX')}
+          aria-label={tr('thX')}
           value={draft.x}
           onChange={setField('x')}
           required
         />
         <input
+          id={`buildings-${projectId}-${mode}-y`}
+          name={`buildings-${projectId}-${mode}-y`}
           className="input input-sm"
           placeholder={tr('thY')}
+          aria-label={tr('thY')}
           value={draft.y}
           onChange={setField('y')}
           required
         />
         {!inflow && (
           <input
+            id={`buildings-${projectId}-${mode}-floors`}
+            name={`buildings-${projectId}-${mode}-floors`}
             className="input input-sm"
             placeholder={tr('thFloors')}
+            aria-label={tr('thFloors')}
             value={draft.floors}
             onChange={setField('floors')}
             required
           />
         )}
         <input
+          id={`buildings-${projectId}-${mode}-residents`}
+          name={`buildings-${projectId}-${mode}-residents`}
           className="input input-sm"
           placeholder={tr('thResidents')}
+          aria-label={tr('thResidents')}
           value={draft.residents}
           onChange={setField('residents')}
           required

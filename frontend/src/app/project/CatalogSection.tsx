@@ -93,13 +93,13 @@ export function CatalogSection({
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>
           {t('project.catalog.template')}
         </button>
-        <input className="file-input" type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={(e) => void onFile(e)} />
+        <input id={`catalog-${projectId}-file`} name={`catalog-${projectId}-file`} className="file-input" type="file" accept=".xlsx,.xls,.csv" aria-label={`${t('project.catalog.title')}: XLSX/CSV`} disabled={busy} onChange={(e) => void onFile(e)} />
       </div>
 
       <div className="row-list" style={{ marginTop: 16 }}>
         <div className="row">
           <label className="check" style={{ cursor: 'pointer' }}>
-            <input type="radio" checked={activeCatalogId === null} onChange={() => void activate(null)} />
+            <input id={`catalog-${projectId}-builtin`} name={`catalog-${projectId}-active`} type="radio" checked={activeCatalogId === null} onChange={() => void activate(null)} />
             <span className="row-name">{t('project.catalog.builtin')}</span>
           </label>
           <span className="row-meta">ПЭ100 SDR17</span>
@@ -107,7 +107,7 @@ export function CatalogSection({
         {catalogs.map((c) => (
           <div className="row" key={c.id}>
             <label className="check" style={{ cursor: 'pointer' }}>
-              <input type="radio" checked={activeCatalogId === c.id} onChange={() => void activate(c.id)} />
+              <input id={`catalog-${projectId}-${c.id}`} name={`catalog-${projectId}-active`} type="radio" checked={activeCatalogId === c.id} onChange={() => void activate(c.id)} />
               <span className="row-name">{c.name}</span>
             </label>
             <div className="row-actions">

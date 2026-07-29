@@ -92,7 +92,7 @@ export function ParcelsSection({
       <p className="hint">{t('project.parcels.hint')}</p>
 
       <div className="section-actions">
-        <input className="file-input" type="file" accept=".geojson,.json,.dxf,.dwg" disabled={busy} onChange={(e) => void onFile(e)} />
+        <input id={`parcels-${projectId}-file`} name={`parcels-${projectId}-file`} className="file-input" type="file" accept=".geojson,.json,.dxf,.dwg" aria-label={`${t('project.parcels.title')}: GeoJSON/DXF/DWG`} disabled={busy} onChange={(e) => void onFile(e)} />
       </div>
 
       {uploadMessage && <p className="notice error">{uploadMessage}</p>}

@@ -143,8 +143,8 @@ export function AlbumSheetSet({
               >
                 Скачать лист DXF
               </button>
-              <label className="check"><input type="checkbox" checked={showTopography} onChange={(event) => setShowTopography(event.target.checked)} /> Топосъёмка</label>
-              <label className="check"><input type="checkbox" checked={showFrame} onChange={(event) => setShowFrame(event.target.checked)} /> Рамка</label>
+              <label className="check"><input id={`album-${drawingSet.inputHash}-topography`} name={`album-${drawingSet.inputHash}-topography`} type="checkbox" checked={showTopography} onChange={(event) => setShowTopography(event.target.checked)} /> Топосъёмка</label>
+              <label className="check"><input id={`album-${drawingSet.inputHash}-frame`} name={`album-${drawingSet.inputHash}-frame`} type="checkbox" checked={showFrame} onChange={(event) => setShowFrame(event.target.checked)} /> Рамка</label>
             </div>
             <div className="drawing-preview-viewport">
               <div style={{ width: `${zoom * 100}%`, minWidth: zoom > 1 ? 820 : undefined }}>

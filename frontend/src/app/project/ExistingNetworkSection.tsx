@@ -100,12 +100,12 @@ export function ExistingNetworkSection({
     <Panel title={t('project.existing.title')} status={existing.length > 0 ? 'filled' : 'empty'}>
       <p className="hint">{t('project.existing.hint')}</p>
       <div className="section-actions">
-        <label className="stat-line" style={{ marginTop: 0 }}>{t('project.existing.importLabel')}</label>
-        <input className="file-input" type="file" accept=".dxf,.dwg,.geojson,.json" disabled={busy} onChange={(e) => void importFile(e)} />
+        <label className="stat-line" htmlFor="existing-network-file" style={{ marginTop: 0 }}>{t('project.existing.importLabel')}</label>
+        <input id="existing-network-file" name="existing-network-file" className="file-input" type="file" accept=".dxf,.dwg,.geojson,.json" disabled={busy} onChange={(e) => void importFile(e)} />
       </div>
       <div className="section-actions">
-        <label className="stat-line" style={{ marginTop: 0 }}>{t('project.existing.scanLabel')}</label>
-        <input className="file-input" type="file" accept=".pdf" disabled={busy} onChange={(e) => void uploadScan(e)} />
+        <label className="stat-line" htmlFor="existing-network-scan" style={{ marginTop: 0 }}>{t('project.existing.scanLabel')}</label>
+        <input id="existing-network-scan" name="existing-network-scan" className="file-input" type="file" accept=".pdf" disabled={busy} onChange={(e) => void uploadScan(e)} />
       </div>
 
       {uploadMessage && <p className="notice error">{uploadMessage}</p>}
@@ -137,6 +137,9 @@ export function ExistingNetworkSection({
                     <td className="num">{(row.length_m ?? 0).toFixed(1)}</td>
                     <td>
                       <select
+                        id={`existing-material-${encodeURIComponent(row.id)}`}
+                        name={`existing-material-${encodeURIComponent(row.id)}`}
+                        aria-label={`${t('project.existing.thMaterial')} ${i + 1}`}
                         className="input input-sm"
                         value={(row.material as ExistingMaterial) ?? 'unknown'}
                         onChange={(e) => void patchPipe(row, { material: e.target.value as ExistingMaterial })}
@@ -148,6 +151,9 @@ export function ExistingNetworkSection({
                     </td>
                     <td className="num">
                       <input
+                        id={`existing-year-${encodeURIComponent(row.id)}`}
+                        name={`existing-year-${encodeURIComponent(row.id)}`}
+                        aria-label={`${t('project.existing.thYear')} ${i + 1}`}
                         className="input input-sm"
                         style={{ width: 70 }}
                         defaultValue={row.laid_year ?? ''}
@@ -156,6 +162,9 @@ export function ExistingNetworkSection({
                     </td>
                     <td className="num">
                       <input
+                        id={`existing-diameter-${encodeURIComponent(row.id)}`}
+                        name={`existing-diameter-${encodeURIComponent(row.id)}`}
+                        aria-label={`${t('project.existing.thDiameter')} ${i + 1}`}
                         className="input input-sm"
                         style={{ width: 70 }}
                         defaultValue={row.diameter_mm ?? ''}
@@ -164,6 +173,9 @@ export function ExistingNetworkSection({
                     </td>
                     <td className="num">
                       <input
+                        id={`existing-wear-${encodeURIComponent(row.id)}`}
+                        name={`existing-wear-${encodeURIComponent(row.id)}`}
+                        aria-label={`${t('project.existing.thWear')} ${i + 1}`}
                         className="input input-sm"
                         style={{ width: 60 }}
                         defaultValue={row.wear_percent ?? ''}
@@ -173,6 +185,9 @@ export function ExistingNetworkSection({
                     <td className="num">{(row.roughness_mm ?? 0).toFixed(2)}</td>
                     <td>
                       <select
+                        id={`existing-decision-${encodeURIComponent(row.id)}`}
+                        name={`existing-decision-${encodeURIComponent(row.id)}`}
+                        aria-label={`${t('project.existing.thDecision')} ${i + 1}`}
                         className="input input-sm"
                         value={row.decision}
                         onChange={(e) => void patchPipe(row, { decision: e.target.value as PipeDecision })}

@@ -78,7 +78,7 @@ export function ManholeCatalogSection({
       <p className="hint">Каталог задаёт диапазоны глубин и диаметров, состав элементов и точный источник. Неподтверждённые строки не разрешают выпуск ведомости.</p>
       <div className="section-actions">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>Скачать шаблон</button>
-        <input className="file-input" type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={(event) => void onFile(event)} />
+        <input id={`manhole-catalog-${projectId}-file`} name={`manhole-catalog-${projectId}-file`} className="file-input" type="file" accept=".xlsx,.xls,.csv" aria-label="Каталог колодцев: XLSX/CSV" disabled={busy} onChange={(event) => void onFile(event)} />
       </div>
       <p className="stat-line">Конструкций: {entries.length} · подтверждено источником: {verified}</p>
       {entries.length > 0 && (

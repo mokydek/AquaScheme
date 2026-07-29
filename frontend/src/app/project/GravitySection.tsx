@@ -859,9 +859,11 @@ export function GravitySection({
             <NormBadge refs={['sewer.minDiameter', 'sewer.velocity.min', 'sewer.filling.max', 'sewer.slope.min']} />
           </div>
           <div className="section-actions" style={{ marginTop: 12 }}>
-            <label className="field" style={{ maxWidth: 320 }}>
+            <label className="field" htmlFor="gravity-sizing-strategy" style={{ maxWidth: 320 }}>
               <span className="field-label">{t('project.gravity.strategy')}</span>
               <select
+                id="gravity-sizing-strategy"
+                name="gravity-sizing-strategy"
                 className="input"
                 value={strategy}
                 onChange={(e) => setStrategy(e.target.value as 'minDiameter' | 'minBurial')}

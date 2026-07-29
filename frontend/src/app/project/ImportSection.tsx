@@ -455,6 +455,9 @@ export function ImportSection({
       )}
       <div className="section-actions">
         <input
+          id="route-import-file"
+          name="route-import-file"
+          aria-label={t('project.import.title')}
           className="file-input"
           type="file"
           accept=".dxf,.dwg,.geojson,.json"
@@ -484,7 +487,7 @@ export function ImportSection({
             <div className="table-wrap" style={{ maxHeight: 360 }}><table className="data-table"><thead><tr><th>Слой</th><th>Роль</th><th className="num">Линий</th><th className="num">Точек</th><th>Признаки</th></tr></thead><tbody>
               {parsed.data.layers.map((layer) => <tr key={layer.name}>
                 <td className="mono">{layer.name}</td>
-                <td><select className="input input-sm" value={layerRoles[layer.name] ?? parsed.constraints.roles[layer.name] ?? 'unknown'} onChange={(event) => void setLayerRole(layer.name, event.target.value as DxfLayerRole)}>{ROLE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></td>
+                 <td><select id={`import-layer-role-${encodeURIComponent(layer.name)}`} name={`import-layer-role-${encodeURIComponent(layer.name)}`} aria-label={`DWG layer role: ${layer.name}`} className="input input-sm" value={layerRoles[layer.name] ?? parsed.constraints.roles[layer.name] ?? 'unknown'} onChange={(event) => void setLayerRole(layer.name, event.target.value as DxfLayerRole)}>{ROLE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></td>
                 <td className="num">{layer.segments}</td><td className="num">{layer.points}</td>
                 <td>{[
                   ...Object.entries(layer.entityTypes ?? {}).map(([kind, count]) => `${kind}: ${count}`),
@@ -505,7 +508,7 @@ export function ImportSection({
               ['hydrography', 'Водные объекты и гидрография', parsed.constraints.hydrography.length],
               ['parcels', 'Земельные участки и сервитуты', parsed.constraints.parcelRings.length],
               ['protectionZones', 'Охранные и запрещённые зоны', parsed.constraints.protectionZoneRings.length + parsed.constraints.forbiddenZoneRings.length],
-            ] as Array<[SourceConfirmationKey, string, number]>).filter(([, , count]) => count === 0).map(([key, label]) => <label className="check" key={key}><input type="checkbox" checked={confirmedAbsent[key]} onChange={(event) => setConfirmedAbsent((previous) => ({ ...previous, [key]: event.target.checked }))} /><span>Проверено: «{label}» действительно отсутствуют в пределах проектирования</span></label>)}
+            ] as Array<[SourceConfirmationKey, string, number]>).filter(([, , count]) => count === 0).map(([key, label]) => <label className="check" htmlFor={`import-confirm-absent-${key}`} key={key}><input id={`import-confirm-absent-${key}`} name={`import-confirm-absent-${key}`} type="checkbox" checked={confirmedAbsent[key]} onChange={(event) => setConfirmedAbsent((previous) => ({ ...previous, [key]: event.target.checked }))} /><span>Проверено: «{label}» действительно отсутствуют в пределах проектирования</span></label>)}
           </details>
           {parsed.constraints.rejectedSurveyPoints > 0 && (
             <p className="stat-line warn">Отброшено аномальных высотных отметок: {parsed.constraints.rejectedSurveyPoints}</p>
@@ -519,10 +522,10 @@ export function ImportSection({
           <div className="section-actions">
               {systemType !== 'water' && (
                 <div className="form-grid" style={{ width: '100%', marginBottom: 12 }}>
-                  <label className="field"><span className="field-label">ЛНС X, м</span><input className="input" inputMode="decimal" value={lnsX} onChange={(event) => setLnsX(event.target.value)} /></label>
-                  <label className="field"><span className="field-label">ЛНС Y, м</span><input className="input" inputMode="decimal" value={lnsY} onChange={(event) => setLnsY(event.target.value)} /></label>
-                  <label className="field"><span className="field-label">Расчётный расход ЛНС, л/с</span><input className="input" inputMode="decimal" value={lnsFlow} onChange={(event) => setLnsFlow(event.target.value)} /></label>
-                  <label className="field"><span className="field-label">Доступный напор ЛНС, м</span><input className="input" inputMode="decimal" value={lnsPumpHead} onChange={(event) => setLnsPumpHead(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-x"><span className="field-label">ЛНС X, м</span><input id="import-lns-x" name="import-lns-x" className="input" inputMode="decimal" value={lnsX} onChange={(event) => setLnsX(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-y"><span className="field-label">ЛНС Y, м</span><input id="import-lns-y" name="import-lns-y" className="input" inputMode="decimal" value={lnsY} onChange={(event) => setLnsY(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-flow"><span className="field-label">Расчётный расход ЛНС, л/с</span><input id="import-lns-flow" name="import-lns-flow" className="input" inputMode="decimal" value={lnsFlow} onChange={(event) => setLnsFlow(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-pump-head"><span className="field-label">Доступный напор ЛНС, м</span><input id="import-lns-pump-head" name="import-lns-pump-head" className="input" inputMode="decimal" value={lnsPumpHead} onChange={(event) => setLnsPumpHead(event.target.value)} /></label>
                 </div>
               )}
               <button
@@ -543,8 +546,10 @@ export function ImportSection({
               {parsed.data.layers
                 .filter((layer) => layer.segments > 0 && ['candidateRoute', 'unknown'].includes(parsed.constraints.roles[layer.name]))
                 .map((layer) => (
-                  <label className="check" key={layer.name}>
+                  <label className="check" htmlFor={`import-route-layer-${encodeURIComponent(layer.name)}`} key={layer.name}>
                     <input
+                      id={`import-route-layer-${encodeURIComponent(layer.name)}`}
+                      name={`import-route-layer-${encodeURIComponent(layer.name)}`}
                       type="checkbox"
                       checked={selectedLayers[layer.name] ?? false}
                       onChange={(event) =>
@@ -570,13 +575,15 @@ export function ImportSection({
       {parsed && (
         <>
           <div className="form-grid" style={{ maxWidth: 560 }}>
-            <label className="field">
+            <label className="field" htmlFor="import-tolerance">
               <span className="field-label">{t('project.import.tolerance')}</span>
-              <input className="input" inputMode="decimal" value={tolerance} onChange={(e) => setTolerance(e.target.value)} />
+              <input id="import-tolerance" name="import-tolerance" className="input" inputMode="decimal" value={tolerance} onChange={(e) => setTolerance(e.target.value)} />
             </label>
-            <label className="field">
+            <label className="field" htmlFor="import-georef-mode">
               <span className="field-label">{t('project.import.georef')}</span>
               <select
+                id="import-georef-mode"
+                name="import-georef-mode"
                 className="input"
                 value={georefMode}
                 onChange={(e) => setGeorefMode(e.target.value as GeorefMode)}
@@ -589,9 +596,11 @@ export function ImportSection({
           </div>
 
           {georefMode === 'proj4' && (
-            <label className="field" style={{ maxWidth: 560 }}>
+            <label className="field" htmlFor="import-proj4" style={{ maxWidth: 560 }}>
               <span className="field-label">proj4</span>
               <input
+                id="import-proj4"
+                name="import-proj4"
                 className="input mono"
                 value={projString}
                 onChange={(e) => setProjString(e.target.value)}
@@ -612,6 +621,9 @@ export function ImportSection({
                   ).map((key, i) => (
                     <input
                       key={key}
+                      id={`import-control-point-${key}`}
+                      name={`import-control-point-${key}`}
+                      aria-label={`${t('project.import.controlPoint', { n: row + 1 })}: ${i < 2 ? t('project.import.drawing') : t('project.import.local')} ${i % 2 === 0 ? 'X' : 'Y'}`}
                       className="input input-sm"
                       inputMode="decimal"
                       placeholder={

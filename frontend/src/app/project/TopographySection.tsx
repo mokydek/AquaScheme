@@ -106,9 +106,12 @@ export function TopographySection({
       )}
       <div className="section-actions">
         <input
+          id={`topography-${projectId}-file`}
+          name={`topography-${projectId}-file`}
           className="file-input"
           type="file"
           accept=".csv,.txt,.json,.geojson,.dxf,.dwg"
+          aria-label={`${t('project.topo.title')}: CSV/GeoJSON/DXF/DWG`}
           onChange={(e) => void onFile(e)}
         />
       </div>

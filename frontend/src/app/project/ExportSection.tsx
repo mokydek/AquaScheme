@@ -420,11 +420,13 @@ export function ExportSection({
 
       <div className="section-actions">
         <label className="check">
-          <input type="checkbox" checked={withDxf} onChange={(e) => setWithDxf(e.target.checked)} />
+          <input id={`export-${projectId}-dxf`} name={`export-${projectId}-dxf`} type="checkbox" checked={withDxf} onChange={(e) => setWithDxf(e.target.checked)} />
           <span>DXF</span>
         </label>
         <label className="check" title={hasConverter ? '' : t('project.export.dwgUnavailable')}>
           <input
+            id={`export-${projectId}-dwg`}
+            name={`export-${projectId}-dwg`}
             type="checkbox"
             checked={withDwg}
             disabled={!hasConverter}

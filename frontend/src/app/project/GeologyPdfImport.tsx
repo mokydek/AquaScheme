@@ -38,6 +38,8 @@ export function GeologyPdfImport({
   onDone: () => Promise<void>
 }) {
   const { t } = useTranslation()
+  const fieldId = (field: string) => `geology-pdf-${projectId}-${field}`
+  const fieldName = (field: string) => `geologyPdf.${projectId}.${field}`
   const [step, setStep] = useState<'map' | 'review'>('map')
   const [hasHeaderRow, setHasHeaderRow] = useState(grid.length > 0 && looksLikeHeaderRow(grid[0]))
   const [mapping, setMapping] = useState<Array<GeologyFieldId | null>>(() =>
@@ -123,8 +125,14 @@ export function GeologyPdfImport({
       {step === 'map' && (
         <>
           <p className="hint">{t('project.geology.pdf.mapHint')}</p>
-          <label className="check" style={{ marginTop: 8 }}>
-            <input type="checkbox" checked={hasHeaderRow} onChange={(e) => setHasHeaderRow(e.target.checked)} />
+          <label htmlFor={fieldId('header-row')} className="check" style={{ marginTop: 8 }}>
+            <input
+              id={fieldId('header-row')}
+              name={fieldName('hasHeaderRow')}
+              type="checkbox"
+              checked={hasHeaderRow}
+              onChange={(e) => setHasHeaderRow(e.target.checked)}
+            />
             <span>{t('project.geology.pdf.headerRow')}</span>
           </label>
 
@@ -135,7 +143,10 @@ export function GeologyPdfImport({
                   {Array.from({ length: columnCount }, (_, col) => (
                     <th key={col}>
                       <select
+                        id={fieldId(`mapping-${col}`)}
+                        name={fieldName(`mapping.${col}`)}
                         className="input input-sm"
+                        aria-label={`${t('project.geology.pdf.mapTitle')}: ${col + 1}`}
                         value={mapping[col] ?? ''}
                         onChange={(e) =>
                           setMapping((prev) => {
@@ -199,8 +210,11 @@ export function GeologyPdfImport({
                     {cells.map((value, colIdx) => (
                       <td key={colIdx}>
                         <input
+                          id={fieldId(`review-${rowIdx}-${mappedCols[colIdx]?.col ?? colIdx}`)}
+                          name={fieldName(`review.${rowIdx}.${mappedCols[colIdx]?.col ?? colIdx}`)}
                           className="input input-sm"
                           style={{ minWidth: 70 }}
+                          aria-label={`${mappedCols[colIdx] ? fieldLabel(mappedCols[colIdx].field) : t('project.geology.pdf.reviewTitle')}: ${rowIdx + 1}`}
                           value={value}
                           onChange={(e) => editCell(rowIdx, colIdx, e.target.value)}
                         />

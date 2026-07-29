@@ -205,6 +205,8 @@ export function BasisSection({
                   </td>
                   <td>
                     <input
+                      id={`basis-${projectId}-${item.id}`}
+                      name={`basis-${projectId}-${item.id}`}
                       className="file-input"
                       type="file"
                       aria-label={`${item.label}: выбрать файл`}
