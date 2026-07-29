@@ -289,7 +289,15 @@ export function LiveSituationMap({
       { collapsed: false, position: 'topright' },
     ).addTo(map)
     const layerControlContainer = layerControl.getContainer()
-    if (layerControlContainer) normalizeLeafletLayerInputs(layerControlContainer, mapControlScope)
+    const normalizeLayerControls = () => {
+      if (layerControlContainer) normalizeLeafletLayerInputs(layerControlContainer, mapControlScope)
+    }
+    normalizeLayerControls()
+    // Leaflet may rebuild the list after layer add/remove events, discarding
+    // DOM attributes applied immediately after addTo(). Reapply the contract
+    // whenever generated controls are replaced.
+    const layerControlObserver = layerControlContainer ? new MutationObserver(normalizeLayerControls) : null
+    layerControlObserver?.observe(layerControlContainer!, { childList: true, subtree: true })
 
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [38, 38], maxZoom: 14 })
     else map.setView(projection.geographic ? [51.12433, 71.33639] : [0, 0], projection.geographic ? 13 : 0)
@@ -298,6 +306,7 @@ export function LiveSituationMap({
     const resizeObserver = new ResizeObserver(() => map.invalidateSize({ animate: false }))
     resizeObserver.observe(container)
     return () => {
+      layerControlObserver?.disconnect()
       resizeObserver.disconnect()
       map.remove()
       setReady(false)
