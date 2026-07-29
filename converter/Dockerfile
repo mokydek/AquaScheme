@@ -22,10 +22,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # https://www.opendesign.com/guestfiles/oda_file_converter
 ARG ODA_DEB_URL=""
 ARG ODA_DEB_SHA256=""
-RUN test -n "$ODA_DEB_URL" || (echo "ODA_DEB_URL is required; refusing to publish a non-working converter image" >&2; exit 1); \
-    test -n "$ODA_DEB_SHA256" || (echo "ODA_DEB_SHA256 is required; refusing an unverified ODA package" >&2; exit 1); \
+# Verified 2026-07-29 for ODAFileConverter_QT6_lnxX64_8.3dll_27.1.deb.
+# A caller can override it with ODA_DEB_SHA256 when selecting another package;
+# if the URL changes without a matching override, sha256sum stops the build.
+RUN set -eu; \
+    if [ -z "$ODA_DEB_URL" ]; then \
+      echo "ODA_DEB_URL is required; refusing to publish a non-working converter image" >&2; \
+      exit 1; \
+    fi; \
+    expected_sha="${ODA_DEB_SHA256:-c71363cd54758177af47a365154f180dc50a1e2b52a131994fda541c13a36766}"; \
+    if ! printf '%s' "$expected_sha" | grep -Eq '^[0-9a-fA-F]{64}$'; then \
+      echo "ODA_DEB_SHA256 must contain exactly 64 hexadecimal characters" >&2; \
+      exit 1; \
+    fi; \
     wget -q "$ODA_DEB_URL" -O /tmp/oda.deb && \
-    echo "$ODA_DEB_SHA256  /tmp/oda.deb" | sha256sum -c - && \
+    echo "$expected_sha  /tmp/oda.deb" | sha256sum -c - && \
     (dpkg -i /tmp/oda.deb || apt-get install -y -f) && rm /tmp/oda.deb
 
 WORKDIR /app

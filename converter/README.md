@@ -39,9 +39,18 @@ npm start   # http://localhost:8080/health
    opendesign.com/guestfiles/oda_file_converter (нужно принять лицензию).
 2. Render → New → Web Service → выберите репозиторий, Root Directory `converter`,
    Environment `Docker`.
-3. Скачайте пакет один раз в доверенной среде и вычислите его SHA-256. В Build
-   настройках добавьте Build Args `ODA_DEB_URL` и `ODA_DEB_SHA256`. Образ
-   отказывается устанавливать пакет без проверки контрольной суммы.
+3. В Render → Environment добавьте `ODA_DEB_URL`. Для закреплённого пакета
+   `ODAFileConverter_QT6_lnxX64_8.3dll_27.1.deb` Dockerfile уже содержит
+   проверенную SHA-256
+   `c71363cd54758177af47a365154f180dc50a1e2b52a131994fda541c13a36766`.
+   Если выбираете другую версию пакета, скачайте её один раз в доверенной среде,
+   вычислите SHA-256 и добавьте `ODA_DEB_SHA256`. Render передаёт переменные
+   Docker-сервиса как build args; несовпадение контрольной суммы останавливает
+   сборку. В PowerShell сумму можно получить командой
+   `(Get-FileHash -Algorithm SHA256 -LiteralPath "C:\\path\\oda.deb").Hash`;
+   в Linux — `sha256sum oda.deb`. Используйте исходный guest URL ODA, а не
+   краткоживущий адрес после редиректа и не URL со встроенным логином или
+   токеном.
 4. Настройте env:
    - `CONVERT_PROVIDER=oda`;
    - `ALLOWED_ORIGINS=https://<production>.vercel.app,https://<custom-domain>` —
@@ -51,7 +60,11 @@ npm start   # http://localhost:8080/health
    - `MAX_CONCURRENT_CONVERSIONS=1` и `CONVERSION_REQUESTS_PER_MINUTE=6`
      ограничивают нагрузку на ODA. В production `/convert` также требует
      разрешённый browser `Origin`; health/ready остаются доступны мониторингу.
-5. Deploy. Проверьте `https://<service>.onrender.com/ready`: нужен HTTP 200 и `"ok":true`.
+5. После изменения этих переменных выберите в Render **Save, rebuild, and
+   deploy**, чтобы сервис собрал новый Docker-образ, а не перезапустил старый.
+   В логе проверки пакета должна появиться строка `/tmp/oda.deb: OK`. Затем
+   проверьте `https://<service>.onrender.com/ready`: нужен HTTP 200 и
+   `"ok":true`.
 6. Во Vercel фронтенда добавьте `VITE_CONVERTER_URL=https://<service>.onrender.com`
    и сделайте Redeploy. Тогда во фронтенде включатся DWG-выход (формат по
    умолчанию при экспорте) и DWG-вход (загрузка DWG в разделах импорта).
