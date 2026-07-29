@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../shared/supabase'
 import { useAuth } from '../../shared/auth'
-import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
+import { saveBasisFile } from '../../shared/basisFiles'
+import { formatAppError } from '../../shared/errorFormatting'
 import { Panel } from './Panel'
 
 /** Initial permitting documents. Files are private project inputs in Storage. */
@@ -29,6 +30,22 @@ type BasisContent = {
   project?: { name: string; code: string; stage: string; customer: string; customerBin: string; apzNumber: string; apzDate: string; address: string }
 }
 
+type BasisRowState = {
+  status: 'saving' | 'saved' | 'error' | 'refreshError'
+  fileName: string
+  detail?: string
+}
+
+function failureDetail(t: ReturnType<typeof useTranslation>['t'], error: unknown): string {
+  const formatted = formatAppError(error)
+  const candidate = error as { code?: unknown; message?: unknown }
+  const code = typeof candidate?.code === 'string' ? candidate.code : ''
+  const message = typeof candidate?.message === 'string' ? candidate.message.toLowerCase() : ''
+  if (code === '23514') return `${t('project.basis.migrationNeeded')} ${formatted}`
+  if (message.includes('bucket')) return `${t('project.basis.bucketMissing')} ${formatted}`
+  return `${t('project.saveError')}: ${formatted}`
+}
+
 export function BasisSection({
   projectId,
   dataset,
@@ -41,18 +58,43 @@ export function BasisSection({
   const { t } = useTranslation()
   const { session } = useAuth()
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [notice, setNotice] = useState<'saved' | 'error' | 'migrationNeeded' | 'bucketMissing' | null>(null)
+  const [rowStates, setRowStates] = useState<Record<string, BasisRowState>>({})
+
+  useEffect(() => {
+    setBusyId(null)
+    setRowStates({})
+  }, [projectId])
 
   const content = (dataset?.content ?? { files: {} }) as BasisContent
   const files = content.files ?? {}
+  const displayedFiles = { ...files }
+  for (const [itemId, state] of Object.entries(rowStates)) {
+    if (state.status === 'saved' || state.status === 'refreshError') displayedFiles[itemId] = state.fileName
+  }
   const referenceFiles = content.referenceFiles ?? []
-  const uploadedCount = BASIS_ITEMS.filter((i) => files[i.id]).length
+  const uploadedCount = BASIS_ITEMS.filter((i) => displayedFiles[i.id]).length
 
   const onFile = async (itemId: string, event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file || !session) return
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file) return
+    if (!session) {
+      setRowStates((current) => ({
+        ...current,
+        [itemId]: {
+          status: 'error',
+          fileName: file.name,
+          detail: 'Сессия пользователя недоступна. Войдите снова и повторите выбор файла.',
+        },
+      }))
+      input.value = ''
+      return
+    }
     setBusyId(itemId)
-    setNotice(null)
+    setRowStates((current) => ({
+      ...current,
+      [itemId]: { status: 'saving', fileName: file.name },
+    }))
     try {
       // Supabase Storage keys allow only a safe ASCII subset, so a Cyrillic /
       // spaced / comma filename (e.g. «...ОС 3-4, 3-3, 3-8 (1).pdf») is rejected
@@ -67,17 +109,41 @@ export function BasisSection({
         .from('source-files')
         .upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
       if (upload.error) throw upload.error
-      await saveDataset(projectId, 'basis', { ...content, files: { ...files, [itemId]: file.name } })
-      setNotice('saved')
-      await onSaved()
+      await saveBasisFile(projectId, itemId, file.name, {
+        ...content,
+        files: displayedFiles,
+      })
+      setRowStates((current) => ({
+        ...current,
+        [itemId]: { status: 'saved', fileName: file.name },
+      }))
+      try {
+        await onSaved()
+      } catch (error) {
+        setRowStates((current) => ({
+          ...current,
+          [itemId]: {
+            status: 'refreshError',
+            fileName: file.name,
+            detail: formatAppError(error),
+          },
+        }))
+      }
     } catch (error) {
-      const err = error as { code?: string; message?: string }
-      if (err.code === '23514') setNotice('migrationNeeded')
-      else if ((err.message ?? '').toLowerCase().includes('bucket')) setNotice('bucketMissing')
-      else setNotice('error')
+      setRowStates((current) => ({
+        ...current,
+        [itemId]: {
+          status: 'error',
+          fileName: file.name,
+          detail: failureDetail(t, error),
+        },
+      }))
     } finally {
       setBusyId(null)
-      event.target.value = ''
+      // A native file input represents only the current local selection, not
+      // persisted Storage state. Clear it so the same file can be selected
+      // again; the durable file name and outcome remain visible in this row.
+      input.value = ''
     }
   }
 
@@ -107,22 +173,48 @@ export function BasisSection({
             </tr>
           </thead>
           <tbody>
-            {BASIS_ITEMS.map((item) => (
-              <tr key={item.id} className={files[item.id] ? undefined : 'row-warn'}>
-                <td>{item.label}</td>
-                <td className="mono" style={{ fontSize: 11 }}>
-                  {files[item.id] ?? t('project.basis.missing')}
-                </td>
-                <td>
-                  <input
-                    className="file-input"
-                    type="file"
-                    disabled={busyId !== null}
-                    onChange={(e) => void onFile(item.id, e)}
-                  />
-                </td>
-              </tr>
-            ))}
+            {BASIS_ITEMS.map((item) => {
+              const state = rowStates[item.id]
+              const storedFileName = displayedFiles[item.id]
+              return (
+                <tr key={item.id} className={storedFileName ? undefined : 'row-warn'}>
+                  <td>{item.label}</td>
+                  <td className="mono" style={{ fontSize: 11 }}>
+                    <div>{storedFileName ?? t('project.basis.missing')}</div>
+                    {state?.status === 'saving' && (
+                      <div className="stat-line" role="status" aria-live="polite" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="button-spinner" aria-hidden="true" />
+                        Сохраняется «{state.fileName}»… Не закрывайте страницу.
+                      </div>
+                    )}
+                    {state?.status === 'saved' && (
+                      <div className="stat-line ok" role="status" aria-live="polite" style={{ marginTop: 4 }}>
+                        {t('project.basis.saved')}: {state.fileName}. Нативное поле выбора очищено автоматически — это не ошибка, файл остаётся сохранённым в проекте.
+                      </div>
+                    )}
+                    {state?.status === 'refreshError' && (
+                      <div className="notice" role="status" aria-live="polite" style={{ marginTop: 4 }}>
+                        Файл «{state.fileName}» сохранён, но экран не удалось обновить: {state.detail}. Обновите страницу; сброс нативного поля выбора не означает потерю файла.
+                      </div>
+                    )}
+                    {state?.status === 'error' && (
+                      <div className="notice error" role="alert" style={{ marginTop: 4 }}>
+                        Не удалось сохранить «{state.fileName}». {state.detail} Нативное поле выбора сброшено; после устранения ошибки выберите файл повторно.
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <input
+                      className="file-input"
+                      type="file"
+                      aria-label={`${item.label}: выбрать файл`}
+                      disabled={busyId !== null}
+                      onChange={(e) => void onFile(item.id, e)}
+                    />
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -135,10 +227,6 @@ export function BasisSection({
           <p className="hint">{t('project.basis.referencesHint')}</p>
         </details>
       )}
-      {notice === 'saved' && <p className="stat-line ok">{t('project.basis.saved')}</p>}
-      {notice === 'migrationNeeded' && <p className="notice error">{t('project.basis.migrationNeeded')}</p>}
-      {notice === 'bucketMissing' && <p className="notice error">{t('project.basis.bucketMissing')}</p>}
-      {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
       <p className="hint" style={{ marginTop: 8 }}>{t('project.basis.dwgNote')}</p>
     </Panel>
   )

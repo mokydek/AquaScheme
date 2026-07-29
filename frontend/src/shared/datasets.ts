@@ -45,6 +45,23 @@ export interface SourceData {
   availableHead?: number
 }
 
+async function updateDatasetRows(
+  projectId: string,
+  kind: DatasetKind,
+  values: { content: unknown; meta: unknown; file_name: string | null },
+): Promise<number> {
+  // Updating every matching row also makes legacy duplicates consistent until
+  // migration 0014 deterministically keeps one canonical row.
+  const { data, error } = await supabase
+    .from('datasets')
+    .update(values)
+    .eq('project_id', projectId)
+    .eq('kind', kind)
+    .select('id')
+  if (error) throw error
+  return data?.length ?? 0
+}
+
 /** Insert or update the single dataset row of the given kind for a project. */
 export async function saveDataset(
   projectId: string,
@@ -53,26 +70,21 @@ export async function saveDataset(
   meta: unknown = null,
   fileName: string | null = null,
 ): Promise<void> {
-  const { data: existing, error: selectError } = await supabase
-    .from('datasets')
-    .select('id')
-    .eq('project_id', projectId)
-    .eq('kind', kind)
-    .maybeSingle()
-  if (selectError) throw selectError
-
-  if (existing) {
-    const { error } = await supabase
+  const values = { content, meta, file_name: fileName }
+  const updated = await updateDatasetRows(projectId, kind, values)
+  if (updated === 0) {
+    const { error: insertError } = await supabase
       .from('datasets')
-      .update({ content, meta, file_name: fileName })
-      .eq('id', existing.id)
-    if (error) throw error
-  } else {
-    const { error } = await supabase
-      .from('datasets')
-      .insert({ project_id: projectId, kind, content, meta, file_name: fileName })
-    if (error) throw error
+      .insert({ project_id: projectId, kind, ...values })
+    if (insertError) {
+      // With migration 0014, two concurrent creators cannot leave duplicates.
+      // The request that loses the insert race updates the winner instead.
+      if (insertError.code !== '23505') throw insertError
+      const retryUpdated = await updateDatasetRows(projectId, kind, values)
+      if (retryUpdated === 0) throw insertError
+    }
   }
+
   if (['topography', 'buildings', 'source', 'geology', 'basis', 'route_constraints', 'route_audit', 'manhole_catalog'].includes(kind)) {
     // Best effort for installations that have not applied migration 0012 yet.
     await supabase.from('projects').update({ route_status: 'stale' }).eq('id', projectId)

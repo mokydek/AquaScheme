@@ -73,6 +73,7 @@ export function ProjectPage() {
   const { t } = useTranslation()
   const [project, setProject] = useState<ProjectInfo | null>(null)
   const [datasets, setDatasets] = useState<Partial<Record<DatasetKind, DatasetRow>>>({})
+  const [datasetsLoadError, setDatasetsLoadError] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<BuildingRow[]>([])
   const [nodes, setNodes] = useState<NodeRow[]>([])
   const [pipes, setPipes] = useState<PipeRow[]>([])
@@ -91,12 +92,32 @@ export function ProjectPage() {
   const [existing, setExisting] = useState<ExistingPipeRow[]>([])
   const [boreholes, setBoreholes] = useState<Borehole[]>([])
   const [violationPipeIds, setViolationPipeIds] = useState<string[] | null>(null)
+  const loadSequenceRef = useRef(0)
+  const loadedProjectIdRef = useRef<string | null>(null)
+  const datasetsProjectIdRef = useRef<string | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
+    const requestId = ++loadSequenceRef.current
+    const isCurrentRequest = () => loadSequenceRef.current === requestId
+    if (loadedProjectIdRef.current !== id) {
+      // React Router may reuse this component for another project. Clear the
+      // previous snapshot before the first request for the new id finishes so
+      // data from project A can never be rendered or saved into project B.
+      setState('loading')
+      setProject(null)
+      setDatasets({})
+      setDatasetsLoadError(null)
+      datasetsProjectIdRef.current = null
+    }
     const [projectRes, datasetsRes, buildingsRes, nodesRes, pipesRes, runRes] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).maybeSingle(),
-      supabase.from('datasets').select('*').eq('project_id', id),
+      supabase
+        .from('datasets')
+        .select('*')
+        .eq('project_id', id)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true }),
         supabase
           .from('buildings')
           .select('*')
@@ -120,16 +141,36 @@ export function ProjectPage() {
         .limit(1)
         .maybeSingle(),
     ])
+    if (!isCurrentRequest()) return
     if (!projectRes.data) {
+      loadedProjectIdRef.current = null
+      datasetsProjectIdRef.current = null
       setState('notFound')
       return
     }
+    loadedProjectIdRef.current = id
     setProject(projectRes.data)
-    const map: Partial<Record<DatasetKind, DatasetRow>> = {}
-    for (const row of (datasetsRes.data ?? []) as DatasetRow[]) {
-      map[row.kind] = row
+    if (datasetsRes.error) {
+      // Do not turn a failed SELECT into an empty project. Keeping the last
+      // successfully loaded snapshot prevents every uploaded file from
+      // visually disappearing during a transient Supabase/PostgREST failure.
+      // A snapshot from a different project is never retained.
+      if (datasetsProjectIdRef.current !== id) {
+        setDatasets({})
+        datasetsProjectIdRef.current = null
+      }
+      setDatasetsLoadError(formatAppError(datasetsRes.error))
+    } else {
+      setDatasetsLoadError(null)
+      const map: Partial<Record<DatasetKind, DatasetRow>> = {}
+      for (const row of (datasetsRes.data ?? []) as DatasetRow[]) {
+        // Rows are ordered oldest -> newest, so legacy duplicates resolve to
+        // the latest saved value until the uniqueness migration is applied.
+        map[row.kind] = row
+      }
+      setDatasets(map)
+      datasetsProjectIdRef.current = id
     }
-    setDatasets(map)
     setBuildings(buildingsRes.data ?? [])
     setNodes((nodesRes.data ?? []) as NodeRow[])
     setPipes((pipesRes.data ?? []) as PipeRow[])
@@ -138,30 +179,47 @@ export function ProjectPage() {
     const summary = runRes.data?.summary as (SizingResult & { kind?: string }) | null
     setLastRun(summary && summary.kind !== 'gravity' ? summary : null)
     try {
-      setParcels(await fetchParcels(id))
+      const rows = await fetchParcels(id)
+      if (!isCurrentRequest()) return
+      setParcels(rows)
     } catch {
+      if (!isCurrentRequest()) return
       setParcels([])
     }
     try {
-      setCatalogs(await fetchCatalogs(id))
+      const rows = await fetchCatalogs(id)
+      if (!isCurrentRequest()) return
+      setCatalogs(rows)
     } catch {
+      if (!isCurrentRequest()) return
       setCatalogs([])
     }
     try {
-      setExisting(await fetchExisting(id))
+      const rows = await fetchExisting(id)
+      if (!isCurrentRequest()) return
+      setExisting(rows)
     } catch {
+      if (!isCurrentRequest()) return
       setExisting([])
     }
     try {
-      setBoreholes(await fetchGeology(id))
+      const rows = await fetchGeology(id)
+      if (!isCurrentRequest()) return
+      setBoreholes(rows)
     } catch {
+      if (!isCurrentRequest()) return
       setBoreholes([])
     }
+    if (!isCurrentRequest()) return
     setState('ready')
   }, [id])
 
   useEffect(() => {
     void load()
+    return () => {
+      // Invalidate an in-flight request when the route changes or unmounts.
+      loadSequenceRef.current += 1
+    }
   }, [load])
 
   useEffect(() => {
@@ -388,6 +446,11 @@ export function ProjectPage() {
           </div>
         </div>
         <p className="hint">{t('project.pipeline.hint')}</p>
+        {datasetsLoadError && (
+          <p className="notice error" role="alert">
+            Не удалось прочитать сохранённые данные проекта: {datasetsLoadError}
+          </p>
+        )}
         {demoBusy && (
           <div className="export-progress" role="status" aria-live="polite">
             <span className="export-progress-spinner" aria-hidden="true" />

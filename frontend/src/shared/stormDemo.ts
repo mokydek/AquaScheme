@@ -15,6 +15,7 @@ import { insertParcel } from './parcels'
 import { replaceGeology } from './geology'
 import { deleteCatalog, fetchCatalogs, saveCatalog, setActiveCatalog } from './catalog'
 import { formatAppError } from './errorFormatting'
+import { mergeSyntheticBasisContents } from './basisDemo'
 
 export const DEMO_STORM_PROJECT_NAME = 'Учебный проект ливневого коллектора'
 
@@ -186,11 +187,18 @@ export async function seedStormProject(projectId: string, callbacks?: {
     await setActiveCatalog(projectId, id)
   })
 
-  await step('basis', () => saveDataset(projectId, 'basis', {
-    files: {},
-    mode: 'synthetic',
-    note: 'Исходные документы намеренно не отмечены загруженными: демо не заменяет реальные ТЗ, АПЗ, DWG, топосъёмку и ИГИ.',
-  }))
+  await step('basis', async () => {
+    const existing = await supabase
+      .from('datasets')
+      .select('content')
+      .eq('project_id', projectId)
+      .eq('kind', 'basis')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+    if (existing.error) throw existing.error
+    const contents = (existing.data ?? []).map((row) => row.content)
+    await saveDataset(projectId, 'basis', mergeSyntheticBasisContents(contents))
+  })
 
   callbacks?.onRouteProgress?.('Сохранение синтетической трассы')
   await step('engineering route', async () => {

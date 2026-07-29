@@ -9,4 +9,8 @@ if (!url || !anonKey) {
   )
 }
 
+/** Public connection values already embedded in the Vite bundle. */
+export const SUPABASE_REST_URL = `${url.replace(/\/+$/, '')}/rest/v1/`
+export const SUPABASE_ANON_KEY = anonKey
+
 export const supabase = createClient(url, anonKey)

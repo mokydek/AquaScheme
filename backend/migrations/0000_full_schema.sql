@@ -99,7 +99,8 @@ create table if not exists public.datasets (
   storage_path text,
   content jsonb,
   meta jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint datasets_project_kind_unique unique (project_id, kind)
 );
 create index if not exists datasets_project_id_idx on public.datasets (project_id);
 alter table public.datasets enable row level security;
