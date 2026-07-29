@@ -68,6 +68,46 @@ function sniffFormat(buffer, name) {
   return buffer.subarray(0, 4).toString('latin1') === 'AC10' ? 'dwg' : 'dxf'
 }
 
+app.get('/', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  )
+  res.type('html').send(`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>AquaScheme Converter</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fb; color: #111827; }
+    main { width: min(560px, calc(100% - 48px)); padding: 40px; background: white; border: 1px solid #dbe1ea; }
+    h1 { margin: 0 0 12px; font-size: 28px; }
+    p { margin: 10px 0; line-height: 1.55; color: #4b5563; }
+    .status { color: #087443; font-weight: 700; }
+    nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    a { padding: 10px 14px; border: 1px solid #111827; color: #111827; text-decoration: none; }
+    a.primary { background: #111827; color: white; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AquaScheme Converter</h1>
+    <p class="status">Сервис конвертации запущен.</p>
+    <p>Это технический API для импорта и экспорта DWG/DXF. Основное приложение работает на Vercel.</p>
+    <nav>
+      <a class="primary" href="https://aqua-scheme-theta.vercel.app">Открыть AquaScheme</a>
+      <a href="/health">Health</a>
+      <a href="/ready">Ready</a>
+    </nav>
+  </main>
+</body>
+</html>`)
+})
+
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
