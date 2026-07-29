@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   assessLiftStationNeed,
@@ -31,8 +31,9 @@ import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
-import { loadActiveCatalogNominalDiameters } from '../../shared/catalog'
+import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
+import { formatAppError } from '../../shared/errorFormatting'
 import {
   generateSewerGeneralDataDxf,
   generateProjectAlbumPdf,
@@ -49,6 +50,7 @@ import {
   zipBundle,
 } from '../../shared/exporters'
 import { fetchLastGravityRun, persistGravity } from '../../shared/gravity'
+import { resolveGravityBranchProfilesForDrawings } from '../../shared/gravityBranches'
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
 import { AlbumSheetSet } from './AlbumSheetSet'
@@ -131,7 +133,8 @@ export function GravitySection({
   routeStatus = 'stale',
   routeBlockers = [],
   routeRevision = 0,
-  onChanged,
+  runRequest = 0,
+  onRunComplete,
 }: {
   projectId: string
   systemType: 'sewer' | 'storm'
@@ -153,8 +156,9 @@ export function GravitySection({
   routeStatus?: 'stale' | 'blocked' | 'preliminary' | 'calculated'
   routeBlockers?: Array<{ code?: string; message?: string } | string>
   routeRevision?: number
-  /** Reload the project data after the demo seeding. */
-  onChanged?: () => Promise<void>
+  /** Monotonic request from the shared project-level "Calculate all" CTA. */
+  runRequest?: number
+  onRunComplete?: (outcome: 'done' | 'needData' | 'error', detail?: string) => void
 }) {
   const { t } = useTranslation()
   const [exporting, setExporting] = useState(false)
@@ -167,7 +171,11 @@ export function GravitySection({
   const [corridorCheck, setCorridorCheck] = useState<CorridorCheck | null>(null)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const handledRunRequestRef = useRef(0)
   const [catalogDiameters, setCatalogDiameters] = useState<readonly number[] | undefined>(undefined)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [catalogLoadedForId, setCatalogLoadedForId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -183,15 +191,28 @@ export function GravitySection({
 
   useEffect(() => {
     let active = true
+    setCatalogDiameters(undefined)
+    setCatalogError(null)
+    setCatalogLoadedForId(activeCatalogId ?? null)
     if (!activeCatalogId) {
-      setCatalogDiameters(undefined)
       return () => { active = false }
     }
     loadActiveCatalogNominalDiameters(activeCatalogId)
       .then((diameters) => { if (active) setCatalogDiameters(diameters ?? []) })
-      .catch(() => { if (active) setCatalogDiameters([]) })
+      .catch((error) => {
+        if (active) setCatalogError(formatAppError(error))
+      })
     return () => { active = false }
   }, [activeCatalogId])
+
+  // Effects run after render. Keying the async payload prevents one render
+  // from sizing the new catalog with diameters left from the previous one.
+  const currentCatalogDiameters = catalogLoadedForId === activeCatalogId ? catalogDiameters : undefined
+  const currentCatalogError = catalogLoadedForId === activeCatalogId ? catalogError : null
+  const catalogResolution = useMemo(
+    () => resolveGravityCatalog(activeCatalogId, currentCatalogDiameters, currentCatalogError),
+    [activeCatalogId, currentCatalogDiameters, currentCatalogError],
+  )
 
   const labelOfNode = useMemo(() => {
     const buildingLabelById = new Map(buildings.map((b) => [b.id, b.label ?? '']))
@@ -282,7 +303,7 @@ export function GravitySection({
   }, [buildings, drainageDataset?.file_name, stormCatchments.length, stormRunoffByInflow, stormRunoffResults, systemType])
 
   const result = useMemo(() => {
-    if (pipes.length === 0) return null
+    if (pipes.length === 0 || routeStatus === 'stale' || routeStatus === 'blocked' || !catalogResolution.ready) return null
     const norms: NormativeParams = {
       ...NORMATIVE_DEFAULTS,
       ...((normsDataset?.content ?? {}) as Partial<NormativeParams>),
@@ -323,16 +344,57 @@ export function GravitySection({
       strategy,
       stormRainPeriodYears,
       outletNodeId: network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'pumping_station')?.id,
-      allowedDiametersMm: activeCatalogId ? catalogDiameters ?? [] : undefined,
+      allowedDiametersMm: catalogResolution.allowedDiametersMm,
     })
-  }, [buildings, network, normsDataset, freezingDepth, systemType, strategy, activeCatalogId, catalogDiameters, stormRainPeriodYears, stormRunoffByInflow])
+  }, [buildings, network, normsDataset, freezingDepth, systemType, strategy, catalogResolution, routeStatus, stormRainPeriodYears, stormRunoffByInflow])
+
+  useEffect(() => {
+    if (runRequest <= 0 || handledRunRequestRef.current >= runRequest) return
+    handledRunRequestRef.current = runRequest
+    if (!result) {
+      const detail = pipes.length === 0
+        ? 'Сначала загрузите или постройте инженерную сеть.'
+        : routeStatus === 'stale' || routeStatus === 'blocked'
+          ? `Трасса имеет статус «${routeStatus}»; сначала пересчитайте трассу.`
+          : catalogResolution.blocker ?? 'Расчётные исходные данные ещё не готовы.'
+      onRunComplete?.('needData', detail)
+      return
+    }
+
+    setSaving(true)
+    setSaveError(null)
+    void persistGravity(projectId, result)
+      .then(() => {
+        setSavedAt(new Date().toISOString())
+        onRunComplete?.('done')
+      })
+      .catch((error) => {
+        const detail = formatAppError(error)
+        setSaveError(detail)
+        onRunComplete?.('error', detail)
+      })
+      .finally(() => setSaving(false))
+  }, [catalogResolution.blocker, onRunComplete, pipes.length, projectId, result, routeStatus, runRequest])
 
   const rows = useMemo(() => {
     if (!result) return []
     return [...result.pipes].sort((a, b) => b.flowLps - a.flowLps)
   }, [result])
 
-  const schedule = useMemo(() => (result ? buildSewerSchedule(result) : null), [result])
+  const branchProfileResolution = useMemo(
+    () => resolveGravityBranchProfilesForDrawings({
+      network,
+      result,
+      freezingDepthM: freezingDepth.valueM ?? DEFAULT_FREEZING_DEPTH_M,
+    }),
+    [freezingDepth.valueM, network, result],
+  )
+
+  const schedule = useMemo(() => (result
+    ? buildSewerSchedule(result, {
+        branchProfiles: branchProfileResolution.branchProfiles.map((branch) => branch.profile),
+      })
+    : null), [branchProfileResolution.branchProfiles, result])
   const manholeCatalog = useMemo(
     () => ((manholeCatalogDataset?.content ?? {}) as { entries?: ManholeCatalogEntry[] }).entries ?? [],
     [manholeCatalogDataset],
@@ -364,14 +426,15 @@ export function GravitySection({
       system: systemType,
       network,
       profile: result?.profile ?? null,
+      branchProfiles: branchProfileResolution.branchProfiles,
       schedule,
       routeStatus,
-      routeBlockers,
+      routeBlockers: [...routeBlockers, ...branchProfileResolution.blockers],
       georeference: constraints?.georeference ?? null,
       surveyPoints,
       unresolvedLayerCount,
-      catalogReady: Boolean(activeCatalogId) && (catalogDiameters?.length ?? 0) > 0,
-      catalogFingerprint: { activeCatalogId, catalogDiameters },
+      catalogReady: Boolean(activeCatalogId) && catalogResolution.ready,
+      catalogFingerprint: { activeCatalogId, catalogDiameters: currentCatalogDiameters },
       hydraulicsReady: Boolean(result?.profile) && (result?.pipes.every((pipe) => pipe.issues.length === 0) ?? false),
       stormRunoff: stormRunoffStatus,
       freezingDepth: {
@@ -409,8 +472,10 @@ export function GravitySection({
     })
   }, [
     activeCatalogId,
+    branchProfileResolution,
     boreholes,
-    catalogDiameters,
+    currentCatalogDiameters,
+    catalogResolution.ready,
     constraints,
     freezingDepth,
     geologyCoverage,
@@ -525,27 +590,6 @@ export function GravitySection({
     }
   }
 
-  // Seed a wholly synthetic project for UI demonstration. It is deliberately
-  // unsuitable for acceptance against the confidential control project.
-  const [seeding, setSeeding] = useState(false)
-  const [seedNotice, setSeedNotice] = useState<string | null>(null)
-  const seedDemo = async () => {
-    setSeeding(true)
-    setSeedNotice(null)
-    try {
-      const { seedStormProject } = await import('../../shared/stormDemo')
-      const { seededSections, failures } = await seedStormProject(projectId)
-      setSeedNotice(
-        failures.length === 0
-          ? t('project.gravity.demoSeedDone', { count: seededSections })
-          : t('project.gravity.demoSeedPartial', { count: seededSections, failed: failures.join(', ') }),
-      )
-      await onChanged?.()
-    } finally {
-      setSeeding(false)
-    }
-  }
-
   // Mandatory corridor check (ТЗ п.6.1): the main collector path against the
   // right-of-way rings loaded/drawn in the parcels section.
   const runCorridorCheck = () => {
@@ -617,11 +661,12 @@ export function GravitySection({
   const saveRun = async () => {
     if (!result) return
     setSaving(true)
+    setSaveError(null)
     try {
       await persistGravity(projectId, result)
       setSavedAt(new Date().toISOString())
-    } catch {
-      // Best effort: a missing migration or offline state must not break the UI.
+    } catch (error) {
+      setSaveError(formatAppError(error))
     } finally {
       setSaving(false)
     }
@@ -795,16 +840,16 @@ export function GravitySection({
       )}
       {!result && (
         <>
-          <p className="stat-line warn">{t('project.gravity.needNetwork')}</p>
+          {pipes.length === 0 ? (
+            <p className="stat-line warn">{t('project.gravity.needNetwork')}</p>
+          ) : routeStatus === 'stale' || routeStatus === 'blocked' ? (
+            <p className="notice error">Гидравлический расчёт остановлен: инженерная трасса имеет статус «{routeStatus}». Завершите загрузку исходных данных и пересчитайте трассу.</p>
+          ) : catalogResolution.blocker ? (
+            <p className="notice error">{catalogResolution.blocker}</p>
+          ) : null}
           {systemType === 'storm' && (
-            <div className="section-actions">
-              <button type="button" className="btn btn-sm" disabled={seeding} onClick={() => void seedDemo()}>
-                {seeding ? t('project.gravity.demoSeeding') : t('project.gravity.demoSeed')}
-              </button>
-              <span className="stat-line" style={{ marginTop: 0 }}>{t('project.gravity.demoSeedHint')}</span>
-            </div>
+            <p className="stat-line">{t('project.gravity.demoSeedHint')} Используйте безопасную кнопку «Загрузить синтетическое демо» в заголовке проекта.</p>
           )}
-          {seedNotice && <p className="stat-line ok">{seedNotice}</p>}
         </>
       )}
       {result && (
@@ -823,6 +868,7 @@ export function GravitySection({
               </span>
             )}
           </div>
+          {saveError && <p className="notice error" role="alert">Не удалось сохранить расчёт: {saveError}</p>}
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="data-table">
               <thead>

@@ -43,6 +43,7 @@ import { autoAssignParcels, fetchParcels, parcelPolygons } from '../shared/parce
 import type { ParcelRow } from '../shared/parcels'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 import { isPressurePipelineSystem } from '../shared/pressurePipeline'
+import { classifySyntheticDemoTarget, projectPipelineMode } from '../shared/projectActions'
 
 interface ProjectInfo {
   id: string
@@ -62,6 +63,7 @@ interface ProjectInfo {
 }
 
 interface RouteStateReport {
+  synthetic?: boolean
   gravity?: { redLineCrossings?: number; utilityCrossings?: number; roadCrossings?: number; waterCrossings?: number; outsideCorridorSegments?: number }
   pressure?: { redLineCrossings?: number; utilityCrossings?: number; roadCrossings?: number; waterCrossings?: number; outsideCorridorSegments?: number }
   quality?: { totalLengthM?: number; routedTerminals?: number; outsideCorridorSegments?: number }
@@ -75,11 +77,12 @@ export function ProjectPage() {
   const [project, setProject] = useState<ProjectInfo | null>(null)
   const [datasets, setDatasets] = useState<Partial<Record<DatasetKind, DatasetRow>>>({})
   const [datasetsLoadError, setDatasetsLoadError] = useState<string | null>(null)
+  const [coreLoadError, setCoreLoadError] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<BuildingRow[]>([])
   const [nodes, setNodes] = useState<NodeRow[]>([])
   const [pipes, setPipes] = useState<PipeRow[]>([])
   const [lastRun, setLastRun] = useState<SizingResult | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'notFound'>('loading')
+  const [state, setState] = useState<'loading' | 'ready' | 'notFound' | 'loadError'>('loading')
   const [demoBusy, setDemoBusy] = useState(false)
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
   const [demoFailures, setDemoFailures] = useState<string[]>([])
@@ -87,6 +90,8 @@ export function ProjectPage() {
   const [demoCanCancel, setDemoCanCancel] = useState(false)
   const demoCancelRef = useRef<(() => void) | null>(null)
   const [pipelineBusy, setPipelineBusy] = useState(false)
+  const [pipelineDetail, setPipelineDetail] = useState<string | null>(null)
+  const [gravityRunRequest, setGravityRunRequest] = useState<{ projectId: string; sequence: number } | null>(null)
   const [pipelineNotice, setPipelineNotice] = useState<
     'done' | 'error' | 'migrationNeeded' | 'needData' | 'hydraulicsFailed' | 'wrongSystem' | null
   >(null)
@@ -111,6 +116,15 @@ export function ProjectPage() {
       setProject(null)
       setDatasets({})
       setDatasetsLoadError(null)
+      setCoreLoadError(null)
+      setBuildings([])
+      setNodes([])
+      setPipes([])
+      setLastRun(null)
+      setParcels([])
+      setCatalogs([])
+      setExisting([])
+      setBoreholes([])
       datasetsProjectIdRef.current = null
     }
     const [projectRes, datasetsRes, buildingsRes, nodesRes, pipesRes, runRes] = await Promise.all([
@@ -145,6 +159,11 @@ export function ProjectPage() {
         .maybeSingle(),
     ])
     if (!isCurrentRequest()) return
+    if (projectRes.error) {
+      setCoreLoadError(`Проект: ${formatAppError(projectRes.error)}`)
+      setState(loadedProjectIdRef.current === id ? 'ready' : 'loadError')
+      return
+    }
     if (!projectRes.data) {
       loadedProjectIdRef.current = null
       datasetsProjectIdRef.current = null
@@ -153,6 +172,7 @@ export function ProjectPage() {
     }
     loadedProjectIdRef.current = id
     setProject(projectRes.data)
+    const coreErrors: string[] = []
     if (datasetsRes.error) {
       // Do not turn a failed SELECT into an empty project. Keeping the last
       // successfully loaded snapshot prevents every uploaded file from
@@ -174,46 +194,53 @@ export function ProjectPage() {
       setDatasets(map)
       datasetsProjectIdRef.current = id
     }
-    setBuildings(buildingsRes.data ?? [])
-    setNodes((nodesRes.data ?? []) as NodeRow[])
-    setPipes((pipesRes.data ?? []) as PipeRow[])
+    if (buildingsRes.error) coreErrors.push(`Здания: ${formatAppError(buildingsRes.error)}`)
+    else setBuildings(buildingsRes.data ?? [])
+    if (nodesRes.error) coreErrors.push(`Узлы сети: ${formatAppError(nodesRes.error)}`)
+    else setNodes((nodesRes.data ?? []) as NodeRow[])
+    if (pipesRes.error) coreErrors.push(`Участки сети: ${formatAppError(pipesRes.error)}`)
+    else setPipes((pipesRes.data ?? []) as PipeRow[])
     // Gravity (К1/К2) runs share calc_runs; keep lastRun for the water pressure
     // result only, so the water panels never receive a gravity summary.
-    const summary = runRes.data?.summary as (SizingResult & { kind?: string }) | null
-    setLastRun(summary && summary.kind !== 'gravity' ? summary : null)
+    if (runRes.error) coreErrors.push(`Последний расчёт: ${formatAppError(runRes.error)}`)
+    else {
+      const summary = runRes.data?.summary as (SizingResult & { kind?: string }) | null
+      setLastRun(summary && summary.kind !== 'gravity' ? summary : null)
+    }
     try {
       const rows = await fetchParcels(id)
       if (!isCurrentRequest()) return
       setParcels(rows)
-    } catch {
+    } catch (error) {
       if (!isCurrentRequest()) return
-      setParcels([])
+      coreErrors.push(`Земельные участки: ${formatAppError(error)}`)
     }
     try {
       const rows = await fetchCatalogs(id)
       if (!isCurrentRequest()) return
       setCatalogs(rows)
-    } catch {
+    } catch (error) {
       if (!isCurrentRequest()) return
-      setCatalogs([])
+      coreErrors.push(`Каталоги: ${formatAppError(error)}`)
     }
     try {
       const rows = await fetchExisting(id)
       if (!isCurrentRequest()) return
       setExisting(rows)
-    } catch {
+    } catch (error) {
       if (!isCurrentRequest()) return
-      setExisting([])
+      coreErrors.push(`Существующая сеть: ${formatAppError(error)}`)
     }
     try {
       const rows = await fetchGeology(id)
       if (!isCurrentRequest()) return
       setBoreholes(rows)
-    } catch {
+    } catch (error) {
       if (!isCurrentRequest()) return
-      setBoreholes([])
+      coreErrors.push(`Инженерная геология: ${formatAppError(error)}`)
     }
     if (!isCurrentRequest()) return
+    setCoreLoadError(coreErrors.length > 0 ? coreErrors.join(' · ') : null)
     setState('ready')
   }, [id])
 
@@ -232,17 +259,47 @@ export function ProjectPage() {
 
   const loadDemo = async (): Promise<boolean> => {
     if (!id || demoBusy) return false
+    if (coreLoadError || datasetsLoadError) {
+      setDemoFailures([
+        'Безопасная загрузка демо остановлена: не удалось подтвердить, что проект пуст. Сначала повторите загрузку данных проекта.',
+      ])
+      setDemoNotice('demoError')
+      return false
+    }
+    const demoTarget = classifySyntheticDemoTarget({
+      routeReport: project?.route_report,
+      routeStatus: project?.route_status,
+      basisContent: datasets.basis?.content,
+      datasetKinds: Object.keys(datasets),
+      buildingCount: buildings.length,
+      nodeCount: nodes.length,
+      pipeCount: pipes.length,
+      parcelCount: parcels.length,
+      catalogCount: catalogs.length,
+      boreholeCount: boreholes.length,
+    })
+    if (demoTarget === 'real') {
+      setDemoFailures([
+        'Безопасная загрузка демо остановлена: в проекте есть реальные исходные данные. Создайте новый пустой проект для синтетического демо — текущая схема Supabase не позволяет атомарно откатить замену всех разделов.',
+      ])
+      setDemoNotice('demoError')
+      return false
+    }
+    const hasAnyCurrentData = Object.keys(datasets).length > 0
+      || buildings.length > 0 || nodes.length > 0 || pipes.length > 0
+      || parcels.length > 0 || catalogs.length > 0 || boreholes.length > 0
+    if (hasAnyCurrentData && !window.confirm(
+      demoTarget === 'synthetic'
+        ? 'Пересоздать уже загруженное синтетическое демо? Учебные данные, расчёт и файлы демо будут заменены новой версией.'
+        : 'Заменить выбранные настройки пустого проекта синтетическим демо?',
+    )) return false
     setDemoBusy(true)
     setDemoNotice(null)
     setDemoFailures([])
     setPipelineNotice(null)
+    setPipelineDetail(null)
     try {
       const { DEMO_STORM_PROJECT_NAME, seedStormProject } = await import('../shared/stormDemo')
-      const update = await supabase
-        .from('projects')
-        .update({ name: DEMO_STORM_PROJECT_NAME, system_type: 'storm', work_type: 'new' })
-        .eq('id', id)
-      if (update.error) throw update.error
       const result = await seedStormProject(id, {
         onRouteProgress: setDemoStage,
         onRouteCancelReady: (cancel) => {
@@ -250,15 +307,22 @@ export function ProjectPage() {
           setDemoCanCancel(Boolean(cancel))
         },
       })
-      await load()
       if (result.failures.length > 0) {
+        await load()
         setDemoFailures(result.failures)
         setDemoNotice('demoError')
         return false
       }
+      const update = await supabase
+        .from('projects')
+        .update({ name: DEMO_STORM_PROJECT_NAME, system_type: 'storm', work_type: 'new' })
+        .eq('id', id)
+      if (update.error) throw update.error
+      await load()
       setDemoNotice('demoDone')
       return true
     } catch (error) {
+      await load().catch(() => undefined)
       setDemoFailures([`demo: ${formatAppError(error)}`])
       setDemoNotice('demoError')
       return false
@@ -274,6 +338,7 @@ export function ProjectPage() {
     if (!id || pipelineBusy) return
     setPipelineBusy(true)
     setPipelineNotice(null)
+    setPipelineDetail(null)
     try {
       const [freshProjectRes, buildingsRes, datasetsRes] = await Promise.all([
         supabase
@@ -327,19 +392,45 @@ export function ProjectPage() {
       })
       setPipelineNotice(result.ok ? 'done' : result.reason)
       await load()
-    } catch {
+    } catch (error) {
+      setPipelineDetail(formatAppError(error))
       setPipelineNotice('error')
     } finally {
       setPipelineBusy(false)
     }
   }
 
+  const requestGravityPipeline = (): void => {
+    if (!id || pipelineBusy) return
+    setPipelineBusy(true)
+    setPipelineNotice(null)
+    setPipelineDetail(null)
+    setGravityRunRequest((current) => ({
+      projectId: id,
+      sequence: current?.projectId === id ? current.sequence + 1 : 1,
+    }))
+  }
+
+  const runProjectPipeline = async (): Promise<void> => {
+    if (projectPipelineMode(project?.system_type) === 'gravity') {
+      requestGravityPipeline()
+      return
+    }
+    await runPipeline()
+  }
+
   const demoAndRun = async (): Promise<void> => {
     // loadDemo deliberately creates a K2 gravity project. Its calculation is
     // derived by GravitySection after reload; running the B1/EPANET pipeline
     // here would reinterpret the outfall as a zero-head water reservoir.
-    await loadDemo()
+    if (await loadDemo()) requestGravityPipeline()
   }
+
+  const gravityPipelineFinished = useCallback((outcome: 'done' | 'needData' | 'error', detail?: string) => {
+    setPipelineBusy(false)
+    setPipelineNotice(outcome)
+    setPipelineDetail(detail ?? null)
+  }, [])
 
   const topoPoints = useMemo<SurveyPoint[]>(() => {
     const content = datasets.topography?.content as { points?: SurveyPoint[] } | null | undefined
@@ -400,6 +491,18 @@ export function ProjectPage() {
 
   if (state === 'loading') return null
 
+  if (state === 'loadError') {
+    return (
+      <section className="page">
+        <div className="container">
+          <h1>Не удалось загрузить проект</h1>
+          <p className="notice error" role="alert">{coreLoadError ?? 'Сервис данных временно недоступен.'}</p>
+          <button type="button" className="btn btn-sm" onClick={() => void load()}>Повторить загрузку</button>
+        </div>
+      </section>
+    )
+  }
+
   if (state === 'notFound' || !project) {
     return (
       <section className="page">
@@ -437,7 +540,7 @@ export function ProjectPage() {
             <button
               type="button"
               className="btn btn-sm"
-              disabled={demoBusy || pipelineBusy || !isWater}
+              disabled={demoBusy || pipelineBusy}
               onClick={() => void demoAndRun()}
             >
               {pipelineBusy || demoBusy ? t('project.pipeline.running') : t('project.pipeline.demoRun')}
@@ -445,8 +548,8 @@ export function ProjectPage() {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              disabled={demoBusy || pipelineBusy || !isWater}
-              onClick={() => void runPipeline()}
+              disabled={demoBusy || pipelineBusy}
+              onClick={() => void runProjectPipeline()}
             >
               {t('project.pipeline.run')}
             </button>
@@ -468,6 +571,11 @@ export function ProjectPage() {
             Не удалось прочитать сохранённые данные проекта: {datasetsLoadError}
           </p>
         )}
+        {coreLoadError && (
+          <p className="notice error" role="alert">
+            Часть данных не обновилась; показана последняя успешная версия: {coreLoadError}
+          </p>
+        )}
         {demoBusy && (
           <div className="export-progress" role="status" aria-live="polite">
             <span className="export-progress-spinner" aria-hidden="true" />
@@ -486,7 +594,7 @@ export function ProjectPage() {
         )}
         {pipelineNotice && (
           <p className={`notice ${pipelineNotice === 'done' ? 'info' : 'error'}`}>
-            {t(`project.pipeline.${pipelineNotice}`)}
+            {t(`project.pipeline.${pipelineNotice}`)}{pipelineDetail ? `: ${pipelineDetail}` : ''}
           </p>
         )}
         <div className="panels">
@@ -552,7 +660,8 @@ export function ProjectPage() {
                 routeStatus={effectiveRouteStatus}
                 routeBlockers={project.route_blockers ?? []}
                 routeRevision={project.network_revision ?? 0}
-                onChanged={load}
+                runRequest={gravityRunRequest?.projectId === project.id ? gravityRunRequest.sequence : 0}
+                onRunComplete={gravityPipelineFinished}
               />
             </>
           )}
@@ -577,7 +686,8 @@ export function ProjectPage() {
               routeStatus={effectiveRouteStatus}
               routeBlockers={project.route_blockers ?? []}
               routeRevision={project.network_revision ?? 0}
-              onChanged={load}
+              runRequest={gravityRunRequest?.projectId === project.id ? gravityRunRequest.sequence : 0}
+              onRunComplete={gravityPipelineFinished}
             />
           )}
           {(isSewer || isStorm) && (

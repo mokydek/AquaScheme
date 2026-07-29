@@ -16,10 +16,13 @@ export type WorkingDrawingKind =
 
 export type WorkingDrawingDocumentSet = 'working_drawings' | 'specification'
 
+export type WorkingDrawingDocumentSetCode = 'MAIN' | 'SPEC'
+
 export type WorkingDrawingVariant =
   | 'route_plan'
   | 'network_plan'
   | 'main_profile'
+  | 'branch_profile'
   | 'material_schedule'
   | 'crossing_detail'
   | 'protective_grid'
@@ -94,6 +97,10 @@ export interface WorkingDrawingFreezingDepthInput {
 export interface CrossingRecord {
   id: string
   stationM: number
+  /** Profile alignment that owns this crossing. Untagged legacy records belong to the main profile only. */
+  profileId?: string
+  /** Pipe that owns this crossing. Used to isolate annotations in branched gravity networks. */
+  pipeId?: string
   kind: string
   owner?: string
   size?: string
@@ -127,6 +134,62 @@ export interface WorkingDrawingSheet {
   window?: PlanWindow
   /** Half-open source row interval [start, end) owned by this sheet. */
   dataRange?: { start: number; end: number; total: number }
+  /** Profile owned by this sheet. Main-profile sheets use the project profile; branch sheets carry their own data. */
+  profileData?: GravityProfile
+  profileId?: string
+  /** Auditable source path used by a detailed plan sheet. */
+  planPathId?: string
+}
+
+export type WorkingDrawingAlbumPageKind = 'cover' | 'drawing_register' | 'general_data' | WorkingDrawingKind
+
+/** One physical page in the exported PDF. This is deliberately separate from the generated drawing registry. */
+export interface WorkingDrawingAlbumPage {
+  id: string
+  pdfPageNumber: number
+  documentSet: WorkingDrawingDocumentSet | null
+  documentSetCode: WorkingDrawingDocumentSetCode | null
+  sheetNumber: number | null
+  title: string
+  kind: WorkingDrawingAlbumPageKind
+  sheetId?: string
+  pageFormat: {
+    format: 'A3' | 'custom'
+    widthMm: number
+    heightMm: number
+    orientation: 'landscape'
+    rotationDeg: 0 | 270
+    /** The exporter may replace this default only from an explicit layout policy, never from reference geometry. */
+    source: 'generated_layout_policy' | 'explicit_layout_policy'
+  }
+}
+
+export interface WorkingDrawingDocumentSetManifest {
+  documentSet: WorkingDrawingDocumentSet
+  code: WorkingDrawingDocumentSetCode
+  title: string
+  sheetCount: number
+  generatedSheetCount: number
+  firstPdfPage: number | null
+  lastPdfPage: number | null
+}
+
+export interface WorkingDrawingAlbumManifest {
+  pages: WorkingDrawingAlbumPage[]
+  /** Physical pages in the combined PDF, including the cover and service sheets. */
+  pdfPageCount: number
+  /** Data-generated plan/profile/table/detail/specification sheets. */
+  generatedSheetCount: number
+  servicePageCount: number
+  documentSets: Record<WorkingDrawingDocumentSet, WorkingDrawingDocumentSetManifest>
+}
+
+export interface WorkingDrawingBranchProfileInput {
+  id: string
+  title?: string
+  source?: string
+  verified: boolean
+  profile: GravityProfile
 }
 
 export interface WorkingDrawingNetworkPath {
@@ -135,13 +198,45 @@ export interface WorkingDrawingNetworkPath {
   source?: string
 }
 
+/** One continuous, source-backed alignment group used to paginate detailed plans. */
+export interface WorkingDrawingPlanPath {
+  id: string
+  title: string
+  pipeIds: string[]
+  points: Array<{ x: number; y: number; chainageM: number }>
+  stationChainagesM: number[]
+  source?: string
+}
+
+/**
+ * Exact coverage audit for the manhole/material schedule.  Counts alone are
+ * insufficient on a branched network: a schedule with the same number of
+ * duplicated junction rows can still omit an entire branch.
+ */
+export interface WorkingDrawingScheduleCoverage {
+  expectedNodeIds: string[]
+  scheduledNodeIds: string[]
+  missingNodeIds: string[]
+  unexpectedNodeIds: string[]
+  duplicateNodeIds: string[]
+  anonymousRowCount: number
+  expectedPipeIds: string[]
+  profiledPipeIds: string[]
+  unprofiledPipeIds: string[]
+  complete: boolean
+}
+
 export interface WorkingDrawingSet {
   sheets: WorkingDrawingSheet[]
+  manifest: WorkingDrawingAlbumManifest
   mainPath: Array<{ x: number; y: number; chainageM: number }>
+  /** Every confirmed pipe alignment is owned by exactly one detailed-plan path. */
+  planPaths: WorkingDrawingPlanPath[]
   networkPaths: WorkingDrawingNetworkPath[]
   missingAlignmentPipeIds: string[]
   missingNetworkAlignmentPipeIds: string[]
   protectiveGridDesign: ProtectiveGridDesign | null
+  scheduleCoverage: WorkingDrawingScheduleCoverage
   inputHash: string
   layoutPolicy: {
     planLengthM: number
@@ -152,6 +247,10 @@ export interface WorkingDrawingSet {
   }
   summary: {
     total: number
+    /** Physical PDF pages: cover + MAIN service sheets + generated MAIN/SPEC sheets. */
+    pdfPages: number
+    workingDrawingSheets: number
+    specificationSheets: number
     blocked: number
     preliminary: number
     calculated: number
@@ -168,6 +267,8 @@ export interface WorkingDrawingInput {
   system: 'sewer' | 'storm'
   network: TracedNetwork
   profile: GravityProfile | null
+  /** Optional source-backed profiles for gravity branches outside the governing main profile. */
+  branchProfiles?: WorkingDrawingBranchProfileInput[]
   schedule: SewerSchedule | null
   routeStatus: 'stale' | 'blocked' | 'preliminary' | 'calculated'
   routeBlockers?: Array<{ code?: string; message?: string } | string>
@@ -282,10 +383,31 @@ function samePoint(a: Point, b: Point, toleranceM = 0.01): boolean {
   return pointDistance(a, b) <= toleranceM
 }
 
+function confirmedPipeAlignment(
+  pipe: TracedNetwork['pipes'][number] | undefined,
+  from: Point,
+  to: Point,
+): Point[] | null {
+  if (!pipe?.alignment || pipe.alignment.length < 2) return null
+  let alignment = pipe.alignment
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .map(({ x, y }) => ({ x, y }))
+  if (alignment.length < 2) return null
+  const forward = pointDistance(alignment[0], from) + pointDistance(alignment[alignment.length - 1], to)
+  const reverse = pointDistance(alignment[0], to) + pointDistance(alignment[alignment.length - 1], from)
+  if (reverse < forward) alignment = [...alignment].reverse()
+  // A stored alignment must actually terminate at the network nodes. Adding a
+  // chord here would manufacture plan geometry across unknown terrain.
+  if (!samePoint(alignment[0], from) || !samePoint(alignment[alignment.length - 1], to)) return null
+  alignment[0] = { x: from.x, y: from.y }
+  alignment[alignment.length - 1] = { x: to.x, y: to.y }
+  return alignment
+}
+
 /**
  * Rebuild the main collector polyline from the real per-pipe alignments in
- * profile order. Endpoint chords are retained only as a diagnostic fallback;
- * their pipe ids are returned and block final plan sheets.
+ * profile order. Missing or detached alignments invalidate the continuous
+ * path; endpoint chords are never manufactured.
  */
 export function workingDrawingMainPath(
   network: TracedNetwork,
@@ -293,32 +415,34 @@ export function workingDrawingMainPath(
 ): { points: Array<Point & { chainageM: number }>; missingAlignmentPipeIds: string[] } {
   if (!profile || profile.stations.length < 2) return { points: [], missingAlignmentPipeIds: [] }
   const nodeById = new Map(network.nodes.map((node) => [node.id, node]))
-  const pipesByPair = new Map<string, TracedNetwork['pipes'][number]>()
-  for (const pipe of network.pipes) {
-    pipesByPair.set(`${pipe.fromNode}\u0000${pipe.toNode}`, pipe)
-    pipesByPair.set(`${pipe.toNode}\u0000${pipe.fromNode}`, pipe)
-  }
+  const pipeById = new Map(network.pipes.map((pipe) => [pipe.id, pipe]))
 
   const points: Array<Point & { chainageM: number }> = []
   const missingAlignmentPipeIds: string[] = []
+  const usedPipeIds = new Set<string>()
   for (let index = 1; index < profile.stations.length; index++) {
     const fromId = profile.stations[index - 1].nodeId
     const toId = profile.stations[index].nodeId
+    const requestedPipeId = profile.pipeIds[index - 1]
     const from = nodeById.get(fromId)
     const to = nodeById.get(toId)
-    if (!from || !to) continue
-    const pipe = pipesByPair.get(`${fromId}\u0000${toId}`)
-    let segment: Point[]
-    if (pipe?.alignment && pipe.alignment.length >= 2) {
-      segment = pipe.alignment.map(({ x, y }) => ({ x, y }))
-      const forward = pointDistance(segment[0], from) + pointDistance(segment[segment.length - 1], to)
-      const reverse = pointDistance(segment[0], to) + pointDistance(segment[segment.length - 1], from)
-      if (reverse < forward) segment.reverse()
-      if (!samePoint(segment[0], from, 1)) segment.unshift({ x: from.x, y: from.y })
-      if (!samePoint(segment[segment.length - 1], to, 1)) segment.push({ x: to.x, y: to.y })
-    } else {
-      segment = [{ x: from.x, y: from.y }, { x: to.x, y: to.y }]
-      missingAlignmentPipeIds.push(pipe?.id ?? `${fromId}-${toId}`)
+    if (!requestedPipeId || !from || !to) {
+      missingAlignmentPipeIds.push(requestedPipeId ?? `${fromId}-${toId}`)
+      continue
+    }
+    const pipe = pipeById.get(requestedPipeId)
+    const pipeMatches = pipe
+      && ((pipe.fromNode === fromId && pipe.toNode === toId)
+        || (pipe.fromNode === toId && pipe.toNode === fromId))
+    if (!pipeMatches || usedPipeIds.has(requestedPipeId)) {
+      missingAlignmentPipeIds.push(requestedPipeId)
+      continue
+    }
+    usedPipeIds.add(requestedPipeId)
+    const segment = confirmedPipeAlignment(pipe, from, to)
+    if (!segment) {
+      missingAlignmentPipeIds.push(requestedPipeId)
+      continue
     }
     const segmentDistances = [0]
     for (let segmentIndex = 1; segmentIndex < segment.length; segmentIndex++) {
@@ -341,13 +465,106 @@ export function workingDrawingMainPath(
       else points.push(point)
     }
   }
+  // Extra ids are just as unsafe as missing ids: their geometry is not owned
+  // by any consecutive station pair and must not be silently ignored.
+  for (const extraPipeId of profile.pipeIds.slice(Math.max(0, profile.stations.length - 1))) {
+    missingAlignmentPipeIds.push(extraPipeId)
+  }
+  if (missingAlignmentPipeIds.length > 0) return { points: [], missingAlignmentPipeIds }
   return {
     points,
     missingAlignmentPipeIds,
   }
 }
 
-/** Preserve every pipe alignment for the full-network plan; endpoint chords are diagnostic only. */
+/**
+ * Build continuous, auditable paths for detailed plans. Main and calculated
+ * branch profiles own their pipes first; every remaining confirmed alignment
+ * (for example a pressure main) receives its own path. Invalid/missing
+ * alignments are reported and never replaced by endpoint chords.
+ */
+export function workingDrawingPlanPaths(
+  network: TracedNetwork,
+  profile: GravityProfile | null,
+  branchProfiles: WorkingDrawingBranchProfileInput[] = [],
+): { paths: WorkingDrawingPlanPath[]; missingAlignmentPipeIds: string[] } {
+  const paths: WorkingDrawingPlanPath[] = []
+  const missingAlignmentPipeIds = new Set<string>()
+  const assignedPipeIds = new Set<string>()
+  const networkPipeIds = new Set(network.pipes.map((pipe) => pipe.id))
+  const profileInputs: Array<{
+    id: string
+    title: string
+    source?: string
+    profile: GravityProfile
+  }> = [
+    ...(profile ? [{ id: 'main', title: 'Магистраль', profile }] : []),
+    ...branchProfiles.map((branch) => ({
+      id: `branch:${branch.id}`,
+      title: branch.title?.trim() || `Ветвь ${branch.id}`,
+      source: branch.source,
+      profile: branch.profile,
+    })),
+  ]
+
+  for (const item of profileInputs) {
+    const pipeIds = item.profile.pipeIds.filter((pipeId) => networkPipeIds.has(pipeId))
+    if (pipeIds.length === 0 || pipeIds.some((pipeId) => assignedPipeIds.has(pipeId))) continue
+    const built = workingDrawingMainPath(network, item.profile)
+    built.missingAlignmentPipeIds.forEach((pipeId) => missingAlignmentPipeIds.add(pipeId))
+    if (built.points.length < 2 || built.missingAlignmentPipeIds.length > 0) continue
+    pipeIds.forEach((pipeId) => assignedPipeIds.add(pipeId))
+    const sources = [...new Set(pipeIds
+      .map((pipeId) => network.pipes.find((pipe) => pipe.id === pipeId)?.dataSource?.trim())
+      .filter((source): source is string => Boolean(source)))]
+    paths.push({
+      id: item.id,
+      title: item.title,
+      pipeIds,
+      points: built.points,
+      stationChainagesM: item.profile.stations.map((station) => station.chainageM),
+      source: item.source ?? (sources.length > 0 ? sources.join('; ') : undefined),
+    })
+  }
+
+  const nodeById = new Map(network.nodes.map((node) => [node.id, node]))
+  for (const pipe of network.pipes) {
+    if (assignedPipeIds.has(pipe.id)) continue
+    const from = nodeById.get(pipe.fromNode)
+    const to = nodeById.get(pipe.toNode)
+    const alignment = from && to ? confirmedPipeAlignment(pipe, from, to) : null
+    if (!alignment) {
+      missingAlignmentPipeIds.add(pipe.id)
+      continue
+    }
+    const distances = [0]
+    for (let index = 1; index < alignment.length; index++) {
+      distances.push(distances[index - 1] + pointDistance(alignment[index - 1], alignment[index]))
+    }
+    const geometryLengthM = distances.at(-1) ?? 0
+    if (geometryLengthM <= 0 || !Number.isFinite(pipe.lengthM) || pipe.lengthM <= 0) {
+      missingAlignmentPipeIds.add(pipe.id)
+      continue
+    }
+    const points = alignment.map((point, index) => ({
+      ...point,
+      chainageM: Math.round((distances[index] / geometryLengthM) * pipe.lengthM * 100) / 100,
+    }))
+    paths.push({
+      id: `pipe:${pipe.id}`,
+      title: `Участок ${pipe.id}`,
+      pipeIds: [pipe.id],
+      points,
+      stationChainagesM: [0, pipe.lengthM],
+      source: pipe.dataSource,
+    })
+    assignedPipeIds.add(pipe.id)
+  }
+
+  return { paths, missingAlignmentPipeIds: [...missingAlignmentPipeIds].sort() }
+}
+
+/** Preserve every confirmed pipe alignment for the full-network plan without endpoint chords. */
 export function workingDrawingNetworkPaths(network: TracedNetwork): {
   paths: WorkingDrawingNetworkPath[]
   missingAlignmentPipeIds: string[]
@@ -356,16 +573,77 @@ export function workingDrawingNetworkPaths(network: TracedNetwork): {
   const paths: WorkingDrawingNetworkPath[] = []
   const missingAlignmentPipeIds: string[] = []
   for (const pipe of network.pipes) {
-    let points = pipe.alignment?.map(({ x, y }) => ({ x, y })) ?? []
+    const from = nodeById.get(pipe.fromNode)
+    const to = nodeById.get(pipe.toNode)
+    const points = from && to ? confirmedPipeAlignment(pipe, from, to) ?? [] : []
     if (points.length < 2) {
-      const from = nodeById.get(pipe.fromNode)
-      const to = nodeById.get(pipe.toNode)
-      if (from && to) points = [{ x: from.x, y: from.y }, { x: to.x, y: to.y }]
       missingAlignmentPipeIds.push(pipe.id)
     }
     if (points.length >= 2) paths.push({ pipeId: pipe.id, points, source: pipe.dataSource })
   }
   return { paths, missingAlignmentPipeIds }
+}
+
+/**
+ * Proves that the schedule covers every node and pipe in the gravity network.
+ * A row without nodeId cannot be matched audibly and therefore cannot qualify
+ * a material/specification sheet for final issue.
+ */
+export function workingDrawingScheduleCoverage(
+  network: TracedNetwork,
+  schedule: SewerSchedule | null,
+  profile: GravityProfile | null,
+  branchProfiles: readonly WorkingDrawingBranchProfileInput[] = [],
+): WorkingDrawingScheduleCoverage {
+  const gravityPipes = network.pipes.filter((pipe) =>
+    pipe.systemType !== 'pressure' && pipe.kind !== 'pressure_main' && pipe.kind !== 'discharge')
+  const expectedPipeIds = [...new Set(gravityPipes.map((pipe) => pipe.id))].sort()
+  const expectedNodeIds = [...new Set(gravityPipes.flatMap((pipe) => [pipe.fromNode, pipe.toNode]))].sort()
+  const expectedNodeSet = new Set(expectedNodeIds)
+
+  const rowCounts = new Map<string, number>()
+  let anonymousRowCount = 0
+  for (const row of schedule?.manholes ?? []) {
+    const nodeId = row.nodeId?.trim()
+    if (!nodeId) {
+      anonymousRowCount++
+      continue
+    }
+    rowCounts.set(nodeId, (rowCounts.get(nodeId) ?? 0) + 1)
+  }
+  const scheduledNodeIds = [...rowCounts.keys()].sort()
+  const scheduledNodeSet = new Set(scheduledNodeIds)
+  const missingNodeIds = expectedNodeIds.filter((nodeId) => !scheduledNodeSet.has(nodeId))
+  const unexpectedNodeIds = scheduledNodeIds.filter((nodeId) => !expectedNodeSet.has(nodeId))
+  const duplicateNodeIds = scheduledNodeIds.filter((nodeId) => (rowCounts.get(nodeId) ?? 0) > 1)
+
+  const expectedPipeSet = new Set(expectedPipeIds)
+  const profiledPipeIds = [...new Set([
+    ...(profile?.pipeIds ?? []),
+    ...branchProfiles.flatMap((branch) => branch.profile.pipeIds),
+  ].filter((pipeId) => expectedPipeSet.has(pipeId)))].sort()
+  const profiledPipeSet = new Set(profiledPipeIds)
+  const unprofiledPipeIds = expectedPipeIds.filter((pipeId) => !profiledPipeSet.has(pipeId))
+  const complete = schedule != null
+    && expectedNodeIds.length > 0
+    && anonymousRowCount === 0
+    && missingNodeIds.length === 0
+    && unexpectedNodeIds.length === 0
+    && duplicateNodeIds.length === 0
+    && unprofiledPipeIds.length === 0
+
+  return {
+    expectedNodeIds,
+    scheduledNodeIds,
+    missingNodeIds,
+    unexpectedNodeIds,
+    duplicateNodeIds,
+    anonymousRowCount,
+    expectedPipeIds,
+    profiledPipeIds,
+    unprofiledPipeIds,
+    complete,
+  }
 }
 
 function issue(
@@ -527,10 +805,155 @@ function sheetHash(inputHash: string, kind: WorkingDrawingKind, number: number, 
   return workingDrawingInputHash({ inputHash, kind, number, interval })
 }
 
+function buildAlbumManifest(sheets: WorkingDrawingSheet[]): WorkingDrawingAlbumManifest {
+  const defaultPageFormat: WorkingDrawingAlbumPage['pageFormat'] = {
+    format: 'A3',
+    widthMm: 420,
+    heightMm: 297,
+    orientation: 'landscape',
+    rotationDeg: 0,
+    source: 'generated_layout_policy',
+  }
+  const generatedPageFormat = (sheet: WorkingDrawingSheet): WorkingDrawingAlbumPage['pageFormat'] => {
+    if ((sheet.kind !== 'plan' && sheet.kind !== 'profile') || !sheet.interval) {
+      return { ...defaultPageFormat }
+    }
+
+    // The roll-sheet width follows the generated interval and the drawing scale. These values are
+    // a layout policy, not measurements copied from a reference album. Fixed allowances reserve
+    // room for the left band, sheet marks, notes and the title block.
+    const intervalLengthM = Math.max(0, sheet.interval.toM - sheet.interval.fromM)
+    const scaleDenominator = 500
+    // Generated allowances cover the page margins, plan/profile side bands,
+    // annotations and the title block. They are layout policy values derived
+    // from the renderer, not dimensions copied from a reference album.
+    const fixedAllowanceMm = sheet.kind === 'plan' ? 220 : 300
+    const rawWidthMm = fixedAllowanceMm + intervalLengthM * 1000 / scaleDenominator
+    const widthMm = Math.min(5000, Math.max(420, Math.ceil(rawWidthMm / 10) * 10))
+    return {
+      format: widthMm > 420 ? 'custom' : 'A3',
+      widthMm,
+      heightMm: 297,
+      orientation: 'landscape',
+      rotationDeg: 0,
+      source: 'generated_layout_policy',
+    }
+  }
+  const serviceRollFormat = (columnCount: number, extraColumnWidthMm: number): WorkingDrawingAlbumPage['pageFormat'] => {
+    const widthMm = Math.min(5000, Math.max(420, 420 + Math.max(0, columnCount - 1) * extraColumnWidthMm))
+    return {
+      format: widthMm > 420 ? 'custom' : 'A3',
+      widthMm,
+      heightMm: 297,
+      orientation: 'landscape',
+      rotationDeg: 0,
+      source: 'generated_layout_policy',
+    }
+  }
+  // Service sheets expand horizontally when their generated content no longer fits one
+  // readable A3 column. Counts come from the current model, not from a reference PDF.
+  const registerColumnCount = Math.max(1, Math.ceil(sheets.length / 18))
+  const uniqueSourceCount = new Set(sheets.flatMap((sheet) => sheet.sources.map((source) => source.requirement))).size
+  const generalDataUnits = uniqueSourceCount
+    + new Set(sheets.map((sheet) => sheet.kind)).size
+    + 13
+    + Math.ceil(sheets.length / 10)
+  const generalDataColumnCount = Math.max(1, Math.ceil(generalDataUnits / 34))
+  const registerPageFormat = serviceRollFormat(registerColumnCount, 340)
+  const generalDataPageFormat = serviceRollFormat(generalDataColumnCount, 260)
+  const pages: WorkingDrawingAlbumPage[] = [
+    {
+      id: 'cover',
+      pdfPageNumber: 1,
+      documentSet: null,
+      documentSetCode: null,
+      sheetNumber: null,
+      title: 'Титульный лист рабочего комплекта',
+      kind: 'cover',
+      pageFormat: { ...defaultPageFormat },
+    },
+    {
+      id: 'main-1',
+      pdfPageNumber: 2,
+      documentSet: 'working_drawings',
+      documentSetCode: 'MAIN',
+      sheetNumber: 1,
+      title: 'Ведомость рабочих чертежей и общие данные, часть 1',
+      kind: 'drawing_register',
+      pageFormat: registerPageFormat,
+    },
+    {
+      id: 'main-2',
+      pdfPageNumber: 3,
+      documentSet: 'working_drawings',
+      documentSetCode: 'MAIN',
+      sheetNumber: 2,
+      title: 'Общие данные, часть 2',
+      kind: 'general_data',
+      pageFormat: generalDataPageFormat,
+    },
+  ]
+
+  for (const sheet of sheets) {
+    pages.push({
+      id: `page-${sheet.id}`,
+      pdfPageNumber: pages.length + 1,
+      documentSet: sheet.documentSet,
+      documentSetCode: sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC',
+      sheetNumber: sheet.sheetNumber,
+      title: sheet.title,
+      kind: sheet.kind,
+      sheetId: sheet.id,
+      pageFormat: generatedPageFormat(sheet),
+    })
+  }
+
+  const workingDrawingPages = pages.filter((page) => page.documentSet === 'working_drawings')
+  const specificationPages = pages.filter((page) => page.documentSet === 'specification')
+  const generatedWorkingDrawings = sheets.filter((sheet) => sheet.documentSet === 'working_drawings').length
+  const generatedSpecifications = sheets.filter((sheet) => sheet.documentSet === 'specification').length
+  const pageRange = (items: WorkingDrawingAlbumPage[]) => ({
+    firstPdfPage: items[0]?.pdfPageNumber ?? null,
+    lastPdfPage: items.at(-1)?.pdfPageNumber ?? null,
+  })
+
+  return {
+    pages,
+    pdfPageCount: pages.length,
+    generatedSheetCount: sheets.length,
+    servicePageCount: 3,
+    documentSets: {
+      working_drawings: {
+        documentSet: 'working_drawings',
+        code: 'MAIN',
+        title: 'Основной комплект рабочих чертежей',
+        sheetCount: workingDrawingPages.length,
+        generatedSheetCount: generatedWorkingDrawings,
+        ...pageRange(workingDrawingPages),
+      },
+      specification: {
+        documentSet: 'specification',
+        code: 'SPEC',
+        title: 'Спецификация оборудования, изделий и материалов',
+        sheetCount: specificationPages.length,
+        generatedSheetCount: generatedSpecifications,
+        ...pageRange(specificationPages),
+      },
+    },
+  }
+}
+
 /** Build the auditable, data-driven drawing register. No reference-project values enter the calculation. */
 export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawingSet {
   const path = workingDrawingMainPath(input.network, input.profile)
+  const detailedPlanPaths = workingDrawingPlanPaths(input.network, input.profile, input.branchProfiles)
   const networkPaths = workingDrawingNetworkPaths(input.network)
+  const scheduleCoverage = workingDrawingScheduleCoverage(
+    input.network,
+    input.schedule,
+    input.profile,
+    input.branchProfiles,
+  )
   const opts = {
     planLengthM: input.options?.planLengthM ?? 550,
     profileLengthM: input.options?.profileLengthM ?? 850,
@@ -545,6 +968,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     nodes: input.network.nodes,
     pipes: input.network.pipes.map((pipe) => ({ id: pipe.id, lengthM: pipe.lengthM, alignment: pipe.alignment, dataSource: pipe.dataSource })),
     profile: input.profile,
+    branchProfiles: input.branchProfiles,
     schedule: input.schedule,
     surveyPoints: input.surveyPoints ?? [],
     georeference: input.georeference,
@@ -572,26 +996,35 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     opts,
   })
 
-  const planChecks = sharedPlanChecks(input, path.missingAlignmentPipeIds)
-  const planWindowsList = path.points.length >= 2
-    ? planWindows(
-      path.points,
-      opts.planLengthM,
-      opts.planMarginM,
-      input.profile?.stations.map((station) => station.chainageM),
-    )
-    : []
-  const planItems: Array<{ interval?: SheetInterval; window?: PlanWindow }> = planWindowsList.length > 0
-    ? planWindowsList.map((window) => ({ interval: window, window }))
-    : [{ interval: undefined, window: undefined }]
+  const planChecks = sharedPlanChecks(input, [])
+  const planItems: Array<{
+    planPath?: WorkingDrawingPlanPath
+    interval?: SheetInterval
+    window?: PlanWindow
+  }> = detailedPlanPaths.paths.flatMap((planPath) => planWindows(
+    planPath.points,
+    opts.planLengthM,
+    opts.planMarginM,
+    planPath.stationChainagesM,
+  ).map((window) => ({ planPath, interval: window, window })))
+  if (planItems.length === 0) planItems.push({ interval: undefined, window: undefined })
 
   const sheets: WorkingDrawingSheet[] = []
-  let number = 4
+  // PDF page 1 is an unnumbered cover. MAIN/1 and MAIN/2 are the two service
+  // pages, therefore the first generated working drawing is MAIN/3 (PDF page 4).
+  let number = 3
   for (const item of planItems) {
     const blockers = [...planChecks.blockers]
     if (!item.interval) blockers.push(issue('PLAN_GEOMETRY_MISSING', 'Нет непрерывной проектной оси для формирования планового листа.', 'route'))
-    const title = `План ${input.system === 'storm' ? 'К2' : 'К1'}${item.interval ? ` ${item.interval.label}` : ''}. М1:500`
-    const sources = [...planChecks.sources]
+    const groupTitle = item.planPath && item.planPath.id !== 'main' ? ` · ${item.planPath.title}` : ''
+    const title = `План ${input.system === 'storm' ? 'К2' : 'К1'}${groupTitle}${item.interval ? ` ${item.interval.label}` : ''}. М1:500`
+    const sources = planChecks.sources.map((source) => source.requirement === 'route' && item.planPath
+      ? {
+        ...source,
+        source: item.planPath.source ?? source.source,
+        detail: `${item.planPath.pipeIds.length} участков: ${item.planPath.pipeIds.join(', ')}`,
+      }
+      : { ...source })
     const warnings = [...planChecks.warnings]
     sheets.push({
       id: `plan-${number}`,
@@ -609,6 +1042,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       inputHash: sheetHash(inputHash, 'plan', number, item.interval),
       interval: item.interval,
       window: item.window,
+      planPathId: item.planPath?.id,
     })
     number++
   }
@@ -653,10 +1087,23 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     const blockers = [...planChecks.blockers]
     const warnings = [...planChecks.warnings]
     if (!input.profile || input.profile.stations.length < 2) blockers.push(issue('PROFILE_DATA_MISSING', 'Не рассчитаны отметки продольного профиля.', 'hydraulics'))
+    if (input.profile && (path.points.length < 2 || path.missingAlignmentPipeIds.length > 0)) {
+      const pipeIds = path.missingAlignmentPipeIds.length > 0
+        ? path.missingAlignmentPipeIds
+        : input.profile.pipeIds
+      blockers.push(issue(
+        'PROFILE_ALIGNMENT_MISSING',
+        `Продольный профиль не имеет непрерывной фактической оси для участков: ${pipeIds.join(', ') || 'не определены'}. Соединение узлов прямыми не допускается.`,
+        'route',
+      ))
+    }
     const gravityPipeIds = input.network.pipes
       .filter((pipe) => pipe.systemType !== 'pressure' && pipe.kind !== 'pressure_main' && pipe.kind !== 'discharge')
       .map((pipe) => pipe.id)
-    const profiledPipeIds = new Set(input.profile?.pipeIds ?? [])
+    const profiledPipeIds = new Set([
+      ...(input.profile?.pipeIds ?? []),
+      ...(input.branchProfiles ?? []).flatMap((branch) => branch.profile.pipeIds),
+    ])
     const unprofiledPipeIds = gravityPipeIds.filter((pipeId) => !profiledPipeIds.has(pipeId))
     if (input.profile && unprofiledPipeIds.length > 0) blockers.push(issue(
       'PROFILE_BRANCHES_MISSING',
@@ -755,12 +1202,89 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     number++
   }
 
+  // A branch profile is a separate deliverable only when the caller provides
+  // actual profile stations for that branch. Missing branches remain an
+  // explicit blocker on the main profile; placeholder geometry is never made.
+  const mainProfileTemplate = sheets.find((sheet) => sheet.variant === 'main_profile')
+  for (const branch of input.branchProfiles ?? []) {
+    if (branch.profile.stations.length < 2) continue
+    const branchPath = workingDrawingMainPath(input.network, branch.profile)
+    const branchSpecs = profileSheetSpecs(branch.profile, input.system, opts.profileLengthM)
+    for (const item of branchSpecs) {
+      const blockers = (mainProfileTemplate?.blockers ?? [])
+        .filter((item) => item.code !== 'PROFILE_DATA_MISSING'
+          && item.code !== 'PROFILE_BRANCHES_MISSING'
+          && item.code !== 'PROFILE_ALIGNMENT_MISSING')
+      if (branchPath.points.length < 2 || branchPath.missingAlignmentPipeIds.length > 0) {
+        const pipeIds = branchPath.missingAlignmentPipeIds.length > 0
+          ? branchPath.missingAlignmentPipeIds
+          : branch.profile.pipeIds
+        blockers.push(issue(
+          'PROFILE_ALIGNMENT_MISSING',
+          `Продольный профиль ветви ${branch.id} не имеет непрерывной фактической оси для участков: ${pipeIds.join(', ') || 'не определены'}. Соединение узлов прямыми не допускается.`,
+          'route',
+        ))
+      }
+      if (!branch.verified) blockers.push(issue(
+        'BRANCH_PROFILE_UNVERIFIED',
+        `Продольный профиль ветви ${branch.id} не подтверждён источником инженерной модели.`,
+        'hydraulics',
+      ))
+      const warnings = [...(mainProfileTemplate?.warnings ?? [])]
+      const sources = (mainProfileTemplate?.sources ?? []).map((source) => source.requirement === 'hydraulics'
+        ? makeSource(
+          'hydraulics',
+          true,
+          input.hydraulicsReady && branch.verified,
+          branch.source,
+          `${branch.profile.stations.length} станций ветви ${branch.id}`,
+        )
+        : { ...source })
+      const baseTitle = branch.title?.trim() || `Профиль ветви ${branch.id}`
+      sheets.push({
+        id: `branch-profile-${branch.id}-${number}`,
+        sequence: sheets.length + 1,
+        documentSet: 'working_drawings',
+        sheetNumber: number,
+        title: `${baseTitle} ${item.interval.label}`,
+        kind: 'profile',
+        variant: 'branch_profile',
+        status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+        blockers,
+        warnings,
+        requirements: mainProfileTemplate?.requirements ?? [
+          'route', 'topography', 'hydraulics', 'catalog', 'geology', 'freezing_depth', 'crossings', 'norms',
+        ],
+        sources,
+        inputHash: sheetHash(inputHash, 'profile', number, item.interval),
+        interval: item.interval,
+        profileData: branch.profile,
+        profileId: branch.id,
+      })
+      number++
+    }
+  }
+
   const manholeCount = input.schedule?.manholes.length ?? 0
+  const scheduleCoverageMessage = () => {
+    const details: string[] = []
+    if (scheduleCoverage.anonymousRowCount > 0) details.push(`строк без nodeId: ${scheduleCoverage.anonymousRowCount}`)
+    if (scheduleCoverage.missingNodeIds.length > 0) details.push(`нет узлов: ${scheduleCoverage.missingNodeIds.join(', ')}`)
+    if (scheduleCoverage.unexpectedNodeIds.length > 0) details.push(`лишние узлы: ${scheduleCoverage.unexpectedNodeIds.join(', ')}`)
+    if (scheduleCoverage.duplicateNodeIds.length > 0) details.push(`дубли узлов: ${scheduleCoverage.duplicateNodeIds.join(', ')}`)
+    if (scheduleCoverage.unprofiledPipeIds.length > 0) details.push(`нет профилей участков: ${scheduleCoverage.unprofiledPipeIds.join(', ')}`)
+    return `Ведомость сооружений не покрывает всю самотечную сеть${details.length > 0 ? ` (${details.join('; ')})` : ''}.`
+  }
   const materialSheetCount = Math.max(1, Math.ceil(manholeCount / opts.materialRowsPerSheet))
   for (let part = 0; part < materialSheetCount; part++) {
     const blockers: WorkingDrawingIssue[] = []
     const warnings: WorkingDrawingIssue[] = []
     if (!input.schedule || manholeCount === 0) blockers.push(issue('MANHOLE_SCHEDULE_MISSING', 'Не рассчитана ведомость колодцев.', 'manhole_catalog'))
+    if (input.schedule && !scheduleCoverage.complete) blockers.push(issue(
+      'MANHOLE_SCHEDULE_INCOMPLETE',
+      scheduleCoverageMessage(),
+      'manhole_catalog',
+    ))
     if (!input.manholeCatalogReady) blockers.push(issue(
       'MANHOLE_CONSTRUCTION_MISSING',
       input.manholeCatalogMissingLabels?.length
@@ -770,7 +1294,13 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     ))
     if (!input.catalogReady) blockers.push(issue('CATALOG_MISSING', 'Не подтверждён активный каталог материалов.', 'catalog'))
     const sources = [
-      makeSource('manhole_catalog', !!input.schedule && manholeCount > 0 && !!input.manholeCatalogReady, !!input.manholeCatalogReady, undefined, `${manholeCount} колодцев`),
+      makeSource(
+        'manhole_catalog',
+        !!input.schedule && manholeCount > 0 && !!input.manholeCatalogReady,
+        !!input.manholeCatalogReady && scheduleCoverage.complete,
+        undefined,
+        `${manholeCount} колодцев; покрытие ${scheduleCoverage.scheduledNodeIds.length}/${scheduleCoverage.expectedNodeIds.length} узлов`,
+      ),
       makeSource('catalog', input.catalogReady, input.catalogReady),
       makeSource('norms', true, input.normsVerified ?? false),
     ]
@@ -899,6 +1429,11 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     const blockers: WorkingDrawingIssue[] = []
     const warnings: WorkingDrawingIssue[] = []
     if (!input.schedule) blockers.push(issue('SPECIFICATION_SOURCE_MISSING', 'Нет расчётной ведомости труб и сооружений.', 'catalog'))
+    if (input.schedule && !scheduleCoverage.complete) blockers.push(issue(
+      'MANHOLE_SCHEDULE_INCOMPLETE',
+      scheduleCoverageMessage(),
+      'manhole_catalog',
+    ))
     if (!input.catalogReady) blockers.push(issue('CATALOG_MISSING', 'Не подтверждён активный каталог материалов.', 'catalog'))
     if (manholeCount > 0 && !input.manholeCatalogReady) blockers.push(issue(
       'MANHOLE_CONSTRUCTION_MISSING',
@@ -909,7 +1444,13 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     if (!input.normsVerified) warnings.push(issue('NORMS_REQUIRE_REVIEW', 'Обозначения и нормативные ссылки спецификации требуют подтверждения.', 'norms'))
     const sources = [
       makeSource('catalog', input.catalogReady, input.catalogReady, undefined, `${input.schedule?.pipes.length ?? 0} групп труб`),
-      makeSource('manhole_catalog', manholeCount === 0 || !!input.manholeCatalogReady, manholeCount === 0 || !!input.manholeCatalogReady),
+      makeSource(
+        'manhole_catalog',
+        manholeCount > 0 && !!input.manholeCatalogReady,
+        manholeCount > 0 && !!input.manholeCatalogReady && scheduleCoverage.complete,
+        undefined,
+        `покрытие ${scheduleCoverage.scheduledNodeIds.length}/${scheduleCoverage.expectedNodeIds.length} узлов`,
+      ),
       makeSource('crossings', crossingCount === 0 || (input.crossings?.length ?? 0) > 0, crossingIssues(input).length === 0),
       makeSource('norms', true, input.normsVerified ?? false),
     ]
@@ -939,17 +1480,24 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
   }
 
   const statusCounts = (status: WorkingDrawingStatus) => sheets.filter((sheet) => sheet.status === status).length
+  const manifest = buildAlbumManifest(sheets)
   return {
     sheets,
+    manifest,
     mainPath: path.points,
+    planPaths: detailedPlanPaths.paths,
     networkPaths: networkPaths.paths,
-    missingAlignmentPipeIds: path.missingAlignmentPipeIds,
+    missingAlignmentPipeIds: detailedPlanPaths.missingAlignmentPipeIds,
     missingNetworkAlignmentPipeIds: networkPaths.missingAlignmentPipeIds,
     protectiveGridDesign: input.protectiveGridDesign ?? null,
+    scheduleCoverage,
     inputHash,
     layoutPolicy: opts,
     summary: {
       total: sheets.length,
+      pdfPages: manifest.pdfPageCount,
+      workingDrawingSheets: manifest.documentSets.working_drawings.sheetCount,
+      specificationSheets: manifest.documentSets.specification.sheetCount,
       blocked: statusCounts('BLOCKED'),
       preliminary: statusCounts('PRELIMINARY'),
       calculated: statusCounts('CALCULATED'),

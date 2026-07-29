@@ -40,6 +40,23 @@ describe('constrained routing', () => {
     expect(Math.max(...result.paths[0].points.map((point) => Math.abs(point.y - 60)))).toBeLessThanOrEqual(1)
   })
 
+  it('snaps every pipe alignment endpoint exactly to its network nodes', () => {
+    const result = traceConstrainedNetwork(
+      [{ id: 'rounded-terminal', x: 110.004, y: 60.006 }],
+      { x: 10.006, y: 60.004 },
+      { corridorRings: [[{ x: 0, y: 0 }, { x: 120, y: 0 }, { x: 120, y: 120 }, { x: 0, y: 120 }]] },
+      { gridSizeM: 10 },
+    )
+    const nodeById = new Map(result.network.nodes.map((node) => [node.id, node]))
+    expect(result.network.pipes.length).toBeGreaterThan(0)
+    for (const pipe of result.network.pipes) {
+      const from = nodeById.get(pipe.fromNode)
+      const to = nodeById.get(pipe.toNode)
+      expect(pipe.alignment?.[0]).toMatchObject({ x: from?.x, y: from?.y })
+      expect(pipe.alignment?.at(-1)).toMatchObject({ x: to?.x, y: to?.y })
+    }
+  })
+
   it('routes around a hard building footprint instead of drawing a chord through it', () => {
     const obstacle = [{ x: 40, y: 30 }, { x: 60, y: 30 }, { x: 60, y: 70 }, { x: 40, y: 70 }]
     const input = {

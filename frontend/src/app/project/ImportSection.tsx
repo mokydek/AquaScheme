@@ -14,6 +14,7 @@ import type { PipeRow } from '../../shared/network'
 import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
+import { buildDxfCadContext } from '../../shared/dxfContext'
 
 type Parsed =
   | { kind: 'dxf'; data: DxfNetworkData; constraints: DxfConstraintData }
@@ -241,6 +242,8 @@ export function ImportSection({
         closed: segment.closed,
         sourceType: segment.sourceType,
         sourceHandle: segment.sourceHandle,
+        sourceBlock: segment.sourceBlock,
+        sourceInsertHandle: segment.sourceInsertHandle,
         colorNumber: segment.colorNumber,
         lineType: segment.lineType,
         points: segment.points.map(transform),
@@ -258,6 +261,47 @@ export function ImportSection({
         setReport(importReport)
         setNotice('error')
         return
+      }
+      if (parsed.kind === 'dxf') {
+        const mapSourceSegments = (items: ImportSegment[]) => items.map((segment) => ({
+          layer: segment.layer,
+          sourceType: segment.sourceType,
+          sourceHandle: segment.sourceHandle,
+          sourceBlock: segment.sourceBlock,
+          sourceInsertHandle: segment.sourceInsertHandle,
+          colorNumber: segment.colorNumber,
+          lineType: segment.lineType,
+          points: segment.points.map(transform),
+        }))
+        const dxfSurvey = parsed.constraints.surveyPoints.map((point) => ({ ...transform(point), z: point.z }))
+        const unresolvedLayers = Object.entries(parsed.constraints.roles)
+          .filter(([, role]) => role === 'unknown')
+          .map(([name]) => name)
+        await saveDataset(projectId, 'route_constraints', {
+          corridorRings: parsed.constraints.corridorRings.map((ring) => ring.map(transform)),
+          guideLines: mapSourceSegments(parsed.constraints.guideAxis),
+          redLines: mapSourceSegments(parsed.constraints.redLines),
+          utilityLines: mapSourceSegments(parsed.constraints.utilityLines),
+          roadLines: mapSourceSegments([...parsed.constraints.roadLines, ...parsed.constraints.railwayLines]),
+          waterLines: mapSourceSegments(parsed.constraints.hydrography),
+          waterRings: parsed.constraints.hydrography
+            .filter((segment) => segment.closed && segment.points.length >= 4)
+            .map((segment) => segment.points.map(transform)),
+          hardObstacleRings: parsed.constraints.buildingFootprints.map((ring) => ring.map(transform)),
+          forbiddenRings: parsed.constraints.forbiddenZoneRings.map((ring) => ring.map(transform)),
+          parcelRings: parsed.constraints.parcelRings.map((ring) => ring.map(transform)),
+          protectionZoneRings: parsed.constraints.protectionZoneRings.map((ring) => ring.map(transform)),
+          approvedCrossingRings: parsed.constraints.approvedCrossingRings.map((ring) => ring.map(transform)),
+          surveyPoints: dxfSurvey.length > 0 ? dxfSurvey : points,
+          unresolvedLayers,
+          ...buildDxfCadContext(parsed.constraints, transform),
+          completeness: unresolvedLayers.length > 0 ? 'blocked-unresolved-layers' : 'reviewed-dxf-classification',
+        }, {
+          roles: parsed.constraints.roles,
+          rejectedSurveyPoints: parsed.constraints.rejectedSurveyPoints,
+          sourceLayers: parsed.data.layers,
+          drawingMetadata: parsed.data.metadata,
+        }, fromDwg ? 'converted-from-dwg.dxf' : 'source.dxf')
       }
       await replaceNetwork(projectId, network)
       setReport(importReport)
@@ -285,6 +329,8 @@ export function ImportSection({
         layer: segment.layer,
         sourceType: segment.sourceType,
         sourceHandle: segment.sourceHandle,
+        sourceBlock: segment.sourceBlock,
+        sourceInsertHandle: segment.sourceInsertHandle,
         colorNumber: segment.colorNumber,
         lineType: segment.lineType,
         points: segment.points.map(transform),
@@ -301,6 +347,7 @@ export function ImportSection({
         utilityLines: mapSegments(parsed.constraints.utilityLines),
         roadLines: mapSegments([...parsed.constraints.roadLines, ...parsed.constraints.railwayLines]),
         waterLines: mapSegments(parsed.constraints.hydrography),
+        ...buildDxfCadContext(parsed.constraints, transform),
         waterRings: parsed.constraints.hydrography
           .filter((segment) => segment.closed && segment.points.length >= 4)
           .map((segment) => segment.points.map(transform)),
@@ -427,6 +474,15 @@ export function ImportSection({
         return
       }
       await replaceNetwork(projectId, route.network)
+      await saveDataset(projectId, 'route_constraints', {
+        ...routeConstraints,
+        completeness: routeConstraints.unresolvedLayers.length > 0 ? 'blocked-unresolved-layers' : 'reviewed-dxf-classification',
+      }, {
+        roles: parsed.constraints.roles,
+        rejectedSurveyPoints: parsed.constraints.rejectedSurveyPoints,
+        sourceLayers: parsed.data.layers,
+        drawingMetadata: parsed.data.metadata,
+      }, fromDwg ? 'converted-from-dwg.dxf' : 'source.dxf')
       if (primaryCorridor) await replaceRightOfWay(projectId, primaryCorridor.map(transform), 'Инженерный коридор из загруженного DWG')
       setNotice('done')
       await onChanged()

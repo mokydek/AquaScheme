@@ -7,6 +7,7 @@ import type {
   SewerSchedule,
   SurveyPoint,
   TracedNetwork,
+  WorkingDrawingAlbumPage,
   WorkingDrawingSet,
   WorkingDrawingSheet,
 } from '@aquascheme/engine'
@@ -32,6 +33,83 @@ export interface ProjectAlbumInput {
 
 type PdfNode = Record<string, unknown>
 type PathPoint = { x: number; y: number; chainageM: number }
+type AlbumPageFormat = WorkingDrawingAlbumPage['pageFormat']
+type Bounds = { minX: number; maxX: number; minY: number; maxY: number }
+type SvgPoint = { x: number; y: number }
+type SvgProjector = (point: { x: number; y: number }) => SvgPoint
+
+const PDF_POINTS_PER_MM = 72 / 25.4
+const PAGE_MARGINS: [number, number, number, number] = [30, 28, 30, 52]
+const PLAN_SCALE_DENOMINATOR = 500
+const PROFILE_HORIZONTAL_SCALE_DENOMINATOR = 500
+const PROFILE_VERTICAL_SCALE_DENOMINATOR = 100
+
+/** Physical paper distance occupied by one model metre at the requested scale. */
+export function scaleMillimetresPerMetre(denominator: number): number {
+  if (!Number.isFinite(denominator) || denominator <= 0) throw new Error('Знаменатель масштаба должен быть положительным числом.')
+  return 1000 / denominator
+}
+
+/** Rotate source coordinates into a local sheet axis without changing distances. */
+export function localAxisCoordinates(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): SvgPoint {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const length = Math.hypot(dx, dy)
+  const ux = length > 1e-9 ? dx / length : 1
+  const uy = length > 1e-9 ? dy / length : 0
+  const rx = point.x - start.x
+  const ry = point.y - start.y
+  return { x: rx * ux + ry * uy, y: -rx * uy + ry * ux }
+}
+
+function pdfPageSize(format: AlbumPageFormat): string | { width: number; height: number } {
+  if (!Number.isFinite(format.widthMm) || !Number.isFinite(format.heightMm) || format.widthMm <= 0 || format.heightMm <= 0) {
+    throw new Error('Некорректный формат листа в манифесте альбома.')
+  }
+  if (format.format === 'A3' && format.widthMm === 420 && format.heightMm === 297) return 'A3'
+  return { width: format.widthMm * PDF_POINTS_PER_MM, height: format.heightMm * PDF_POINTS_PER_MM }
+}
+
+function manifestPageForSheet(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): WorkingDrawingAlbumPage {
+  const page = input.drawingSet.manifest.pages.find((item) => item.sheetId === sheet.id)
+  if (!page) throw new Error(`Лист ${sheet.id} отсутствует в манифесте альбома.`)
+  return page
+}
+
+function drawingViewport(format: AlbumPageFormat) {
+  const fitWidth = format.widthMm * PDF_POINTS_PER_MM - PAGE_MARGINS[0] - PAGE_MARGINS[2]
+  const fitHeight = format.heightMm * PDF_POINTS_PER_MM - PAGE_MARGINS[1] - PAGE_MARGINS[3] - 36
+  const canvasHeight = 500
+  const canvasWidth = canvasHeight * fitWidth / Math.max(fitHeight, 1)
+  const physicalHeightMm = fitHeight / PDF_POINTS_PER_MM
+  const svgUnitsPerMm = canvasHeight / physicalHeightMm
+  return { fitWidth, fitHeight, canvasWidth, canvasHeight, svgUnitsPerMm }
+}
+
+function intersectsBounds(points: Array<{ x: number; y: number }>, bounds: Bounds): boolean {
+  if (points.length === 0) return false
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const point of points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minY = Math.min(minY, point.y)
+    maxY = Math.max(maxY, point.y)
+  }
+  return Number.isFinite(minX) && maxX >= bounds.minX && minX <= bounds.maxX && maxY >= bounds.minY && minY <= bounds.maxY
+}
+
+function sampled<T>(items: T[], maximum: number): T[] {
+  const stride = Math.max(1, Math.ceil(items.length / Math.max(maximum, 1)))
+  return items.filter((_, index) => index % stride === 0).slice(0, maximum)
+}
 
 function picket(chainageM: number): string {
   const pk = Math.floor(chainageM / 100)
@@ -41,6 +119,56 @@ function picket(chainageM: number): string {
 
 function xmlText(value: unknown): string {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+}
+
+function cadContextSvg(
+  constraints: ProjectAlbumInput['constraints'],
+  project: SvgProjector,
+  bounds: Bounds,
+): string {
+  const linePoints = (points: Array<{ x: number; y: number }>) => points
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .map((point) => {
+      const projected = project(point)
+      return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
+    })
+    .join(' ')
+  const contextLines = sampled(
+    (constraints?.cadContextLines ?? []).filter((line) => intersectsBounds(line.points, bounds)),
+    2400,
+  ).map((line) => `<polyline data-cad-context="line" points="${linePoints(line.points)}" fill="none" stroke="#c7c7c7" stroke-width="0.65"/>`).join('')
+  const terrainLines = sampled(
+    (constraints?.terrainLines ?? []).filter((line) => intersectsBounds(line.points, bounds)),
+    1400,
+  ).map((line) => `<polyline data-cad-context="terrain" points="${linePoints(line.points)}" fill="none" stroke="#78906d" stroke-width="0.9"/>`).join('')
+  const labels = sampled(
+    (constraints?.cadTextEntities ?? []).filter((label) =>
+      Number.isFinite(label.x) && Number.isFinite(label.y)
+      && label.x >= bounds.minX && label.x <= bounds.maxX
+      && label.y >= bounds.minY && label.y <= bounds.maxY),
+    320,
+  ).map((label) => {
+    const projected = project(label)
+    const tx = projected.x
+    const ty = projected.y
+    const rotation = Number.isFinite(label.rotationDeg) && label.rotationDeg
+      ? ` transform="rotate(${-label.rotationDeg!} ${tx.toFixed(1)} ${ty.toFixed(1)})"`
+      : ''
+    return `<text data-cad-context="text" x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="7" fill="#555"${rotation}>${xmlText(label.text.replaceAll('\\P', ' '))}</text>`
+  }).join('')
+  const blocks = sampled(
+    (constraints?.cadBlockEntities ?? []).filter((block) =>
+      Number.isFinite(block.x) && Number.isFinite(block.y)
+      && block.x >= bounds.minX && block.x <= bounds.maxX
+      && block.y >= bounds.minY && block.y <= bounds.maxY),
+    240,
+  ).map((block) => {
+    const projected = project(block)
+    const bx = projected.x
+    const by = projected.y
+    return `<g data-cad-context="block"><path d="M${(bx - 3).toFixed(1)} ${by.toFixed(1)}H${(bx + 3).toFixed(1)}M${bx.toFixed(1)} ${(by - 3).toFixed(1)}V${(by + 3).toFixed(1)}" stroke="#555" stroke-width="0.8"/><text x="${(bx + 4).toFixed(1)}" y="${(by - 3).toFixed(1)}" font-size="6.5" fill="#555">${xmlText(block.name)}</text></g>`
+  }).join('')
+  return contextLines + terrainLines + blocks + labels
 }
 
 function pointAt(path: PathPoint[], chainageM: number): PathPoint {
@@ -65,20 +193,55 @@ function pathSlice(path: PathPoint[], fromM: number, toM: number): PathPoint[] {
   ]
 }
 
-function planSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
+function planSvg(
+  input: ProjectAlbumInput,
+  sheet: WorkingDrawingSheet,
+  canvasWidth = 1000,
+  svgUnitsPerMm = 1,
+): string {
   const window = sheet.window
-  if (!window || input.drawingSet.mainPath.length < 2) {
+  const sourcePath = sheet.planPathId
+    ? input.drawingSet.planPaths.find((path) => path.id === sheet.planPathId)?.points ?? []
+    : input.drawingSet.mainPath
+  if (!window || sourcePath.length < 2) {
     throw new Error(`Лист ${sheet.sheetNumber}: отсутствует подтверждённая геометрия плана.`)
   }
-  const path = pathSlice(input.drawingSet.mainPath, window.fromM, window.toM)
-  const width = Math.max(window.maxX - window.minX, 1)
-  const height = Math.max(window.maxY - window.minY, 1)
-  const scale = Math.min(900 / width, 410 / height)
-  const x = (value: number) => 45 + (value - window.minX) * scale
-  const y = (value: number) => 445 - (value - window.minY) * scale
-  const route = path.map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`).join(' ')
-  const linePoints = (points: Array<{ x: number; y: number }>) => points.map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`).join(' ')
+  const path = pathSlice(sourcePath, window.fromM, window.toM)
+  const axisStart = path[0]
+  const axisEnd = path[path.length - 1]
+  const windowCorners = [
+    { x: window.minX, y: window.minY },
+    { x: window.minX, y: window.maxY },
+    { x: window.maxX, y: window.minY },
+    { x: window.maxX, y: window.maxY },
+  ].map((point) => localAxisCoordinates(point, axisStart, axisEnd))
+  const localMinX = Math.min(...windowCorners.map((point) => point.x))
+  const localMinY = Math.min(...windowCorners.map((point) => point.y))
+  const localMaxY = Math.max(...windowCorners.map((point) => point.y))
+  const unitsPerMetre = scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR) * svgUnitsPerMm
+  const project: SvgProjector = (point) => {
+    const local = localAxisCoordinates(point, axisStart, axisEnd)
+    return {
+      x: 45 + (local.x - localMinX) * unitsPerMetre,
+      y: 235 - (local.y - (localMinY + localMaxY) / 2) * unitsPerMetre,
+    }
+  }
+  const route = path.map((point) => {
+    const projected = project(point)
+    return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
+  }).join(' ')
+  const linePoints = (points: Array<{ x: number; y: number }>) => points.map((point) => {
+    const projected = project(point)
+    return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
+  }).join(' ')
+  const context = cadContextSvg(input.constraints, project, {
+    minX: window.minX,
+    maxX: window.maxX,
+    minY: window.minY,
+    maxY: window.maxY,
+  })
   const constraints = [
+    context,
     ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d7d7d7" stroke="#555"/>`),
     ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
     ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="8 5"/>`),
@@ -91,23 +254,26 @@ function planSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
     point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY)
   const stride = Math.max(1, Math.ceil(topo.length / 360))
   const topoSvg = topo.filter((_, index) => index % stride === 0).map((point, index) => {
+    const projected = project(point)
     const label = index % 14 === 0
-      ? `<text x="${(x(point.x) + 3).toFixed(1)}" y="${(y(point.y) - 3).toFixed(1)}" font-size="7" fill="#666">${point.z.toFixed(2)}</text>`
+      ? `<text x="${(projected.x + 3).toFixed(1)}" y="${(projected.y - 3).toFixed(1)}" font-size="7" fill="#666">${point.z.toFixed(2)}</text>`
       : ''
-    return `<circle cx="${x(point.x).toFixed(1)}" cy="${y(point.y).toFixed(1)}" r="1" fill="#666"/>${label}`
+    return `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="1" fill="#666"/>${label}`
   }).join('')
-  const bounds = path.filter((_, index) => index === 0 || index === path.length - 1).map((point) =>
-    `<circle cx="${x(point.x).toFixed(1)}" cy="${y(point.y).toFixed(1)}" r="4" fill="#fff" stroke="#1746b5" stroke-width="2"/><text x="${(x(point.x) + 7).toFixed(1)}" y="${(y(point.y) - 7).toFixed(1)}" font-size="10" font-weight="700">${picket(point.chainageM)}</text>`,
-  ).join('')
-  const overview = input.drawingSet.mainPath
+  const bounds = path.filter((_, index) => index === 0 || index === path.length - 1).map((point) => {
+    const projected = project(point)
+    return `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="4" fill="#fff" stroke="#1746b5" stroke-width="2"/><text x="${(projected.x + 7).toFixed(1)}" y="${(projected.y - 7).toFixed(1)}" font-size="10" font-weight="700">${picket(point.chainageM)}</text>`
+  }).join('')
+  const overview = sourcePath
   const minX = Math.min(...overview.map((point) => point.x))
   const maxX = Math.max(...overview.map((point) => point.x))
   const minY = Math.min(...overview.map((point) => point.y))
   const maxY = Math.max(...overview.map((point) => point.y))
   const overviewScale = Math.min(135 / Math.max(maxX - minX, 1), 78 / Math.max(maxY - minY, 1))
-  const ox = (value: number) => 825 + (value - minX) * overviewScale
+  const ox = (value: number) => canvasWidth - 175 + (value - minX) * overviewScale
   const oy = (value: number) => 110 - (value - minY) * overviewScale
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="930" height="445"/></clipPath></defs><rect width="1000" height="500" fill="#fff"/><rect x="35" y="15" width="930" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${topoSvg}<polyline points="${route}" fill="none" stroke="#1746b5" stroke-width="5" stroke-linejoin="round"/>${bounds}</g><g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="810" y="35" width="150" height="90" fill="#fff" stroke="#111"/><polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/><text x="817" y="120" font-size="7">Положение листа</text></g><text x="40" y="485" font-size="8">Основание: классифицированная ось DWG; рельеф: ${input.surveyPoints.length} точек топосъёмки. Вымышленные дороги и горизонтали не добавляются.</text></svg>`
+  const axisRotationDeg = Math.atan2(axisEnd.y - axisStart.y, axisEnd.x - axisStart.x) * 180 / Math.PI
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${topoSvg}<polyline data-plan-route="true" points="${route}" fill="none" stroke="#1746b5" stroke-width="5" stroke-linejoin="round"/>${bounds}</g><g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/><polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/><text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><text x="40" y="485" font-size="8">Основание: классифицированная ось DWG; рельеф: ${input.surveyPoints.length} точек топосъёмки. Масштаб 1:${PLAN_SCALE_DENOMINATOR}; локальный поворот не изменяет расстояния.</text></svg>`
 }
 
 function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
@@ -122,6 +288,10 @@ function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): s
     ...(input.constraints?.waterLines ?? []).flatMap((line) => line.points),
     ...(input.constraints?.utilityLines ?? []).flatMap((line) => line.points),
     ...(input.constraints?.redLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.cadContextLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.terrainLines ?? []).flatMap((line) => line.points),
+    ...(input.constraints?.cadTextEntities ?? []),
+    ...(input.constraints?.cadBlockEntities ?? []),
   ]
   const allPoints = [...routePoints, ...contextPoints]
   const rawMinX = Math.min(...allPoints.map((point) => point.x))
@@ -136,10 +306,13 @@ function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): s
   const scale = Math.min(900 / Math.max(maxX - minX, 1), 410 / Math.max(maxY - minY, 1))
   const x = (value: number) => 45 + (value - minX) * scale
   const y = (value: number) => 445 - (value - minY) * scale
+  const project: SvgProjector = (point) => ({ x: x(point.x), y: y(point.y) })
   const linePoints = (points: Array<{ x: number; y: number }>) => points
     .map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`)
     .join(' ')
+  const context = cadContextSvg(input.constraints, project, { minX, maxX, minY, maxY })
   const constraints = [
+    context,
     ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e2e2e2" stroke="#555"/>`),
     ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
     ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="8 5"/>`),
@@ -153,15 +326,28 @@ function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): s
   const topoSvg = topo.filter((_, index) => index % topoStride === 0)
     .map((point) => `<circle cx="${x(point.x).toFixed(1)}" cy="${y(point.y).toFixed(1)}" r="1" fill="#777"/>`)
     .join('')
-  const networkSvg = networkPaths.map((path) => {
+  let lastLabel: { x: number; y: number; diameterMm?: number } | null = null
+  const minimumLabelDistance = 72
+  const networkSvg = networkPaths.map((path, index) => {
     const middle = path.points[Math.floor(path.points.length / 2)]
     const diameter = input.pipeDiameterMm.get(path.pipeId)
-    return `<polyline points="${linePoints(path.points)}" fill="none" stroke="#1746b5" stroke-width="4" stroke-linejoin="round"/><text x="${(x(middle.x) + 5).toFixed(1)}" y="${(y(middle.y) - 5).toFixed(1)}" font-size="8" fill="#1746b5">${xmlText(path.pipeId)}${diameter ? ` · Ø${diameter}` : ''}</text>`
+    const labelX = x(middle.x)
+    const labelY = y(middle.y)
+    const distanceFromLastLabel = lastLabel ? Math.hypot(labelX - lastLabel.x, labelY - lastLabel.y) : Number.POSITIVE_INFINITY
+    const diameterChanged = lastLabel !== null && diameter !== lastLabel.diameterMm
+    const showLabel = index === 0 || diameterChanged || distanceFromLastLabel >= minimumLabelDistance
+    if (showLabel) lastLabel = { x: labelX, y: labelY, diameterMm: diameter }
+    const label = showLabel
+      ? `<text data-network-label="true" x="${(labelX + 5).toFixed(1)}" y="${(labelY - 5).toFixed(1)}" font-size="8" fill="#1746b5">${xmlText(path.pipeId)}${diameter ? ` · Ø${diameter}` : ''}</text>`
+      : ''
+    return `<polyline data-network-pipe="${xmlText(path.pipeId)}" points="${linePoints(path.points)}" fill="none" stroke="#1746b5" stroke-width="4" stroke-linejoin="round"/>${label}`
   }).join('')
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500"><defs><clipPath id="network-${sheet.sequence}"><rect x="35" y="15" width="930" height="445"/></clipPath></defs><rect width="1000" height="500" fill="#fff"/><rect x="35" y="15" width="930" height="445" fill="none" stroke="#111"/><g clip-path="url(#network-${sheet.sequence})">${constraints}${topoSvg}${networkSvg}</g><g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><text x="40" y="485" font-size="8">Сводный план построен по ${networkPaths.length} подтверждённым полилиниям сети; прямые хорды не используются в финальном выпуске.</text></svg>`
 }
 
 function profileStationAt(profile: GravityProfile, chainageM: number) {
+  const exact = profile.stations.find((station) => Math.abs(station.chainageM - chainageM) <= 1e-6)
+  if (exact) return { ...exact }
   if (chainageM <= profile.stations[0].chainageM) return { ...profile.stations[0], chainageM }
   for (let index = 1; index < profile.stations.length; index++) {
     const b = profile.stations[index]
@@ -208,34 +394,107 @@ function nearestPathProjection(
 function boreholeProfileProjection(
   input: ProjectAlbumInput,
   borehole: Borehole,
+  profilePath: PathPoint[],
 ): { chainageM: number; distanceM: number } | null {
   const maxOffsetM = input.geologyMaxOffsetM
   if (!Number.isFinite(maxOffsetM) || Number(maxOffsetM) <= 0) return null
   if (!Number.isFinite(borehole.x) || !Number.isFinite(borehole.y) || borehole.layers.length === 0) return null
-  const projection = nearestPathProjection(input.drawingSet.mainPath, borehole.x!, borehole.y!)
+  const projection = nearestPathProjection(profilePath, borehole.x!, borehole.y!)
   if (!projection || projection.distanceM > Number(maxOffsetM) + 1e-9) return null
   return projection
 }
 
-function profileSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
+function profilePlanPath(input: ProjectAlbumInput, sheet: WorkingDrawingSheet, profile: GravityProfile): PathPoint[] {
+  const expectedId = sheet.profileId ? `branch:${sheet.profileId}` : 'main'
+  const exact = input.drawingSet.planPaths.find((path) => path.id === expectedId)
+  if (exact?.points.length && exact.points.length >= 2) return exact.points
+
+  const profilePipeIds = new Set(profile.pipeIds)
+  const matching = input.drawingSet.planPaths.filter((path) => (
+    path.points.length >= 2
+    && path.pipeIds.length === profilePipeIds.size
+    && path.pipeIds.every((pipeId) => profilePipeIds.has(pipeId))
+  ))
+  if (matching.length === 1) return matching[0].points
+  // Legacy sets did not expose planPaths; only the governing main profile may
+  // use their mainPath. A branch must never borrow main-profile geometry.
+  return sheet.profileId ? [] : input.drawingSet.mainPath
+}
+
+export function crossingBelongsToProfile(
+  crossing: CrossingRecord,
+  profileId: string | undefined,
+  pipeIds: readonly string[],
+): boolean {
+  const taggedByProfile = Boolean(crossing.profileId)
+  const taggedByPipe = Boolean(crossing.pipeId)
+  if (!taggedByProfile && !taggedByPipe) return profileId === undefined
+  const activeProfileId = profileId ?? 'main'
+  if (taggedByProfile && crossing.profileId !== activeProfileId) return false
+  if (taggedByPipe && !pipeIds.includes(crossing.pipeId!)) return false
+  return true
+}
+
+function profileCrossings(input: ProjectAlbumInput, sheet: WorkingDrawingSheet, profile: GravityProfile): CrossingRecord[] {
+  return (input.constraints?.crossings ?? []).filter((crossing) => (
+    crossingBelongsToProfile(crossing, sheet.profileId, profile.pipeIds)
+  ))
+}
+
+function profileSvg(
+  input: ProjectAlbumInput,
+  sheet: WorkingDrawingSheet,
+  canvasWidth = 1000,
+  svgUnitsPerMm = 1,
+): string {
+  const profile = sheet.profileData ?? input.profile
   const fromM = sheet.interval?.fromM ?? 0
-  const toM = sheet.interval?.toM ?? input.profile.totalLengthM
+  const toM = sheet.interval?.toM ?? profile.totalLengthM
   const stations = [
-    profileStationAt(input.profile, fromM),
-    ...input.profile.stations.filter((station) => station.chainageM > fromM && station.chainageM < toM),
-    profileStationAt(input.profile, toM),
+    profileStationAt(profile, fromM),
+    ...profile.stations.filter((station) => station.chainageM > fromM && station.chainageM < toM),
+    profileStationAt(profile, toM),
   ]
   if (stations.length < 2) throw new Error(`Лист ${sheet.sheetNumber}: недостаточно станций профиля.`)
-  const minElevation = Math.floor(Math.min(...stations.map((station) => station.invertElevationM)) - 1)
-  const maxElevation = Math.ceil(Math.max(...stations.map((station) => station.groundElevationM)) + 1)
-  const x = (chainageM: number) => 185 + ((chainageM - fromM) / Math.max(toM - fromM, 1)) * 765
-  const y = (elevationM: number) => 330 - ((elevationM - minElevation) / Math.max(maxElevation - minElevation, 1)) * 245
+  const profilePath = profilePlanPath(input, sheet, profile)
+  const activeCrossings = profileCrossings(input, sheet, profile)
+    .filter((crossing) => crossing.stationM >= fromM && crossing.stationM <= toM)
+  const activeBoreholes = (input.boreholes ?? []).flatMap((borehole) => {
+    if (!Number.isFinite(borehole.mouthElevationM)) return []
+    const projection = boreholeProfileProjection(input, borehole, profilePath)
+    if (!projection || projection.chainageM < fromM || projection.chainageM > toM) return []
+    return [{ borehole, projection }]
+  })
+  const minimumSourceElevations = [
+    ...stations.map((station) => station.invertElevationM),
+    ...activeCrossings.flatMap((crossing) => Number.isFinite(crossing.designInvertElevationM) ? [crossing.designInvertElevationM!] : []),
+    ...activeBoreholes.map(({ borehole }) => borehole.mouthElevationM! - Math.max(...borehole.layers.map((layer) => layer.bottomDepthM))),
+  ]
+  const maximumSourceElevations = [
+    ...stations.map((station) => station.groundElevationM),
+    ...activeCrossings.flatMap((crossing) => Number.isFinite(crossing.existingElevationM) ? [crossing.existingElevationM!] : []),
+    ...activeBoreholes.map(({ borehole }) => borehole.mouthElevationM!),
+  ]
+  const minElevation = Math.floor(Math.min(...minimumSourceElevations) - 1)
+  const maxElevation = Math.ceil(Math.max(...maximumSourceElevations) + 1)
+  const horizontalUnitsPerMetre = scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR) * svgUnitsPerMm
+  const verticalUnitsPerMetre = scaleMillimetresPerMetre(PROFILE_VERTICAL_SCALE_DENOMINATOR) * svgUnitsPerMm
+  const x = (chainageM: number) => 185 + (chainageM - fromM) * horizontalUnitsPerMetre
+  const y = (elevationM: number) => 330 - (elevationM - minElevation) * verticalUnitsPerMetre
+  if (x(toM) > canvasWidth - 35 + 1e-6) {
+    throw new Error(`Лист ${sheet.sheetNumber}: ширины рулонного листа недостаточно для масштаба профиля 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}.`)
+  }
+  if (y(maxElevation) < 35 - 1e-6) {
+    throw new Error(`Лист ${sheet.sheetNumber}: диапазон отметок не помещается по высоте в масштабе 1:${PROFILE_VERTICAL_SCALE_DENOMINATOR}.`)
+  }
   const ground = stations.map((station) => `${x(station.chainageM).toFixed(1)},${y(station.groundElevationM).toFixed(1)}`).join(' ')
   const invert = stations.map((station) => `${x(station.chainageM).toFixed(1)},${y(station.invertElevationM).toFixed(1)}`).join(' ')
-  const manholeByPicket = new Map(input.schedule.manholes.map((manhole) => [manhole.picket, manhole.label]))
+  const manholeByNodeId = new Map(input.schedule.manholes.flatMap((manhole) => (
+    manhole.nodeId ? [[manhole.nodeId, manhole.label] as const] : []
+  )))
   const columns = stations.map((station) => {
     const stationPicket = picket(station.chainageM)
-    const label = manholeByPicket.get(stationPicket) ?? station.nodeId
+    const label = manholeByNodeId.get(station.nodeId) ?? station.nodeId
     return `<line x1="${x(station.chainageM)}" y1="${y(station.groundElevationM)}" x2="${x(station.chainageM)}" y2="${y(station.invertElevationM)}" stroke="#111"/><line x1="${x(station.chainageM)}" y1="350" x2="${x(station.chainageM)}" y2="500" stroke="#bbb"/><text x="${x(station.chainageM)}" y="367" text-anchor="middle" font-size="8">${station.invertElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="392" text-anchor="middle" font-size="8">${station.groundElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="417" text-anchor="middle" font-size="8">${station.diameterMm}</text><text x="${x(station.chainageM)}" y="484" text-anchor="middle" font-size="7">${xmlText(label)}</text><text x="${x(station.chainageM)}" y="496" text-anchor="middle" font-size="7">${stationPicket}</text>`
   }).join('')
   const segmentValues = stations.slice(1).map((station, index) => {
@@ -245,18 +504,14 @@ function profileSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): strin
     const centerX = x((previous.chainageM + station.chainageM) / 2)
     return `<text x="${centerX}" y="442" text-anchor="middle" font-size="7">${slopePermille.toFixed(2)}‰ / ${lengthM.toFixed(2)} м</text><text x="${centerX}" y="467" text-anchor="middle" font-size="7">${lengthM.toFixed(2)}</text>`
   }).join('')
-  const crossings = (input.constraints?.crossings ?? [])
-    .filter((crossing) => crossing.stationM >= fromM && crossing.stationM <= toM)
+  const crossings = activeCrossings
     .map((crossing) => {
       const crossingX = x(crossing.stationM)
       const designY = Number.isFinite(crossing.designInvertElevationM) ? y(crossing.designInvertElevationM!) : 315
       const existingY = Number.isFinite(crossing.existingElevationM) ? y(crossing.existingElevationM!) : 65
       return `<line x1="${crossingX}" y1="45" x2="${crossingX}" y2="335" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 4"/><circle cx="${crossingX}" cy="${designY}" r="4" fill="#fff" stroke="#9b2c8c"/><path d="M${crossingX - 5} ${existingY} L${crossingX + 5} ${existingY}" stroke="#9b2c8c" stroke-width="2"/><text x="${crossingX + 5}" y="55" font-size="7" fill="#7c226f">${xmlText(crossing.id)} · ${xmlText(crossing.kind)}</text><text x="${crossingX + 5}" y="66" font-size="7" fill="#7c226f">просвет ${Number.isFinite(crossing.clearanceM) ? crossing.clearanceM!.toFixed(2) + ' м' : 'нет данных'}</text>`
     }).join('')
-  const geology = (input.boreholes ?? []).flatMap((borehole) => {
-    if (!Number.isFinite(borehole.mouthElevationM)) return []
-    const projection = boreholeProfileProjection(input, borehole)
-    if (!projection || projection.chainageM < fromM || projection.chainageM > toM) return []
+  const geology = activeBoreholes.flatMap(({ borehole, projection }) => {
     const chainageM = projection.chainageM
     const boreholeX = x(chainageM)
     const mouthElevationM = borehole.mouthElevationM!
@@ -272,8 +527,8 @@ function profileSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): strin
     return [`<line x1="${boreholeX}" y1="${y(mouthElevationM)}" x2="${boreholeX}" y2="${y(mouthElevationM - deepest)}" stroke="#7a5a32" stroke-width="2"/>${layerLines}${water}<text x="${boreholeX}" y="${y(mouthElevationM) - 5}" text-anchor="middle" font-size="7" fill="#6b4c2b">${xmlText(borehole.label)}</text>`]
   }).join('')
   const rows = ['Отметка лотка, м', 'Отметка земли, м', 'Диаметр, мм', 'Уклон / длина', 'Расстояние, м', 'Колодец / ПК']
-  const table = rows.map((label, index) => `<rect x="35" y="${350 + index * 25}" width="930" height="25" fill="none" stroke="#111"/><line x1="160" y1="${350 + index * 25}" x2="160" y2="${375 + index * 25}" stroke="#111"/><text x="42" y="${367 + index * 25}" font-size="8">${label}</text>`).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="35" width="805" height="300"/></clipPath></defs><rect width="1000" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${minElevation.toFixed(2)} м · масштаб гор. 1:500, верт. 1:100</text><g clip-path="url(#profile-${sheet.sheetNumber})"><polyline points="${ground}" fill="none" stroke="#6c5134" stroke-width="2.5"/><polyline points="${invert}" fill="none" stroke="#1746b5" stroke-width="3.5"/>${geology}${crossings}</g>${columns}${table}${segmentValues}</svg>`
+  const table = rows.map((label, index) => `<rect x="35" y="${350 + index * 25}" width="${canvasWidth - 70}" height="25" fill="none" stroke="#111"/><line x1="160" y1="${350 + index * 25}" x2="160" y2="${375 + index * 25}" stroke="#111"/><text x="42" y="${367 + index * 25}" font-size="8">${label}</text>`).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR)}" data-vertical-scale-denominator="${PROFILE_VERTICAL_SCALE_DENOMINATOR}" data-vertical-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_VERTICAL_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="35" width="${canvasWidth - 195}" height="300"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${minElevation.toFixed(2)} м · масштаб гор. 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}, верт. 1:${PROFILE_VERTICAL_SCALE_DENOMINATOR}</text><g clip-path="url(#profile-${sheet.sheetNumber})"><polyline data-profile-ground="true" points="${ground}" fill="none" stroke="#6c5134" stroke-width="2.5"/><polyline data-profile-invert="true" points="${invert}" fill="none" stroke="#1746b5" stroke-width="3.5"/>${geology}${crossings}</g>${columns}${table}${segmentValues}</svg>`
 }
 
 function basicTable(headers: string[], rows: Array<Array<string | number>>, widths?: Array<number | string>): PdfNode {
@@ -332,7 +587,7 @@ function generalDataOverviewSvg(input: ProjectAlbumInput): string {
 
 function generalDataPage(input: ProjectAlbumInput): PdfNode {
   const spatialBoreholes = (input.boreholes ?? []).filter((borehole) =>
-    boreholeProfileProjection(input, borehole) !== null)
+    boreholeProfileProjection(input, borehole, input.drawingSet.mainPath) !== null)
   const crossings = input.constraints?.crossings ?? []
   const verifiedSources = new Map<string, { label: string; available: boolean; verified: boolean; detail: string }>()
   for (const sheet of input.drawingSet.sheets) {
@@ -406,37 +661,111 @@ function generalDataPage(input: ProjectAlbumInput): PdfNode {
   }
 }
 
-function sheetPage(sheet: WorkingDrawingSheet, body: PdfNode[]): PdfNode {
+function sheetPage(sheet: WorkingDrawingSheet, body: PdfNode[], format: AlbumPageFormat): PdfNode {
+  const designation = `${sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}/${sheet.sheetNumber}`
   const header = {
     table: {
-      widths: [920, 70],
+      widths: ['*', 90],
       body: [[
         { text: sheet.title, bold: true, fontSize: 12 },
-        { text: `Лист ${sheet.sheetNumber}`, alignment: 'right', fontSize: 9 },
+        { text: designation, alignment: 'right', fontSize: 9 },
       ]],
     },
     layout: 'noBorders',
     margin: [0, 0, 0, 8],
   }
   return {
-    pageBreak: 'before',
-    stack: [
-      header,
-      ...body,
-    ],
+    section: {
+      stack: [
+        header,
+        ...body,
+      ],
+    },
+    pageSize: pdfPageSize(format),
+    pageOrientation: 'landscape',
+    pageMargins: PAGE_MARGINS,
+  }
+}
+
+function servicePage(page: WorkingDrawingAlbumPage, section: PdfNode): PdfNode {
+  const normalizedSection = { ...section }
+  delete normalizedSection.pageBreak
+  return {
+    section: normalizedSection,
+    pageSize: pdfPageSize(page.pageFormat),
+    pageOrientation: 'landscape',
+    pageMargins: PAGE_MARGINS,
+  }
+}
+
+function engineeringFrame(_currentPage: number, pageSize: { width: number; height: number }): PdfNode {
+  return {
+    canvas: [{
+      type: 'rect',
+      x: 14,
+      y: 14,
+      w: Math.max(0, pageSize.width - 28),
+      h: Math.max(0, pageSize.height - 28),
+      lineWidth: 0.8,
+      lineColor: '#222',
+    }],
+  }
+}
+
+function engineeringStamp(
+  input: ProjectAlbumInput,
+  designation: string,
+  currentPage: number,
+  totalPages: number,
+): PdfNode {
+  return {
+    margin: [30, 0, 30, 8],
+    table: {
+      widths: ['*', 105, 60, 78, 58],
+      body: [
+        [
+          { text: input.projectName, rowSpan: 2, fontSize: 7.5, margin: [3, 5, 3, 0] },
+          { text: 'Шифр', alignment: 'center', fontSize: 6.5 },
+          { text: 'Стадия', alignment: 'center', fontSize: 6.5 },
+          { text: 'Лист', alignment: 'center', fontSize: 6.5 },
+          { text: 'Листов', alignment: 'center', fontSize: 6.5 },
+        ],
+        [
+          { text: '' },
+          { text: input.projectCode, alignment: 'center', bold: true, fontSize: 8 },
+          { text: 'Р', alignment: 'center', bold: true, fontSize: 8 },
+          { text: designation, alignment: 'center', bold: true, fontSize: 7.5 },
+          { text: `${currentPage}/${totalPages}`, alignment: 'center', fontSize: 7.5 },
+        ],
+      ],
+    },
+    layout: {
+      hLineWidth: () => 0.7,
+      vLineWidth: () => 0.7,
+      hLineColor: () => '#222',
+      vLineColor: () => '#222',
+      paddingLeft: () => 3,
+      paddingRight: () => 3,
+      paddingTop: () => 2,
+      paddingBottom: () => 2,
+    },
   }
 }
 
 function rangeFor(sheets: WorkingDrawingSheet[], kind: WorkingDrawingSheet['kind']): string {
   const matches = sheets.filter((sheet) => sheet.kind === kind)
   if (matches.length === 0) return '—'
-  return matches.length === 1 ? String(matches[0].sheetNumber) : `${matches[0].sheetNumber}–${matches[matches.length - 1].sheetNumber}`
+  const code = matches[0].documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'
+  return matches.length === 1
+    ? `${code}/${matches[0].sheetNumber}`
+    : `${code}/${matches[0].sheetNumber}–${matches[matches.length - 1].sheetNumber}`
 }
 
-function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): PdfNode[] {
-  if (sheet.kind === 'plan') return [{ svg: planSvg(input, sheet), fit: [1080, 500] }]
-  if (sheet.kind === 'network_plan') return [{ svg: networkPlanSvg(input, sheet), fit: [1080, 500] }]
-  if (sheet.kind === 'profile') return [{ svg: profileSvg(input, sheet), fit: [1080, 500] }]
+function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet, format: AlbumPageFormat): PdfNode[] {
+  const viewport = drawingViewport(format)
+  if (sheet.kind === 'plan') return [{ svg: planSvg(input, sheet, viewport.canvasWidth, viewport.svgUnitsPerMm), fit: [viewport.fitWidth, viewport.fitHeight] }]
+  if (sheet.kind === 'network_plan') return [{ svg: networkPlanSvg(input, sheet), fit: [viewport.fitWidth, viewport.fitHeight] }]
+  if (sheet.kind === 'profile') return [{ svg: profileSvg(input, sheet, viewport.canvasWidth, viewport.svgUnitsPerMm), fit: [viewport.fitWidth, viewport.fitHeight] }]
   if (sheet.kind === 'material_table') {
     const range = sheet.dataRange ?? { start: 0, end: input.schedule.manholes.length, total: input.schedule.manholes.length }
     const rows = input.schedule.manholes.slice(range.start, range.end)
@@ -527,34 +856,59 @@ function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet):
   throw new Error(`Тип листа ${sheet.kind} ещё не поддерживается экспортом.`)
 }
 
+function drawingRegisterColumns(sheets: WorkingDrawingSheet[]): PdfNode {
+  const rows = sheets.map((sheet) => [
+    `${sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}/${sheet.sheetNumber}`,
+    sheet.title,
+    sheet.status,
+  ])
+  const chunks = Array.from({ length: Math.max(1, Math.ceil(rows.length / 18)) }, (_, index) =>
+    rows.slice(index * 18, (index + 1) * 18))
+  return {
+    columns: chunks.map((chunk) => ({
+      width: '*',
+      stack: [basicTable(['Лист', 'Наименование', 'Статус'], chunk, [72, '*', 75])],
+    })),
+    columnGap: 12,
+    margin: [0, 12, 0, 4],
+  }
+}
+
 export function buildProjectSheetDoc(input: ProjectAlbumInput, sheetId: string): PdfNode {
   const sheet = input.drawingSet.sheets.find((item) => item.id === sheetId)
   if (!sheet) throw new Error('Лист не найден в текущем реестре.')
   if (sheet.status !== 'VERIFIED') throw new Error(
     `Лист ${sheet.sheetNumber} нельзя выпустить как отдельный финальный документ со статусом ${sheet.status}.`,
   )
+  const page = manifestPageForSheet(input, sheet)
   return {
-    pageSize: 'A3',
+    pageSize: pdfPageSize(page.pageFormat),
     pageOrientation: 'landscape',
-    pageMargins: [30, 28, 30, 52],
+    pageMargins: PAGE_MARGINS,
     defaultStyle: { font: 'Roboto', fontSize: 9, color: '#111' },
     content: [{
       stack: [
         {
           table: {
-            widths: [920, 70],
+            widths: ['*', 90],
             body: [[
               { text: sheet.title, bold: true, fontSize: 12 },
-              { text: `Лист ${sheet.sheetNumber}`, alignment: 'right', fontSize: 9 },
+              { text: `${sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}/${sheet.sheetNumber}`, alignment: 'right', fontSize: 9 },
             ]],
           },
           layout: 'noBorders',
           margin: [0, 0, 0, 8],
         },
-        ...drawingSheetBody(input, sheet),
+        ...drawingSheetBody(input, sheet, page.pageFormat),
       ],
     }],
-    footer: { margin: [30, 0, 30, 10], text: `${input.projectCode} · лист ${sheet.sheetNumber} · ${sheet.inputHash}`, alignment: 'right', fontSize: 8 },
+    background: engineeringFrame,
+    footer: engineeringStamp(
+      input,
+      `${sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}/${sheet.sheetNumber}`,
+      1,
+      1,
+    ),
     info: { title: `${input.projectCode} — ${sheet.title}`, subject: 'Отдельный рабочий лист', creator: 'AquaScheme' },
   }
 }
@@ -563,8 +917,10 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
   if (!input.drawingSet.summary.finalExportAllowed) {
     throw new Error(`Финальный выпуск запрещён: заблокировано ${input.drawingSet.summary.blocked}, устарело ${input.drawingSet.summary.stale}.`)
   }
-  const totalSheets = input.drawingSet.sheets.length + 3
-  const content: PdfNode[] = [
+  const totalSheets = input.drawingSet.manifest.pdfPageCount
+  const serviceManifestPages = input.drawingSet.manifest.pages.filter((page) => !page.sheetId)
+  if (serviceManifestPages.length !== 3) throw new Error('Манифест альбома должен содержать три служебных страницы.')
+  const serviceContent: PdfNode[] = [
     {
       stack: [
         { text: 'РАБОЧАЯ ДОКУМЕНТАЦИЯ', alignment: 'center', bold: true, fontSize: 21, margin: [0, 100, 0, 25] },
@@ -579,7 +935,8 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
       stack: [
         { text: 'Ведомость рабочих чертежей', bold: true, fontSize: 14, margin: [0, 0, 0, 12] },
         basicTable(['Листы', 'Раздел', 'Количество'], [
-          ['1–3', 'Титульный лист, ведомость и общие данные', 3],
+          ['PDF 1', 'Титульный лист рабочего комплекта', 1],
+          ['MAIN/1–2', 'Ведомость рабочих чертежей и общие данные', 2],
           [rangeFor(input.drawingSet.sheets, 'plan'), 'Планы трассы по фактической оси DWG', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'plan').length],
           [rangeFor(input.drawingSet.sheets, 'network_plan'), 'Сводный план всей подтверждённой топологии сети', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'network_plan').length],
           [rangeFor(input.drawingSet.sheets, 'profile'), 'Продольные профили по расчётным отметкам', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'profile').length],
@@ -587,6 +944,7 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
           [rangeFor(input.drawingSet.sheets, 'detail'), 'Пересечения и конструктивные решения', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'detail').length],
           [rangeFor(input.drawingSet.sheets, 'specification'), 'Спецификации оборудования и материалов', input.drawingSet.sheets.filter((sheet) => sheet.kind === 'specification').length],
         ], [80, '*', 75]),
+        drawingRegisterColumns(input.drawingSet.sheets),
         { text: `\nВсего: ${totalSheets} листов. Расчётный расход на выпуске: ${input.outletFlowLps.toFixed(2)} л/с. Протяжённость: ${input.schedule.totalPipeLengthM.toLocaleString('ru-RU')} м.`, fontSize: 10 },
         { text: `\nИсточник плановой геометрии: ${input.network.pipes.length} участков сети, ${input.drawingSet.mainPath.length} вершин оси. Источник рельефа: ${input.surveyPoints.length} точек. Значения эталонного проекта в расчёты не подставлялись.`, fontSize: 9 },
       ],
@@ -594,25 +952,28 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
     generalDataPage(input),
   ]
 
+  const content: PdfNode[] = serviceContent.map((section, index) => servicePage(serviceManifestPages[index], section))
+
   for (const sheet of input.drawingSet.sheets) {
-    content.push(sheetPage(sheet, drawingSheetBody(input, sheet)))
+    const page = manifestPageForSheet(input, sheet)
+    content.push(sheetPage(sheet, drawingSheetBody(input, sheet, page.pageFormat), page.pageFormat))
   }
 
   return {
     pageSize: 'A3',
     pageOrientation: 'landscape',
-    pageMargins: [30, 28, 30, 52],
+    pageMargins: PAGE_MARGINS,
     defaultStyle: { font: 'Roboto', fontSize: 9, color: '#111' },
     content,
-    footer: (currentPage: number) => currentPage === 1 ? { text: '' } : ({
-      margin: [30, 0, 30, 10],
-      table: { widths: ['*', 150, 85], body: [[
-        { text: input.projectName, fontSize: 7 },
-        { text: input.projectCode, alignment: 'center', bold: true, fontSize: 9 },
-        { text: `${currentPage} / ${totalSheets}`, alignment: 'center', fontSize: 8 },
-      ]] },
-      layout: 'lightHorizontalLines',
-    }),
+    background: engineeringFrame,
+    footer: (currentPage: number) => {
+      if (currentPage === 1) return { text: '' }
+      const page = input.drawingSet.manifest.pages[currentPage - 1]
+      const designation = page?.documentSetCode && page.sheetNumber !== null
+        ? `${page.documentSetCode}/${page.sheetNumber}`
+        : `PDF ${currentPage}`
+      return engineeringStamp(input, designation, currentPage, totalSheets)
+    },
     info: {
       title: `${input.projectCode} — ${input.projectName}`,
       subject: `Расчётный комплект рабочих чертежей, ${totalSheets} листов`,

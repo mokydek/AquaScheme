@@ -58,9 +58,12 @@ export function AlbumSheetSet({
       <div className="album-sheet-set-head">
         <div>
           <p className="eyebrow">РАБОЧИЕ ЧЕРТЕЖИ · РЕЕСТР ИСТОЧНИКОВ</p>
-          <h4 id="album-sheet-set-title">Расчётный комплект — {drawingSet.summary.total} листов</h4>
+          <h4 id="album-sheet-set-title">Полный альбом — {drawingSet.summary.pdfPages} страниц PDF</h4>
           <p>
             Состав определяется протяжённостью трассы и объёмом ведомостей. Эталонный альбом используется только для проверки состава и оформления, а не как источник геометрии.
+          </p>
+          <p className="stat-line">
+            Создано расчётных листов: {drawingSet.summary.total}. Основной комплект MAIN: {drawingSet.summary.workingDrawingSheets} листов, спецификация SPEC: {drawingSet.summary.specificationSheets} листов.
           </p>
         </div>
         <div className="album-sheet-set-actions">
@@ -88,7 +91,7 @@ export function AlbumSheetSet({
         <div className="export-progress" role="status" aria-live="polite">
           <span className="export-progress-spinner" aria-hidden="true" />
           <div className="export-progress-copy">
-            <strong>{pdfBusy ? `Формируем ${drawingSet.summary.total} листов` : 'Формируем комплект рабочих файлов'}</strong>
+            <strong>{pdfBusy ? `Формируем ${drawingSet.summary.pdfPages} страниц PDF` : 'Формируем комплект рабочих файлов'}</strong>
             <span>Файл начнёт скачиваться автоматически после проверки и сборки.</span>
           </div>
           <span className="export-progress-bar" aria-hidden="true"><i /></span>
@@ -101,6 +104,14 @@ export function AlbumSheetSet({
         </p>
       )}
 
+      <div className="album-service-pages" aria-label="Служебные страницы полного PDF">
+        {drawingSet.manifest.pages.filter((page) => !page.sheetId).map((page) => (
+          <span className="drawing-status" key={page.id}>
+            PDF {page.pdfPageNumber} · {page.documentSetCode && page.sheetNumber != null ? `${page.documentSetCode}/${page.sheetNumber} · ` : ''}{page.title}
+          </span>
+        ))}
+      </div>
+
       <div className="drawing-workspace">
         <nav className="drawing-register" aria-label="Реестр рабочих листов">
           {drawingSet.sheets.map((sheet) => (
@@ -110,7 +121,7 @@ export function AlbumSheetSet({
               className={sheet.id === selected?.id ? 'active' : undefined}
               onClick={() => setSelectedId(sheet.id)}
             >
-              <span className="drawing-register-number">{sheet.sheetNumber}</span>
+              <span className="drawing-register-number">{sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}/{sheet.sheetNumber}</span>
               <span className="drawing-register-copy">
                 <strong>{sheet.title}</strong>
                 <small>{STATUS_LABEL[sheet.status]} · блокеров {sheet.blockers.length}</small>

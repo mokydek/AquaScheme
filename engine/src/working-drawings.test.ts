@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GravityProfile, SewerSchedule } from './norms/gravity'
 import type { TracedNetwork } from './trace'
-import { buildWorkingDrawingSet, workingDrawingMainPath } from './working-drawings'
+import { buildWorkingDrawingSet, workingDrawingMainPath, workingDrawingPlanPaths } from './working-drawings'
 
 const network: TracedNetwork = {
   nodes: [
@@ -38,9 +38,9 @@ const profile: GravityProfile = {
 
 const schedule: SewerSchedule = {
   manholes: [
-    { label: 'К-1', picket: 'ПК0', depthMm: 3000, pipeDiameterMm: 1200 },
-    { label: 'К-2', picket: 'ПК5+40', depthMm: 3000, pipeDiameterMm: 1200 },
-    { label: 'Вып.', picket: 'ПК10+70', depthMm: 3000, pipeDiameterMm: 1600 },
+    { nodeId: 'A', label: 'К-1', picket: 'ПК0', depthMm: 3000, pipeDiameterMm: 1200 },
+    { nodeId: 'B', label: 'К-2', picket: 'ПК5+40', depthMm: 3000, pipeDiameterMm: 1200 },
+    { nodeId: 'OUT', label: 'Вып.', picket: 'ПК10+70', depthMm: 3000, pipeDiameterMm: 1600 },
   ],
   pipes: [],
   totalPipeLengthM: 1070,
@@ -130,6 +130,71 @@ describe('workingDrawingMainPath', () => {
     }
     const result = workingDrawingMainPath(broken, profile)
     expect(result.missingAlignmentPipeIds).toEqual(['AB'])
+    expect(result.points).toEqual([])
+  })
+
+  it('fails closed when a profile station references a node absent from the network', () => {
+    const brokenNetwork: TracedNetwork = {
+      nodes: [
+        { id: 'A', kind: 'ring', x: 0, y: 0, groundElevation: 100 },
+        { id: 'D', kind: 'source', x: 300, y: 0, groundElevation: 98 },
+      ],
+      pipes: [
+        { id: 'AB', kind: 'gravity_collector', fromNode: 'A', toNode: 'B', lengthM: 150, alignment: [{ x: 0, y: 0 }, { x: 150, y: 0 }] },
+        { id: 'BD', kind: 'gravity_collector', fromNode: 'B', toNode: 'D', lengthM: 150, alignment: [{ x: 150, y: 0 }, { x: 300, y: 0 }] },
+      ],
+      totalLengthM: 300,
+    }
+    const brokenProfile: GravityProfile = {
+      stations: [
+        { nodeId: 'A', chainageM: 0, groundElevationM: 100, invertElevationM: 97, depthM: 3, diameterMm: 800 },
+        { nodeId: 'B', chainageM: 150, groundElevationM: 99, invertElevationM: 96, depthM: 3, diameterMm: 800 },
+        { nodeId: 'D', chainageM: 300, groundElevationM: 98, invertElevationM: 95, depthM: 3, diameterMm: 1000 },
+      ],
+      maxDepthM: 3,
+      outletInvertElevationM: 95,
+      totalLengthM: 300,
+      pipeIds: ['AB', 'BD'],
+    }
+
+    const result = workingDrawingMainPath(brokenNetwork, brokenProfile)
+    expect(result.points).toEqual([])
+    expect(result.missingAlignmentPipeIds).toEqual(['AB', 'BD'])
+  })
+
+  it('never substitutes a different endpoint-pair pipe for a mismatched profile pipe id', () => {
+    const mismatchNetwork: TracedNetwork = {
+      nodes: [
+        { id: 'A', kind: 'ring', x: 0, y: 0, groundElevation: 100 },
+        { id: 'B', kind: 'ring', x: 100, y: 0, groundElevation: 99 },
+        { id: 'C', kind: 'source', x: 200, y: 0, groundElevation: 98 },
+      ],
+      pipes: [
+        { id: 'AB', kind: 'gravity_collector', fromNode: 'A', toNode: 'B', lengthM: 100, alignment: [{ x: 0, y: 0 }, { x: 100, y: 0 }] },
+        { id: 'BC', kind: 'gravity_collector', fromNode: 'B', toNode: 'C', lengthM: 100, alignment: [{ x: 100, y: 0 }, { x: 200, y: 0 }] },
+        { id: 'AC', kind: 'gravity_collector', fromNode: 'A', toNode: 'C', lengthM: 230, alignment: [{ x: 0, y: 0 }, { x: 100, y: 80 }, { x: 200, y: 0 }] },
+      ],
+      totalLengthM: 430,
+    }
+    const mismatchedProfile: GravityProfile = {
+      stations: [
+        { nodeId: 'A', chainageM: 0, groundElevationM: 100, invertElevationM: 97, depthM: 3, diameterMm: 800 },
+        { nodeId: 'B', chainageM: 100, groundElevationM: 99, invertElevationM: 96, depthM: 3, diameterMm: 800 },
+        { nodeId: 'C', chainageM: 200, groundElevationM: 98, invertElevationM: 95, depthM: 3, diameterMm: 1000 },
+      ],
+      maxDepthM: 3,
+      outletInvertElevationM: 95,
+      totalLengthM: 200,
+      pipeIds: ['AB', 'AC'],
+    }
+
+    const main = workingDrawingMainPath(mismatchNetwork, mismatchedProfile)
+    expect(main.points).toEqual([])
+    expect(main.missingAlignmentPipeIds).toEqual(['AC'])
+    const detailed = workingDrawingPlanPaths(mismatchNetwork, mismatchedProfile)
+    expect(detailed.paths.some((path) => path.id === 'main')).toBe(false)
+    expect(detailed.missingAlignmentPipeIds).toContain('AC')
+    expect(detailed.paths.flatMap((path) => path.pipeIds).sort()).toEqual(['AB', 'AC', 'BC'])
   })
 })
 
@@ -139,7 +204,7 @@ describe('buildWorkingDrawingSet', () => {
     expect(set.sheets.length).toBeGreaterThan(3)
     const workingSheets = set.sheets.filter((sheet) => sheet.documentSet === 'working_drawings')
     const specificationSheets = set.sheets.filter((sheet) => sheet.documentSet === 'specification')
-    expect(workingSheets[0].sheetNumber).toBe(4)
+    expect(workingSheets[0].sheetNumber).toBe(3)
     for (let index = 1; index < workingSheets.length; index++) {
       expect(workingSheets[index].sheetNumber).toBe(workingSheets[index - 1].sheetNumber + 1)
     }
@@ -175,6 +240,82 @@ describe('buildWorkingDrawingSet', () => {
     expect(overview?.variant).toBe('network_plan')
   })
 
+  it('owns every confirmed Y-network pipe in an auditable detailed-plan path', () => {
+    const yNetwork: TracedNetwork = {
+      nodes: [
+        { id: 'A', kind: 'ring', x: 0, y: 0, groundElevation: 100 },
+        { id: 'C', kind: 'ring', x: 0, y: 300, groundElevation: 100.4 },
+        { id: 'J', kind: 'ring', x: 300, y: 150, groundElevation: 99.5 },
+        { id: 'OUT', kind: 'source', x: 650, y: 150, groundElevation: 98 },
+      ],
+      pipes: [
+        {
+          id: 'AJ', kind: 'gravity_collector', fromNode: 'A', toNode: 'J', lengthM: 350,
+          alignment: [{ x: 0, y: 0 }, { x: 120, y: 40 }, { x: 300, y: 150 }],
+          dataSource: 'DWG:Y',
+        },
+        {
+          id: 'JO', kind: 'gravity_collector', fromNode: 'J', toNode: 'OUT', lengthM: 350,
+          alignment: [{ x: 300, y: 150 }, { x: 480, y: 190 }, { x: 650, y: 150 }],
+          dataSource: 'DWG:Y',
+        },
+        {
+          id: 'CJ', kind: 'gravity_collector', fromNode: 'C', toNode: 'J', lengthM: 340,
+          alignment: [{ x: 0, y: 300 }, { x: 130, y: 260 }, { x: 300, y: 150 }],
+          dataSource: 'DWG:Y',
+        },
+      ],
+      totalLengthM: 1040,
+    }
+    const yMainProfile: GravityProfile = {
+      stations: [
+        { nodeId: 'A', chainageM: 0, groundElevationM: 100, invertElevationM: 97, depthM: 3, diameterMm: 800 },
+        { nodeId: 'J', chainageM: 350, groundElevationM: 99.5, invertElevationM: 96.5, depthM: 3, diameterMm: 1000 },
+        { nodeId: 'OUT', chainageM: 700, groundElevationM: 98, invertElevationM: 95, depthM: 3, diameterMm: 1200 },
+      ],
+      maxDepthM: 3,
+      outletInvertElevationM: 95,
+      totalLengthM: 700,
+      pipeIds: ['AJ', 'JO'],
+    }
+    const yBranchProfile: GravityProfile = {
+      stations: [
+        { nodeId: 'C', chainageM: 0, groundElevationM: 100.4, invertElevationM: 97.4, depthM: 3, diameterMm: 600 },
+        { nodeId: 'J', chainageM: 340, groundElevationM: 99.5, invertElevationM: 96.5, depthM: 3, diameterMm: 800 },
+      ],
+      maxDepthM: 3,
+      outletInvertElevationM: 96.5,
+      totalLengthM: 340,
+      pipeIds: ['CJ'],
+    }
+
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      network: yNetwork,
+      profile: yMainProfile,
+      branchProfiles: [{
+        id: 'c-j',
+        title: 'Подключение C–J',
+        source: 'DWG:Y',
+        verified: true,
+        profile: yBranchProfile,
+      }],
+    })
+
+    const ownedPipeIds = set.planPaths.flatMap((path) => path.pipeIds)
+    expect([...ownedPipeIds].sort()).toEqual(yNetwork.pipes.map((pipe) => pipe.id).sort())
+    expect(new Set(ownedPipeIds).size).toBe(yNetwork.pipes.length)
+    expect(set.missingAlignmentPipeIds).toEqual([])
+    expect(set.planPaths.find((path) => path.id === 'branch:c-j')?.points.map(({ x, y }) => [x, y]))
+      .toEqual([[0, 300], [130, 260], [300, 150]])
+
+    const planSheets = set.sheets.filter((sheet) => sheet.kind === 'plan')
+    expect(planSheets.every((sheet) => Boolean(sheet.planPathId))).toBe(true)
+    expect(new Set(planSheets.map((sheet) => sheet.planPathId))).toEqual(
+      new Set(set.planPaths.map((path) => path.id)),
+    )
+  })
+
   it('blocks only the full-network plan when a non-profile branch has no alignment', () => {
     const branchedNetwork: TracedNetwork = {
       ...network,
@@ -190,6 +331,67 @@ describe('buildWorkingDrawingSet', () => {
     expect(routePlan?.status).toBe('VERIFIED')
     expect(overview?.status).toBe('BLOCKED')
     expect(overview?.blockers.map((item) => item.code)).toContain('NETWORK_ALIGNMENT_MISSING')
+  })
+
+  it('blocks every main profile sheet when its factual alignment is missing', () => {
+    const brokenNetwork: TracedNetwork = {
+      ...network,
+      pipes: network.pipes.map((pipe) => pipe.id === 'AB' ? { ...pipe, alignment: undefined } : pipe),
+    }
+
+    const set = buildWorkingDrawingSet({ ...readyInput(), network: brokenNetwork })
+    const mainProfileSheets = set.sheets.filter((sheet) => sheet.variant === 'main_profile')
+
+    expect(mainProfileSheets.length).toBeGreaterThan(0)
+    expect(mainProfileSheets.every((sheet) =>
+      sheet.blockers.some((blocker) => blocker.code === 'PROFILE_ALIGNMENT_MISSING'
+        && blocker.message.includes('AB')),
+    )).toBe(true)
+    expect(mainProfileSheets.every((sheet) => sheet.status === 'BLOCKED')).toBe(true)
+  })
+
+  it('blocks the owning branch profile, but not the main profile, for a detached branch alignment', () => {
+    const branchNetwork: TracedNetwork = {
+      ...network,
+      nodes: [...network.nodes, { id: 'SIDE', kind: 'ring', x: 520, y: 360, groundElevation: 99 }],
+      pipes: [...network.pipes, {
+        id: 'BS', kind: 'gravity_collector', fromNode: 'B', toNode: 'SIDE', lengthM: 270,
+        alignment: [{ x: 500, y: 100 }, { x: 510, y: 220 }, { x: 519.5, y: 360 }],
+        dataSource: 'DWG:branch',
+      }],
+      totalLengthM: 1340,
+    }
+    const branchProfile: GravityProfile = {
+      stations: [
+        { nodeId: 'SIDE', chainageM: 0, groundElevationM: 99, invertElevationM: 96, depthM: 3, diameterMm: 800 },
+        { nodeId: 'B', chainageM: 270, groundElevationM: 99, invertElevationM: 95.5, depthM: 3.5, diameterMm: 1000 },
+      ],
+      maxDepthM: 3.5,
+      outletInvertElevationM: 95.5,
+      totalLengthM: 270,
+      pipeIds: ['BS'],
+    }
+
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      network: branchNetwork,
+      branchProfiles: [{
+        id: 'side-b',
+        title: 'Ветвь SIDE–B',
+        source: 'DWG:branch',
+        verified: true,
+        profile: branchProfile,
+      }],
+    })
+    const branchSheet = set.sheets.find((sheet) => sheet.variant === 'branch_profile')!
+    const mainProfileSheets = set.sheets.filter((sheet) => sheet.variant === 'main_profile')
+
+    expect(branchSheet.blockers.some((blocker) => blocker.code === 'PROFILE_ALIGNMENT_MISSING'
+      && blocker.message.includes('BS'))).toBe(true)
+    expect(branchSheet.status).toBe('BLOCKED')
+    expect(mainProfileSheets.every((sheet) =>
+      !sheet.blockers.some((blocker) => blocker.code === 'PROFILE_ALIGNMENT_MISSING')),
+    ).toBe(true)
   })
 
   it('blocks plans when georeferencing or DWG classification is incomplete', () => {
@@ -311,13 +513,13 @@ describe('buildWorkingDrawingSet', () => {
     expect(set.summary.finalExportAllowed).toBe(false)
   })
 
-  it('blocks final profiles when a gravity branch is absent from the longitudinal profile', () => {
+  it('blocks profiles, materials and specification when a branch without factual alignment is absent from the schedule', () => {
     const branchNetwork: TracedNetwork = {
       ...network,
       nodes: [...network.nodes, { id: 'C', kind: 'ring', x: 400, y: 300, groundElevation: 100 }],
       pipes: [...network.pipes, {
         id: 'CB', kind: 'gravity_collector', fromNode: 'C', toNode: 'B', lengthM: 230,
-        alignment: [{ x: 400, y: 300 }, { x: 450, y: 200 }, { x: 500, y: 100 }],
+        alignment: undefined,
         dataSource: 'designed:A*',
       }],
       totalLengthM: 1300,
@@ -325,6 +527,15 @@ describe('buildWorkingDrawingSet', () => {
     const set = buildWorkingDrawingSet({ ...readyInput(), network: branchNetwork })
     const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
     expect(profileSheet.blockers.map((item) => item.code)).toContain('PROFILE_BRANCHES_MISSING')
+    expect(set.scheduleCoverage.complete).toBe(false)
+    expect(set.scheduleCoverage.missingNodeIds).toEqual(['C'])
+    expect(set.scheduleCoverage.unprofiledPipeIds).toEqual(['CB'])
+    const materialSheet = set.sheets.find((sheet) => sheet.kind === 'material_table')!
+    const specificationSheet = set.sheets.find((sheet) => sheet.kind === 'specification')!
+    expect(materialSheet.status).toBe('BLOCKED')
+    expect(specificationSheet.status).toBe('BLOCKED')
+    expect(materialSheet.blockers.map((item) => item.code)).toContain('MANHOLE_SCHEDULE_INCOMPLETE')
+    expect(specificationSheet.blockers.map((item) => item.code)).toContain('MANHOLE_SCHEDULE_INCOMPLETE')
     expect(set.summary.finalExportAllowed).toBe(false)
   })
 

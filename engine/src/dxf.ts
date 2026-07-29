@@ -11,6 +11,7 @@ import type { SewerSchedule } from './norms/gravity'
 import { planWindows, profileSheetSpecs } from './norms/sheetset'
 import type { SelectedManholeConstruction } from './manhole-catalog'
 import type { CrossingRecord, ProtectiveGridDesign } from './working-drawings'
+import type { Borehole } from './geology'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -466,6 +467,82 @@ function drawBoreholeColumns(
 
 const SEWER_PROFILE_LAYER = 'К1-профиль'
 
+export interface ProfileSheetGeologyContext {
+  boreholes: readonly Borehole[]
+  /** Source-backed plan alignment for this profile, with matching absolute chainage. */
+  path: ReadonlyArray<{ x: number; y: number; chainageM: number }>
+  maxOffsetM: number
+}
+
+export interface ProfileSheetRenderContext {
+  /** Full-project schedule labels keyed by network node id. */
+  nodeLabels?: ReadonlyMap<string, string>
+  geology?: ProfileSheetGeologyContext
+}
+
+function nearestProfileAxisProjection(
+  path: ProfileSheetGeologyContext['path'],
+  x: number,
+  y: number,
+): { chainageM: number; distanceM: number } | null {
+  if (path.length < 2) return null
+  let best: { chainageM: number; distanceM: number } | null = null
+  for (let index = 1; index < path.length; index++) {
+    const a = path[index - 1]
+    const b = path[index]
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const lengthSquared = dx * dx + dy * dy
+    const ratio = lengthSquared <= 1e-12 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lengthSquared))
+    const projectedX = a.x + ratio * dx
+    const projectedY = a.y + ratio * dy
+    const distanceM = Math.hypot(x - projectedX, y - projectedY)
+    const chainageM = a.chainageM + ratio * (b.chainageM - a.chainageM)
+    if (!best || distanceM < best.distanceM) best = { chainageM, distanceM }
+  }
+  return best
+}
+
+function drawProfileSheetGeology(
+  dxf: DxfWriter,
+  context: ProfileSheetGeologyContext | undefined,
+  xFor: (chainageM: number) => number,
+  yFor: (elevationM: number) => number,
+  fromChainageM: number,
+  toChainageM: number,
+): void {
+  if (!context || !(context.maxOffsetM > 0) || context.path.length < 2) return
+  dxf.setCurrentLayerName(LAYERS.geology)
+  for (const borehole of context.boreholes) {
+    if (!Number.isFinite(borehole.x) || !Number.isFinite(borehole.y) || !Number.isFinite(borehole.mouthElevationM) || borehole.layers.length === 0) continue
+    const projection = nearestProfileAxisProjection(context.path, borehole.x!, borehole.y!)
+    if (!projection || projection.distanceM > context.maxOffsetM + 1e-9) continue
+    if (projection.chainageM < fromChainageM - 1e-6 || projection.chainageM > toChainageM + 1e-6) continue
+    const x = xFor(projection.chainageM)
+    const mouth = borehole.mouthElevationM!
+    const deepest = Math.max(...borehole.layers.map((layer) => layer.bottomDepthM))
+    dxf.addLine(p3(x, yFor(mouth)), p3(x, yFor(mouth - deepest)))
+    for (const layer of borehole.layers) {
+      const boundaryY = yFor(mouth - layer.bottomDepthM)
+      dxf.addLine(p3(x - 2, boundaryY), p3(x + 2, boundaryY))
+      if (layer.igeCode) {
+        const labelY = yFor(mouth - (layer.topDepthM + layer.bottomDepthM) / 2)
+        dxf.addText(p3(x + 2.5, labelY), 1.4, `ИГЭ-${layer.igeCode}`, {
+          secondAlignmentPoint: p3(x + 2.5, labelY),
+        })
+      }
+    }
+    if (Number.isFinite(borehole.water.depthM)) {
+      const waterY = yFor(mouth - borehole.water.depthM!)
+      dxf.addLine(p3(x - 3, waterY), p3(x + 3, waterY))
+    }
+    dxf.addText(p3(x, yFor(mouth) + 2), 1.6, borehole.label, {
+      horizontalAlignment: TextHorizontalAlignment.Center,
+      secondAlignmentPoint: p3(x, yFor(mouth) + 2),
+    })
+  }
+}
+
 /**
  * Longitudinal profile of the main gravity collector (К1) as a standalone A4
  * sheet: the ground and invert lines with a GOST 21.704 form 2 side table.
@@ -478,9 +555,11 @@ export function buildSewerProfileDxf(input: {
   sheetTitle?: string
   /** Surveyed utility/road/water crossings located by absolute route chainage. */
   crossings?: CrossingRecord[]
+  renderContext?: ProfileSheetRenderContext
 }): string {
   const dxf = new DxfWriter()
   dxf.addLayer(SEWER_PROFILE_LAYER, Colors.Black, LineTypes.Continuous)
+  dxf.addLayer(LAYERS.geology, Colors.Green, LineTypes.Continuous)
   const topY = drawSheetFrame(dxf, input.sheetTitle ?? 'Продольный профиль сети К1', input.projectName)
   const stations = input.profile.stations
   if (stations.length < 2) {
@@ -490,7 +569,8 @@ export function buildSewerProfileDxf(input: {
     return dxf.stringify()
   }
 
-  const labels = manholeLabels(stations.length)
+  const fallbackLabels = manholeLabels(stations.length)
+  const labels = stations.map((station, index) => input.renderContext?.nodeLabels?.get(station.nodeId) ?? fallbackLabels[index])
   const gutterX = SHEET_MARGIN + 52 // left column for form-2 row captions
   const plotLeft = gutterX
   const plotRight = SHEET_W - SHEET_MARGIN - 3
@@ -570,6 +650,15 @@ export function buildSewerProfileDxf(input: {
       secondAlignmentPoint: p3(x, labelY),
     })
   }
+
+  drawProfileSheetGeology(
+    dxf,
+    input.renderContext?.geology,
+    xFor,
+    yFor,
+    fromChainageM,
+    toChainageM,
+  )
 
   drawSewerProfileTable(dxf, input.profile, labels, xFor, gutterX, tableTopY)
 
@@ -709,6 +798,7 @@ export function buildProfileSheetSetDxf(
   system: 'sewer' | 'storm' = 'storm',
   targetPerSheetM = 850,
   crossings: CrossingRecord[] = [],
+  renderContext: ProfileSheetRenderContext = {},
 ): ProfileSheetFile[] {
   return profileSheetSpecs(profile, system, targetPerSheetM).map((spec) => ({
     title: spec.title,
@@ -719,6 +809,7 @@ export function buildProfileSheetSetDxf(
       crossings: crossings.filter((item) => (
         item.stationM >= spec.interval.fromM - 1e-6 && item.stationM <= spec.interval.toM + 1e-6
       )),
+      renderContext,
     }),
   }))
 }
@@ -973,6 +1064,29 @@ function orderedPipeAlignment(
   return alignment
 }
 
+/** Return only a real alignment that is tied to both network nodes. */
+function confirmedOrderedPipeAlignment(
+  pipe: TracedNetwork['pipes'][number],
+  from: NetworkNode,
+  to: NetworkNode,
+): DrawingPoint[] | null {
+  if (!pipe.alignment || pipe.alignment.length < 2) return null
+  let alignment = pipe.alignment
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .map(({ x, y }) => ({ x, y }))
+  if (alignment.length < 2) return null
+  const forward = Math.hypot(alignment[0].x - from.x, alignment[0].y - from.y)
+    + Math.hypot(alignment[alignment.length - 1].x - to.x, alignment[alignment.length - 1].y - to.y)
+  const reverse = Math.hypot(alignment[0].x - to.x, alignment[0].y - to.y)
+    + Math.hypot(alignment[alignment.length - 1].x - from.x, alignment[alignment.length - 1].y - from.y)
+  if (reverse < forward) alignment = [...alignment].reverse()
+  if (Math.hypot(alignment[0].x - from.x, alignment[0].y - from.y) > 0.01) return null
+  if (Math.hypot(alignment[alignment.length - 1].x - to.x, alignment[alignment.length - 1].y - to.y) > 0.01) return null
+  alignment[0] = { x: from.x, y: from.y }
+  alignment[alignment.length - 1] = { x: to.x, y: to.y }
+  return alignment
+}
+
 function pointInsideWindow(point: DrawingPoint, window: DrawingWindow): boolean {
   return point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY
 }
@@ -1083,7 +1197,8 @@ export function buildSewerPlanDxf(input: {
     const a = nodeById.get(p.fromNode)
     const b = nodeById.get(p.toNode)
     if (!a || !b) continue
-    const alignment = orderedPipeAlignment(p, a, b)
+    const alignment = confirmedOrderedPipeAlignment(p, a, b)
+    if (!alignment) continue
     const fragments = input.window ? clipPolylineToWindow(alignment, input.window) : [alignment]
     if (fragments.length === 0) continue
 

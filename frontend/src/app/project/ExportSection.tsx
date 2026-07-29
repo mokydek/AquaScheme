@@ -39,6 +39,7 @@ import {
 } from '../../shared/exporters'
 import type { RegionDatasetContent } from '../../shared/regions'
 import type { SourceData } from '../../shared/datasets'
+import { formatAppError } from '../../shared/errorFormatting'
 import { Panel } from './Panel'
 
 type Job = 'drawing' | 'pdf' | 'spec' | 'acts' | 'docs' | 'situation' | 'bundle'
@@ -204,7 +205,7 @@ export function ExportSection({
   const slug = slugify(projectName)
 
   const fail = (error: unknown): void => {
-    setErrorDetail(error instanceof Error ? error.message : String(error))
+    setErrorDetail(formatAppError(error))
     setNotice('error')
   }
 

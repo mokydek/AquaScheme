@@ -22,6 +22,60 @@ describe('importNetwork', () => {
     expect(network.pipes.some((p) => p.kind === 'supply')).toBe(true)
   })
 
+  it('preserves curved source geometry and metadata while reversing and snapping it to graph nodes', () => {
+    const { network } = importNetwork(
+      [
+        {
+          points: [{ x: 0, y: 0 }, { x: 40, y: 30 }, { x: 100, y: 0 }],
+          layer: 'K2-AXIS',
+          sourceType: 'LWPOLYLINE',
+          sourceHandle: 'A1',
+          colorNumber: 5,
+          lineType: 'DASHED',
+        },
+        {
+          // Deliberately drawn towards the source. Graph direction reverses it.
+          points: [{ x: 200, y: 0 }, { x: 150, y: -25 }, { x: 100.3, y: 0.2 }],
+          layer: 'K2-AXIS',
+          sourceType: 'LWPOLYLINE',
+          sourceHandle: 'A2',
+          sourceBlock: 'COLLECTOR',
+          sourceInsertHandle: 'I7',
+        },
+      ],
+      [],
+      SOURCE,
+      [],
+      { snapToleranceM: 0.5 },
+    )
+
+    const mains = network.pipes.filter((pipe) => pipe.kind === 'main')
+    expect(mains).toHaveLength(2)
+    expect(mains[0].alignment).toEqual([
+      { x: 0, y: 0 },
+      { x: 40, y: 30 },
+      { x: 100, y: 0 },
+    ])
+    expect(mains[0]).toMatchObject({
+      sourceLayer: 'K2-AXIS',
+      sourceEntity: 'A1',
+      dataSource: 'imported-polyline|type=LWPOLYLINE|layer=K2-AXIS|handle=A1|color=5|linetype=DASHED',
+    })
+    expect(mains[1].alignment).toEqual([
+      { x: 100, y: 0 },
+      { x: 150, y: -25 },
+      { x: 200, y: 0 },
+    ])
+    expect(mains[1].dataSource).toBe(
+      'imported-polyline|type=LWPOLYLINE|layer=K2-AXIS|handle=A2|block=COLLECTOR|insert=I7',
+    )
+    const from = network.nodes.find((node) => node.id === mains[1].fromNode)
+    const to = network.nodes.find((node) => node.id === mains[1].toNode)
+    expect(mains[1].alignment?.[0]).toMatchObject({ x: from?.x, y: from?.y })
+    expect(mains[1].alignment?.at(-1)).toMatchObject({ x: to?.x, y: to?.y })
+    expect(mains[1].lengthM).toBeCloseTo(111.8, 1)
+  })
+
   it('removes duplicate segments between the same nodes', () => {
     const { report } = importNetwork(
       [
@@ -156,6 +210,7 @@ describe('parseGeoJsonNetwork', () => {
       features: [
         {
           type: 'Feature',
+          id: 'route-17',
           properties: { layer: 'NET' },
           geometry: { type: 'LineString', coordinates: [[0, 0], [250, 0]] },
         },
@@ -166,6 +221,13 @@ describe('parseGeoJsonNetwork', () => {
     expect(parsed.treatedAsLonLat).toBe(false)
     expect(parsed.segments[0].points[1].x).toBe(250)
     expect(parsed.segments[0].layer).toBe('NET')
+    expect(parsed.segments[0]).toMatchObject({
+      sourceType: 'GeoJSON:LineString',
+      sourceHandle: 'route-17',
+    })
+    const imported = importNetwork(parsed.segments, [], SOURCE, []).network.pipes.find((pipe) => pipe.kind === 'main')
+    expect(imported?.alignment).toEqual([{ x: 0, y: 0 }, { x: 250, y: 0 }])
+    expect(imported?.dataSource).toBe('imported-polyline|type=GeoJSON:LineString|layer=NET|handle=route-17')
   })
 
   it('detects lon lat coordinates and converts them to local meters', () => {

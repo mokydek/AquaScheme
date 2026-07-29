@@ -1,8 +1,47 @@
 import { buildSpecification } from '@aquascheme/engine'
-import type { ExportInput } from '@aquascheme/engine'
+import type { ExportInput, GravityProfile, WorkingDrawingSheet } from '@aquascheme/engine'
 import { convertDrawing } from './upload'
-import { buildProjectAlbumDoc, buildProjectSheetDoc } from './projectAlbum'
+import { buildProjectAlbumDoc, buildProjectSheetDoc, crossingBelongsToProfile } from './projectAlbum'
 import type { ProjectAlbumInput } from './projectAlbum'
+
+function profileDxfContext(
+  input: ProjectAlbumInput,
+  sheet: WorkingDrawingSheet,
+  profile: GravityProfile,
+) {
+  const expectedPathId = sheet.profileId ? `branch:${sheet.profileId}` : 'main'
+  const exactPath = input.drawingSet.planPaths.find((path) => path.id === expectedPathId)
+  const profilePipeIds = new Set(profile.pipeIds)
+  const matchingPaths = input.drawingSet.planPaths.filter((path) => (
+    path.points.length >= 2
+    && path.pipeIds.length === profilePipeIds.size
+    && path.pipeIds.every((pipeId) => profilePipeIds.has(pipeId))
+  ))
+  const profilePath = exactPath?.points
+    ?? (matchingPaths.length === 1 ? matchingPaths[0].points : undefined)
+    ?? (sheet.profileId ? [] : input.drawingSet.mainPath)
+  const crossings = (input.constraints?.crossings ?? []).filter((crossing) => (
+    crossingBelongsToProfile(crossing, sheet.profileId, profile.pipeIds)
+  ))
+  const nodeLabels = new Map(input.schedule.manholes.flatMap((manhole) => (
+    manhole.nodeId ? [[manhole.nodeId, manhole.label] as const] : []
+  )))
+  return {
+    crossings,
+    renderContext: {
+      nodeLabels,
+      ...(profilePath.length >= 2 && Number.isFinite(input.geologyMaxOffsetM) && Number(input.geologyMaxOffsetM) > 0
+        ? {
+          geology: {
+            boreholes: input.boreholes ?? [],
+            path: profilePath,
+            maxOffsetM: Number(input.geologyMaxOffsetM),
+          },
+        }
+        : {}),
+    },
+  }
+}
 
 /** DXF drawing text. */
 export async function generateDxf(input: ExportInput): Promise<string> {
@@ -311,20 +350,20 @@ export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, s
   )
   const dxf = await import('@aquascheme/engine/dxf')
   if (sheet.kind === 'plan') {
-    const sheets = dxf.buildPlanSheetSetDxf({
+    const sourcePath = sheet.planPathId
+      ? input.drawingSet.planPaths.find((path) => path.id === sheet.planPathId)
+      : undefined
+    if (!sheet.window || !sourcePath || sourcePath.points.length < 2) {
+      throw new Error(`Лист ${sheet.sheetNumber}: реестр не содержит подтверждённую исходную полилинию плана.`)
+    }
+    return dxf.buildSewerPlanDxf({
       projectName: input.projectName,
       network: input.network,
       pipeDiameterMm: input.pipeDiameterMm,
-      mainPath: input.drawingSet.mainPath,
       buildingLabels: input.buildingLabels,
-      system: input.system,
-      targetPerSheetM: input.drawingSet.layoutPolicy.planLengthM,
-      marginM: input.drawingSet.layoutPolicy.planMarginM,
-      stationChainagesM: input.profile.stations.map((station) => station.chainageM),
+      sheetTitle: sheet.title,
+      window: sheet.window,
     })
-    const index = input.drawingSet.sheets.filter((item) => item.kind === 'plan').findIndex((item) => item.id === sheet.id)
-    if (!sheets[index]) throw new Error('Геометрия нарезки DXF не совпала с реестром планов.')
-    return sheets[index].dxf
   }
   if (sheet.kind === 'network_plan') {
     return dxf.buildSewerPlanDxf({
@@ -336,14 +375,20 @@ export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, s
     })
   }
   if (sheet.kind === 'profile') {
+    const activeProfile = sheet.profileData ?? input.profile
+    const context = profileDxfContext(input, sheet, activeProfile)
     const sheets = dxf.buildProfileSheetSetDxf(
       input.projectName,
-      input.profile,
+      activeProfile,
       input.system,
       input.drawingSet.layoutPolicy.profileLengthM,
-      input.constraints?.crossings ?? [],
+      context.crossings,
+      context.renderContext,
     )
-    const index = input.drawingSet.sheets.filter((item) => item.kind === 'profile').findIndex((item) => item.id === sheet.id)
+    const profileId = sheet.profileId ?? null
+    const index = input.drawingSet.sheets
+      .filter((item) => item.kind === 'profile' && (item.profileId ?? null) === profileId)
+      .findIndex((item) => item.id === sheet.id)
     if (!sheets[index]) throw new Error('Геометрия нарезки DXF не совпала с реестром профилей.')
     return sheets[index].dxf
   }
@@ -390,43 +435,59 @@ export async function generateWorkingDrawingSetDxfs(input: ProjectAlbumInput): P
     throw new Error('Комплект DXF заблокирован реестром рабочих листов.')
   }
   const dxf = await import('@aquascheme/engine/dxf')
-  const planFiles = dxf.buildPlanSheetSetDxf({
-    projectName: input.projectName,
-    network: input.network,
-    pipeDiameterMm: input.pipeDiameterMm,
-    mainPath: input.drawingSet.mainPath,
-    buildingLabels: input.buildingLabels,
-    system: input.system,
-    targetPerSheetM: input.drawingSet.layoutPolicy.planLengthM,
-    marginM: input.drawingSet.layoutPolicy.planMarginM,
-    stationChainagesM: input.profile.stations.map((station) => station.chainageM),
-  })
-  const profileFiles = dxf.buildProfileSheetSetDxf(
-    input.projectName,
-    input.profile,
-    input.system,
-    input.drawingSet.layoutPolicy.profileLengthM,
-    input.constraints?.crossings ?? [],
-  )
+  const profileFileBySheetId = new Map<string, string>()
+  const profileSheets = input.drawingSet.sheets.filter((sheet) => sheet.kind === 'profile')
+  const generatedProfileIds = new Set<string>()
+  for (const profileSheet of profileSheets) {
+    const profileId = profileSheet.profileId ?? '__main__'
+    if (generatedProfileIds.has(profileId)) continue
+    generatedProfileIds.add(profileId)
+    const siblings = profileSheets.filter((sheet) => (sheet.profileId ?? '__main__') === profileId)
+    const profile = profileSheet.profileData ?? input.profile
+    const context = profileDxfContext(input, profileSheet, profile)
+    const files = dxf.buildProfileSheetSetDxf(
+      input.projectName,
+      profile,
+      input.system,
+      input.drawingSet.layoutPolicy.profileLengthM,
+      context.crossings,
+      context.renderContext,
+    )
+    if (files.length !== siblings.length) {
+      throw new Error(`Реестр профиля ${profileId} устарел: ${siblings.length} листов, генератор создал ${files.length}.`)
+    }
+    siblings.forEach((sheet, index) => profileFileBySheetId.set(sheet.id, files[index].dxf))
+  }
   const materialFiles = dxf.buildManholeMaterialSheetsDxf(
     input.projectName,
     input.schedule,
     input.manholeConstructions,
     input.drawingSet.layoutPolicy.materialRowsPerSheet,
   )
-  const expectedPlans = input.drawingSet.sheets.filter((sheet) => sheet.kind === 'plan').length
   const expectedProfiles = input.drawingSet.sheets.filter((sheet) => sheet.kind === 'profile').length
   const expectedMaterials = input.drawingSet.sheets.filter((sheet) => sheet.kind === 'material_table').length
-  if (planFiles.length !== expectedPlans) throw new Error(`Реестр планов устарел: ${expectedPlans} листов, генератор создал ${planFiles.length}.`)
-  if (profileFiles.length !== expectedProfiles) throw new Error(`Реестр профилей устарел: ${expectedProfiles} листов, генератор создал ${profileFiles.length}.`)
+  if (profileFileBySheetId.size !== expectedProfiles) throw new Error(`Реестр профилей устарел: ${expectedProfiles} листов, генератор создал ${profileFileBySheetId.size}.`)
   if (materialFiles.length !== expectedMaterials) throw new Error(`Реестр ведомостей устарел: ${expectedMaterials} листов, генератор создал ${materialFiles.length}.`)
-  let planIndex = 0
-  let profileIndex = 0
   let materialIndex = 0
   let crossingIndex = 0
   return input.drawingSet.sheets.map((sheet) => {
     let drawing: string | undefined
-    if (sheet.kind === 'plan') drawing = planFiles[planIndex++]?.dxf
+    if (sheet.kind === 'plan') {
+      const sourcePath = sheet.planPathId
+        ? input.drawingSet.planPaths.find((path) => path.id === sheet.planPathId)
+        : undefined
+      if (!sheet.window || !sourcePath || sourcePath.points.length < 2) {
+        throw new Error(`Лист ${sheet.sheetNumber}: реестр не содержит подтверждённую исходную полилинию плана.`)
+      }
+      drawing = dxf.buildSewerPlanDxf({
+        projectName: input.projectName,
+        network: input.network,
+        pipeDiameterMm: input.pipeDiameterMm,
+        buildingLabels: input.buildingLabels,
+        sheetTitle: sheet.title,
+        window: sheet.window,
+      })
+    }
     else if (sheet.kind === 'network_plan') drawing = dxf.buildSewerPlanDxf({
       projectName: input.projectName,
       network: input.network,
@@ -434,7 +495,7 @@ export async function generateWorkingDrawingSetDxfs(input: ProjectAlbumInput): P
       buildingLabels: input.buildingLabels,
       sheetTitle: sheet.title,
     })
-    else if (sheet.kind === 'profile') drawing = profileFiles[profileIndex++]?.dxf
+    else if (sheet.kind === 'profile') drawing = profileFileBySheetId.get(sheet.id)
     else if (sheet.kind === 'material_table') drawing = materialFiles[materialIndex++]?.dxf
     else if (sheet.kind === 'specification') drawing = dxf.buildWorkingDrawingSpecificationDxf(
       input.projectName,

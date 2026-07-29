@@ -11,9 +11,15 @@ import type { Borehole, CatalogItem, SurveyPoint, TracedNetwork } from '@aquasch
 import { supabase } from './supabase'
 import { replaceNetwork, routeInputHash } from './network'
 import { saveDataset } from './datasets'
-import { insertParcel } from './parcels'
+import { ringToGeometry } from './parcels'
 import { replaceGeology } from './geology'
-import { deleteCatalog, fetchCatalogs, saveCatalog, setActiveCatalog } from './catalog'
+import {
+  deleteCatalog,
+  fetchCatalogs,
+  loadActiveCatalogNominalDiameters,
+  saveCatalog,
+  setActiveCatalog,
+} from './catalog'
 import { formatAppError } from './errorFormatting'
 import { mergeSyntheticBasisContents } from './basisDemo'
 
@@ -66,6 +72,25 @@ function demoBoreholes(): Borehole[] {
 export interface StormDemoResult {
   seededSections: number
   failures: string[]
+  /** True only when every section and the engineering route were persisted. */
+  ready: boolean
+}
+
+async function markDemoSeedBlocked(projectId: string, failures: readonly string[]): Promise<void> {
+  const { error } = await supabase
+    .from('projects')
+    .update({
+      route_status: 'blocked',
+      route_blockers: failures.map((message) => ({
+        code: 'DEMO_SEED_INCOMPLETE',
+        scope: 'synthetic-demo',
+        message,
+      })),
+      route_warnings: ['Синтетическое демо загружено не полностью; гидравлический расчёт отключён.'],
+      route_report: { synthetic: true, seedReady: false },
+    })
+    .eq('id', projectId)
+  if (error) throw error
 }
 
 /**
@@ -141,8 +166,8 @@ export async function seedStormProject(projectId: string, callbacks?: {
   }))
 
   await step('sources', async () => {
-    const remove = await supabase.from('buildings').delete().eq('project_id', projectId)
-    if (remove.error) throw remove.error
+    const existing = await supabase.from('buildings').select('id').eq('project_id', projectId)
+    if (existing.error) throw existing.error
     const insert = await supabase
       .from('buildings')
       .insert(demo.sources.map((source) => ({
@@ -157,10 +182,21 @@ export async function seedStormProject(projectId: string, callbacks?: {
       })))
       .select('id,x,y')
     if (insert.error) throw insert.error
+    const insertedRows = (insert.data ?? []) as Array<{ id: string; x: number; y: number }>
     persistedNetwork = bindStormDemoBuildingIds(
       demo.network,
-      (insert.data ?? []) as Array<{ id: string; x: number; y: number }>,
+      insertedRows,
     )
+    const previousIds = (existing.data ?? []).map((row) => row.id)
+    if (previousIds.length > 0) {
+      const remove = await supabase.from('buildings').delete().in('id', previousIds)
+      if (remove.error) {
+        const insertedIds = insertedRows.map((row) => row.id)
+        if (insertedIds.length > 0) await supabase.from('buildings').delete().in('id', insertedIds)
+        persistedNetwork = null
+        throw remove.error
+      }
+    }
   })
 
   await step('geology summary', () => saveDataset(projectId, 'geology', {
@@ -176,15 +212,56 @@ export async function seedStormProject(projectId: string, callbacks?: {
   await step('norms', () => saveDataset(projectId, 'normative', { ...NORMATIVE_DEFAULTS, demoOnly: true }))
 
   await step('parcels', async () => {
-    const remove = await supabase.from('parcels').delete().eq('project_id', projectId)
-    if (remove.error) throw remove.error
-    await insertParcel(projectId, 'right_of_way', DEMO_CORRIDOR, 'Синтетический учебный коридор')
+    const existing = await supabase.from('parcels').select('id').eq('project_id', projectId)
+    if (existing.error) throw existing.error
+    const insert = await supabase.from('parcels').insert({
+      project_id: projectId,
+      kind: 'right_of_way',
+      label: 'Синтетический учебный коридор',
+      geometry: ringToGeometry(DEMO_CORRIDOR),
+    }).select('id')
+    if (insert.error) throw insert.error
+    const insertedId = insert.data?.[0]?.id
+    const previousIds = (existing.data ?? []).map((row) => row.id)
+    if (previousIds.length > 0) {
+      const remove = await supabase.from('parcels').delete().in('id', previousIds)
+      if (remove.error) {
+        if (insertedId) await supabase.from('parcels').delete().eq('id', insertedId)
+        throw remove.error
+      }
+    }
   })
 
   await step('catalog', async () => {
-    for (const catalog of await fetchCatalogs(projectId)) await deleteCatalog(projectId, catalog.id)
-    const id = await saveCatalog(projectId, 'Синтетический демо-каталог', 'synthetic-demo.csv', DEMO_CATALOG)
-    await setActiveCatalog(projectId, id)
+    const previousCatalogs = await fetchCatalogs(projectId)
+    let id: string | null = null
+    try {
+      id = await saveCatalog(projectId, 'Синтетический демо-каталог', 'synthetic-demo.csv', DEMO_CATALOG)
+      const diameters = await loadActiveCatalogNominalDiameters(id)
+      if (!diameters?.length) {
+        throw new Error('Сохранённый демо-каталог не содержит труб с положительным DN.')
+      }
+      await setActiveCatalog(projectId, id)
+      for (const catalog of previousCatalogs) {
+        if (catalog.id !== id) {
+          try {
+            await deleteCatalog(projectId, catalog.id)
+          } catch {
+            // The replacement is already validated and active. Keeping an old
+            // inactive catalog is safer than rolling back to a deleted target.
+          }
+        }
+      }
+    } catch (error) {
+      if (id) {
+        try {
+          await deleteCatalog(projectId, id)
+        } catch {
+          // Preserve the original, more useful catalog failure in the report.
+        }
+      }
+      throw error
+    }
   })
 
   await step('basis', async () => {
@@ -201,20 +278,33 @@ export async function seedStormProject(projectId: string, callbacks?: {
   })
 
   callbacks?.onRouteProgress?.('Сохранение синтетической трассы')
-  await step('engineering route', async () => {
-    if (!persistedNetwork) throw new Error('Здания-источники не сохранены; сеть не отправлена в базу.')
-    const inputHash = await routeInputHash({ network: persistedNetwork, surveyPoints, corridor: DEMO_CORRIDOR })
-    await replaceNetwork(projectId, persistedNetwork, {
-      status: 'preliminary',
-      inputHash,
-      warnings: ['Синтетическая демонстрация: для инженерного выпуска импортируйте реальные исходные данные.'],
-      report: {
-        synthetic: true,
-        quality: { totalLengthM: persistedNetwork.totalLengthM, routedTerminals: demo.sources.length, outsideCorridorSegments: 0 },
-      },
+  if (failures.length === 0) {
+    await step('engineering route', async () => {
+      if (!persistedNetwork) throw new Error('Здания-источники не сохранены; сеть не отправлена в базу.')
+      const inputHash = await routeInputHash({ network: persistedNetwork, surveyPoints, corridor: DEMO_CORRIDOR })
+      await replaceNetwork(projectId, persistedNetwork, {
+        status: 'preliminary',
+        inputHash,
+        warnings: ['Синтетическая демонстрация: для инженерного выпуска импортируйте реальные исходные данные.'],
+        report: {
+          synthetic: true,
+          quality: { totalLengthM: persistedNetwork.totalLengthM, routedTerminals: demo.sources.length, outsideCorridorSegments: 0 },
+        },
+      })
     })
-  })
+  } else {
+    failures.push('engineering route: не сохранена, потому что один или несколько разделов демо не загрузились.')
+  }
 
-  callbacks?.onRouteProgress?.('Готово')
-  return { seededSections, failures }
+  if (failures.length > 0) {
+    try {
+      await markDemoSeedBlocked(projectId, failures)
+    } catch (error) {
+      failures.push(`seed status: ${formatAppError(error)}`)
+    }
+  }
+
+  const ready = failures.length === 0
+  callbacks?.onRouteProgress?.(ready ? 'Готово' : 'Загрузка остановлена: исправьте ошибки разделов')
+  return { seededSections, failures, ready }
 }

@@ -62,7 +62,10 @@ describe('multi-sheet specification contract', () => {
       agskCode: `SPEC-CODE-${String(index + 1).padStart(3, '0')}`,
     }))
     const specificationSchedule: SewerSchedule = {
-      manholes: [{ label: 'TEST-MH-1', picket: 'PK0', depthMm: 2500, pipeDiameterMm: 500 }],
+      manholes: [
+        { nodeId: 'TEST-A', label: 'TEST-MH-1', picket: 'PK0', depthMm: 2500, pipeDiameterMm: 500 },
+        { nodeId: 'TEST-OUT', label: 'TEST-OUT', picket: 'PK1', depthMm: 2500, pipeDiameterMm: 500 },
+      ],
       pipes: specificationPipes,
       totalPipeLengthM: specificationPipes.reduce((sum, pipe) => sum + pipe.lengthM, 0),
     }

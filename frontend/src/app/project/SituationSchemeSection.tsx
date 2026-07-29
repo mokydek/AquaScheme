@@ -9,7 +9,7 @@ import {
   solvePressureMain,
 } from '@aquascheme/engine'
 import type { RouteConstraintInput } from '@aquascheme/engine'
-import { loadActiveCatalogNominalDiameters } from '../../shared/catalog'
+import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
 import { networkFromRows, replaceNetwork, routeInputHash } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow, SourceData } from '../../shared/datasets'
@@ -19,6 +19,7 @@ import { PipeCalculationsView } from './PipeCalculationsView'
 import { LiveSituationMap } from './LiveSituationMap'
 import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
 import { freezingDepthStatus } from '../../shared/geologyStatus'
+import { formatAppError } from '../../shared/errorFormatting'
 
 type View = 'inputs' | 'constraints' | 'route' | 'profile' | 'calculations' | 'crossings' | 'blockers' | 'comparison'
 
@@ -88,6 +89,8 @@ export function SituationSchemeSection({
 }) {
   const [view, setView] = useState<View>('route')
   const [catalogDiameters, setCatalogDiameters] = useState<readonly number[] | undefined>(undefined)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [catalogLoadedForId, setCatalogLoadedForId] = useState<string | null>(null)
   const [recalculating, setRecalculating] = useState(false)
   const [stage, setStage] = useState<string | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -108,18 +111,29 @@ export function SituationSchemeSection({
 
   useEffect(() => {
     let active = true
+    setCatalogDiameters(undefined)
+    setCatalogError(null)
+    setCatalogLoadedForId(activeCatalogId ?? null)
     if (!activeCatalogId) {
-      setCatalogDiameters(undefined)
       return () => { active = false }
     }
     loadActiveCatalogNominalDiameters(activeCatalogId)
       .then((diameters) => { if (active) setCatalogDiameters(diameters ?? []) })
-      .catch(() => { if (active) setCatalogDiameters([]) })
+      .catch((error) => {
+        if (active) setCatalogError(formatAppError(error))
+      })
     return () => { active = false }
   }, [activeCatalogId])
 
+  const currentCatalogDiameters = catalogLoadedForId === activeCatalogId ? catalogDiameters : undefined
+  const currentCatalogError = catalogLoadedForId === activeCatalogId ? catalogError : null
+  const catalogResolution = useMemo(
+    () => resolveGravityCatalog(activeCatalogId, currentCatalogDiameters, currentCatalogError),
+    [activeCatalogId, currentCatalogDiameters, currentCatalogError],
+  )
+
   const model = useMemo(() => {
-    if (routeState.status === 'blocked' || routeState.status === 'stale' || pipes.length === 0) return null
+    if (routeState.status === 'blocked' || routeState.status === 'stale' || pipes.length === 0 || !catalogResolution.ready) return null
     const network = networkFromRows(nodes, pipes)
     const flows = new Map<string, number>()
     for (const building of buildings) {
@@ -139,7 +153,7 @@ export function SituationSchemeSection({
       freezingDepthM,
       strategy: 'minBurial',
       outletNodeId: lns?.id,
-      allowedDiametersMm: activeCatalogId ? catalogDiameters ?? [] : undefined,
+      allowedDiametersMm: catalogResolution.allowedDiametersMm,
     })
     const totalFlow = buildings.reduce((sum, building) => sum + (building.design_flow_lps ?? building.specific_demand_lpd ?? 0), 0)
     const pressureRows = network.pipes.filter((pipe) => pipe.systemType === 'pressure' || pipe.kind === 'pressure_main')
@@ -167,7 +181,7 @@ export function SituationSchemeSection({
       outletFlowLps: totalFlow,
       freezingDepth: freezing,
     }
-  }, [systemType, buildings, nodes, pipes, geologyDataset, activeCatalogId, catalogDiameters, constraints, routeState.status])
+  }, [systemType, buildings, nodes, pipes, geologyDataset, catalogResolution, constraints, routeState.status])
 
   const corridorRings = useMemo(() => {
     if (constraints?.corridorRings?.length) return constraints.corridorRings
@@ -277,7 +291,7 @@ export function SituationSchemeSection({
   const allBlockers = [
     ...routeState.blockers.map((blocker) => blocker.message ?? blocker.code ?? 'Неизвестный блокер'),
     ...(!activeCatalogId ? ['Не выбран активный каталог материалов.'] : []),
-    ...(activeCatalogId && catalogDiameters?.length === 0 ? ['В активном каталоге нет пригодных труб.'] : []),
+    ...(catalogResolution.blocker ? [catalogResolution.blocker] : []),
     ...(model?.pressure.blockers ?? []),
   ]
   const benchmark = useMemo(() => {
@@ -298,6 +312,7 @@ export function SituationSchemeSection({
       <p className="hint">
         Трасса рассчитывается из структурированных слоёв DWG. Картографическая подложка служит только для визуального контроля и не заменяет топосъёмку.
       </p>
+      {catalogResolution.blocker && <p className="notice error">{catalogResolution.blocker}</p>}
       <div className={`notice ${routeState.status === 'calculated' ? 'info' : 'error'}`}>
         Статус трассы: <strong>{routeState.status}</strong> · алгоритм {routeState.algorithmVersion ?? 'не указан'} · ревизия {routeState.revision}.
         {' '}Хэш входов: <code>{routeState.inputHash?.slice(0, 16) ?? 'нет'}</code>{routeState.calculatedAt ? ` · расчёт ${new Date(routeState.calculatedAt).toLocaleString('ru-RU')}` : ''}.

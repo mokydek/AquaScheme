@@ -618,6 +618,8 @@ export function manholeLabels(count: number): string[] {
 }
 
 export interface SewerScheduleManhole {
+  /** Network node represented by this row; present for calculated schedules. */
+  nodeId?: string
   label: string
   picket: string
   /** Full depth to the invert, mm. */
@@ -635,25 +637,47 @@ export interface SewerSchedulePipe {
 }
 
 export interface SewerSchedule {
-  /** Manholes along the main collector (from the profile). */
+  /** Unique manholes across the main collector and calculated branch profiles. */
   manholes: SewerScheduleManhole[]
   /** Pipe totals by diameter across the whole network. */
   pipes: SewerSchedulePipe[]
   totalPipeLengthM: number
 }
 
+export interface BuildSewerScheduleOptions {
+  /** Calculated off-main profiles. Shared junction nodes are included once. */
+  branchProfiles?: readonly GravityProfile[]
+}
+
 /**
  * Materials schedule (ведомость колодцев и труб) for К1, at the level the model
- * knows: manhole number, picket, full depth and pipe diameter along the main
- * collector, plus pipe totals by diameter. The per-element consumption
+ * knows: manhole number, picket, full depth and pipe diameter across the main
+ * collector and calculated branches, plus pipe totals by diameter. The
+ * main-profile station is authoritative when a branch shares its junction.
+ * The per-element consumption
  * (КС/ПД/КО rings, скобы, гидроизоляция) comes from a типовой проект such as
  * ТПР 902-09-22.84 by manhole depth and diameter, which is NOT invented here.
  */
-export function buildSewerSchedule(result: GravityNetworkResult): SewerSchedule {
-  const stations = result.profile?.stations ?? []
-  const labels = manholeLabels(stations.length)
-  const manholes: SewerScheduleManhole[] = stations.map((s, i) => ({
-    label: labels[i],
+export function buildSewerSchedule(
+  result: GravityNetworkResult,
+  options: BuildSewerScheduleOptions = {},
+): SewerSchedule {
+  const mainStations = result.profile?.stations ?? []
+  const outletNodeId = mainStations.at(-1)?.nodeId
+  const stations: ProfileStation[] = []
+  const seenNodeIds = new Set<string>()
+  for (const profileStations of [mainStations, ...(options.branchProfiles ?? []).map((profile) => profile.stations)]) {
+    for (const station of profileStations) {
+      if (seenNodeIds.has(station.nodeId)) continue
+      seenNodeIds.add(station.nodeId)
+      stations.push(station)
+    }
+  }
+
+  let manholeNumber = 0
+  const manholes: SewerScheduleManhole[] = stations.map((s) => ({
+    nodeId: s.nodeId,
+    label: s.nodeId === outletNodeId ? 'Вып.' : `ВК-${++manholeNumber}`,
     picket: picketLabel(s.chainageM),
     depthMm: Math.round(s.depthM * 1000),
     pipeDiameterMm: s.diameterMm,

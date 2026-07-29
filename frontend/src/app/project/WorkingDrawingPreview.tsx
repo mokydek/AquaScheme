@@ -66,7 +66,7 @@ function DrawingFrame({ sheet, children, showFrame = true }: { sheet: WorkingDra
         <line x1="1090" y1="700" x2="1090" y2="802" stroke="#111" />
         <text x="804" y="721" fontSize="12">Наружные сети канализации</text>
         <text x="804" y="756" fontSize="12" fontWeight="700">{sheet.title}</text>
-        <text x="1055" y="721" textAnchor="middle" fontSize="10">Лист</text>
+        <text x="1055" y="721" textAnchor="middle" fontSize="10">{sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}</text>
         <text x="1055" y="764" textAnchor="middle" fontSize="18">{sheet.sheetNumber}</text>
         <text x="1126" y="721" textAnchor="middle" fontSize="10">Статус</text>
         <text x="1126" y="758" textAnchor="middle" fontSize="9">{sheet.status}</text>
@@ -90,6 +90,75 @@ function DrawingFrame({ sheet, children, showFrame = true }: { sheet: WorkingDra
   )
 }
 
+function CadContextLayer({
+  constraints,
+  x,
+  y,
+  bounds,
+}: {
+  constraints?: RouteConstraintInput | null
+  x: (value: number) => number
+  y: (value: number) => number
+  bounds: { minX: number; maxX: number; minY: number; maxY: number }
+}) {
+  const intersectsBounds = (points: Array<{ x: number; y: number }>) => {
+    if (points.length === 0) return false
+    const minX = Math.min(...points.map((point) => point.x))
+    const maxX = Math.max(...points.map((point) => point.x))
+    const minY = Math.min(...points.map((point) => point.y))
+    const maxY = Math.max(...points.map((point) => point.y))
+    return maxX >= bounds.minX && minX <= bounds.maxX && maxY >= bounds.minY && minY <= bounds.maxY
+  }
+  const sample = <T,>(items: T[], maximum: number): T[] => {
+    if (items.length <= maximum) return items
+    const stride = Math.ceil(items.length / maximum)
+    return items.filter((_, index) => index % stride === 0)
+  }
+  const contextLines = sample(
+    (constraints?.cadContextLines ?? []).filter((line) => intersectsBounds(line.points)),
+    3500,
+  )
+  const terrainLines = sample(
+    (constraints?.terrainLines ?? []).filter((line) => intersectsBounds(line.points)),
+    2000,
+  )
+  const blocks = sample((constraints?.cadBlockEntities ?? []).filter((block) =>
+    block.x >= bounds.minX && block.x <= bounds.maxX && block.y >= bounds.minY && block.y <= bounds.maxY), 500)
+  const labels = sample((constraints?.cadTextEntities ?? []).filter((label) =>
+    label.x >= bounds.minX && label.x <= bounds.maxX && label.y >= bounds.minY && label.y <= bounds.maxY), 900)
+  const linePoints = (points: Array<{ x: number; y: number }>) => points
+    .map((point) => `${x(point.x)},${y(point.y)}`)
+    .join(' ')
+  return <>
+    {contextLines.map((line, index) => (
+      <polyline key={`cad-${line.sourceHandle ?? index}`} points={linePoints(line.points)} fill="none" stroke="#c7c7c7" strokeWidth="0.65" />
+    ))}
+    {terrainLines.map((line, index) => (
+      <polyline key={`terrain-${line.sourceHandle ?? index}`} points={linePoints(line.points)} fill="none" stroke="#78906d" strokeWidth="0.9" />
+    ))}
+    {blocks.map((block, index) => {
+      const bx = x(block.x)
+      const by = y(block.y)
+      return <g key={`block-${block.sourceHandle ?? index}`}>
+        <path d={`M${bx - 3} ${by}H${bx + 3}M${bx} ${by - 3}V${by + 3}`} stroke="#555" strokeWidth="0.8" />
+        <text x={bx + 4} y={by - 3} fontSize="6.5" fill="#555">{block.name}</text>
+      </g>
+    })}
+    {labels.map((label, index) => {
+      const tx = x(label.x)
+      const ty = y(label.y)
+      return <text
+        key={`text-${label.sourceHandle ?? index}`}
+        x={tx}
+        y={ty}
+        fontSize="7"
+        fill="#555"
+        transform={label.rotationDeg ? `rotate(${-label.rotationDeg} ${tx} ${ty})` : undefined}
+      >{label.text.replaceAll('\\P', ' ')}</text>
+    })}
+  </>
+}
+
 function PlanPreview({
   sheet,
   drawingSet,
@@ -106,7 +175,10 @@ function PlanPreview({
   constraints?: RouteConstraintInput | null
 }) {
   const window = sheet.window
-  if (!window || drawingSet.mainPath.length < 2) {
+  const sourcePath = sheet.planPathId
+    ? drawingSet.planPaths.find((path) => path.id === sheet.planPathId)?.points ?? []
+    : drawingSet.mainPath
+  if (!window || sourcePath.length < 2) {
     return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии плана</text></DrawingFrame>
   }
   const width = Math.max(window.maxX - window.minX, 1)
@@ -115,12 +187,12 @@ function PlanPreview({
   const scale = Math.min(content.width / width, content.height / height)
   const x = (value: number) => content.x + (value - window.minX) * scale
   const y = (value: number) => content.y + content.height - (value - window.minY) * scale
-  const path = pathSlice(drawingSet.mainPath, window.fromM, window.toM)
+  const path = pathSlice(sourcePath, window.fromM, window.toM)
   const route = path.map((point) => `${x(point.x)},${y(point.y)}`).join(' ')
   const topo = surveyPoints.filter((point) =>
     point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY)
   const stride = Math.max(1, Math.ceil(topo.length / 450))
-  const overview = drawingSet.mainPath
+  const overview = sourcePath
   const minX = Math.min(...overview.map((point) => point.x))
   const maxX = Math.max(...overview.map((point) => point.x))
   const minY = Math.min(...overview.map((point) => point.y))
@@ -134,6 +206,7 @@ function PlanPreview({
       <defs><clipPath id={`clip-${sheet.id}`}><rect x={content.x} y={content.y} width={content.width} height={content.height} /></clipPath></defs>
       <text x="55" y="48" fontSize="17" fontWeight="700">{sheet.title}</text>
       <g clipPath={`url(#clip-${sheet.id})`}>
+        <CadContextLayer constraints={constraints} x={x} y={y} bounds={window} />
         {(constraints?.hardObstacleRings ?? []).map((ring, index) => <polygon key={`building-${index}`} points={linePoints(ring)} fill="#d7d7d7" stroke="#555" />)}
         {(constraints?.waterRings ?? []).map((ring, index) => <polygon key={`water-ring-${index}`} points={linePoints(ring)} fill="#d8f1f8" stroke="#2685b5" />)}
         {(constraints?.corridorRings ?? []).map((ring, index) => <polygon key={`corridor-${index}`} points={linePoints(ring)} fill="none" stroke="#d33232" strokeWidth="1.5" strokeDasharray="8 5" />)}
@@ -204,6 +277,10 @@ function NetworkPlanPreview({
     ...(constraints?.waterLines ?? []).flatMap((line) => line.points),
     ...(constraints?.utilityLines ?? []).flatMap((line) => line.points),
     ...(constraints?.redLines ?? []).flatMap((line) => line.points),
+    ...(constraints?.cadContextLines ?? []).flatMap((line) => line.points),
+    ...(constraints?.terrainLines ?? []).flatMap((line) => line.points),
+    ...(constraints?.cadTextEntities ?? []),
+    ...(constraints?.cadBlockEntities ?? []),
   ]
   const allPoints = [...networkPoints, ...contextPoints]
   const rawMinX = Math.min(...allPoints.map((point) => point.x))
@@ -227,6 +304,7 @@ function NetworkPlanPreview({
       <defs><clipPath id={`clip-${sheet.id}`}><rect x={content.x} y={content.y} width={content.width} height={content.height} /></clipPath></defs>
       <text x="55" y="48" fontSize="17" fontWeight="700">{sheet.title}</text>
       <g clipPath={`url(#clip-${sheet.id})`}>
+        <CadContextLayer constraints={constraints} x={x} y={y} bounds={{ minX, maxX, minY, maxY }} />
         {(constraints?.hardObstacleRings ?? []).map((ring, index) => <polygon key={`building-${index}`} points={linePoints(ring)} fill="#d7d7d7" stroke="#555" />)}
         {(constraints?.waterRings ?? []).map((ring, index) => <polygon key={`water-ring-${index}`} points={linePoints(ring)} fill="#d8f1f8" stroke="#2685b5" />)}
         {(constraints?.corridorRings ?? []).map((ring, index) => <polygon key={`corridor-${index}`} points={linePoints(ring)} fill="none" stroke="#d33232" strokeWidth="1.5" strokeDasharray="8 5" />)}
@@ -432,7 +510,7 @@ export function WorkingDrawingPreview({
 }) {
   if (sheet.kind === 'plan') return <PlanPreview sheet={sheet} drawingSet={drawingSet} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
   if (sheet.kind === 'network_plan') return <NetworkPlanPreview sheet={sheet} drawingSet={drawingSet} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
-  if (sheet.kind === 'profile') return <ProfilePreview sheet={sheet} profile={profile} showFrame={showFrame} />
+  if (sheet.kind === 'profile') return <ProfilePreview sheet={sheet} profile={sheet.profileData ?? profile} showFrame={showFrame} />
   if (sheet.kind === 'material_table') return <MaterialPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
   if (sheet.kind === 'specification') return <SpecificationPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
   return <DetailPreview sheet={sheet} drawingSet={drawingSet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />

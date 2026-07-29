@@ -319,6 +319,26 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
     expect(plan).toMatch(/10\r?\n50\r?\n20\r?\n40\r?\n/)
   })
 
+  it('does not invent a plan chord when the factual pipe alignment is missing', () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'J', kind: 'junction', x: 100, y: 0, groundElevation: 99 },
+      ],
+      pipes: [{
+        id: 'p1',
+        kind: 'main',
+        fromNode: 'S',
+        toNode: 'J',
+        lengthM: 100,
+      }],
+      totalLengthM: 100,
+    }
+    const plan = buildSewerPlanDxf({ projectName: 'Тест', network, pipeDiameterMm: new Map([['p1', 800]]) })
+    expect(plan).not.toContain('Ø800')
+    expect(plan).not.toContain('L100.0')
+  })
+
   it('draws the GOST 21.704 form 2 side table from the computed profile', () => {
     const network: TracedNetwork = {
       nodes: [

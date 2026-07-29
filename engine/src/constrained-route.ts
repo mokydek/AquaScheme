@@ -11,6 +11,24 @@ export interface RouteSegment {
   colorNumber?: number
   lineType?: string
 }
+export interface RouteTextEntity extends RoutePoint {
+  text: string
+  layer?: string
+  sourceType?: 'TEXT' | 'MTEXT' | string
+  sourceHandle?: string
+  height?: number
+  rotationDeg?: number
+  colorNumber?: number
+}
+export interface RouteBlockEntity extends RoutePoint {
+  name: string
+  layer?: string
+  sourceHandle?: string
+  rotationDeg?: number
+  scaleX?: number
+  scaleY?: number
+  colorNumber?: number
+}
 export interface RouteTerminal extends RoutePoint { id: string; buildingId?: string }
 
 export type RouteGeoreference =
@@ -39,6 +57,14 @@ export interface RouteConstraintInput {
   utilityLines?: RouteSegment[]
   roadLines?: RouteSegment[]
   waterLines?: RouteSegment[]
+  /** Imported terrain contours/breaklines. Retained as vector CAD context. */
+  terrainLines?: RouteSegment[]
+  /** Complete source linework, drawn as a neutral underlay behind semantic layers. */
+  cadContextLines?: RouteSegment[]
+  /** Source DXF annotations kept as text, never as a raster screenshot. */
+  cadTextEntities?: RouteTextEntity[]
+  /** Source DXF INSERT references represented by their insertion marker and name. */
+  cadBlockEntities?: RouteBlockEntity[]
   /** Closed water boundaries. They are passable only inside an approved crossing. */
   waterRings?: RoutePoint[][]
   hardObstacles?: RouteSegment[]
@@ -638,6 +664,12 @@ export function traceConstrainedNetwork(
     nodes.push({ id, kind: 'junction', x: round2(point.x), y: round2(point.y), groundElevation: elevation(point) })
     return id
   }
+  const alignmentForNodes = (fromNode: string, toNode: string): [RoutePoint, RoutePoint] => {
+    const from = nodes.find((node) => node.id === fromNode)
+    const to = nodes.find((node) => node.id === toNode)
+    if (!from || !to) throw new Error(`Network alignment references missing nodes: ${fromNode} -> ${toNode}`)
+    return [{ x: from.x, y: from.y }, { x: to.x, y: to.y }]
+  }
   let pipeSeq = 0
 
   // Collapse the raster tree into engineering sections. A 15 m search cell is
@@ -684,27 +716,31 @@ export function traceConstrainedNetwork(
       for (let index = 1; index < engineeringPoints.length; index++) {
         const from = getNode(engineeringPoints[index - 1])
         const to = getNode(engineeringPoints[index])
+        const alignment = alignmentForNodes(from, to)
         pipes.push({
           id: `P${++pipeSeq}`,
           kind: 'main',
           fromNode: from,
           toNode: to,
-          lengthM: round2(distance(engineeringPoints[index - 1], engineeringPoints[index])),
-          alignment: [engineeringPoints[index - 1], engineeringPoints[index]],
+          lengthM: round2(distance(alignment[0], alignment[1])),
+          alignment,
           dataSource: routeDecision(engineeringPoints[index - 1], engineeringPoints[index], 'main'),
         })
       }
     }
   }
   const sourceJunction = getNode(sourceCell.point)
-  pipes.push({ id: `P${++pipeSeq}`, kind: 'supply', fromNode: sourceJunction, toNode: 'SRC', lengthM: round2(distance(sourceCell.point, source)), alignment: [sourceCell.point, source], dataSource: routeDecision(sourceCell.point, source, 'outlet-lead') })
+  const sourceAlignment = alignmentForNodes(sourceJunction, 'SRC')
+  pipes.push({ id: `P${++pipeSeq}`, kind: 'supply', fromNode: sourceJunction, toNode: 'SRC', lengthM: round2(distance(sourceAlignment[0], sourceAlignment[1])), alignment: sourceAlignment, dataSource: routeDecision(sourceCell.point, source, 'outlet-lead') })
   for (const terminal of terminals) {
     const terminalCell = terminalCellById.get(terminal.id)
     if (!terminalCell) continue
     const firstGridPoint = pointByKey.get(terminalCell) ?? sourceCell.point
     const buildingNodeId = `B${nodes.filter((node) => node.kind === 'building').length + 1}`
     nodes.push({ id: buildingNodeId, kind: 'building', x: round2(terminal.x), y: round2(terminal.y), groundElevation: elevation(terminal), buildingId: terminal.buildingId ?? terminal.id })
-    pipes.push({ id: `P${++pipeSeq}`, kind: 'service', fromNode: buildingNodeId, toNode: getNode(firstGridPoint), lengthM: round2(distance(terminal, firstGridPoint)), alignment: [terminal, firstGridPoint], dataSource: routeDecision(terminal, firstGridPoint, 'facility-lead') })
+    const firstGridNodeId = getNode(firstGridPoint)
+    const serviceAlignment = alignmentForNodes(buildingNodeId, firstGridNodeId)
+    pipes.push({ id: `P${++pipeSeq}`, kind: 'service', fromNode: buildingNodeId, toNode: firstGridNodeId, lengthM: round2(distance(serviceAlignment[0], serviceAlignment[1])), alignment: serviceAlignment, dataSource: routeDecision(terminal, firstGridPoint, 'facility-lead') })
   }
 
   const redLineCrossings = paths.reduce((sum, path) => sum + countCrossings(path.points, redLines), 0)
