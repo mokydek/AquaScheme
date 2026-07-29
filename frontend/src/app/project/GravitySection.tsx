@@ -432,6 +432,27 @@ export function GravitySection({
       routeBlockers: [...routeBlockers, ...branchProfileResolution.blockers],
       georeference: constraints?.georeference ?? null,
       surveyPoints,
+      planContextFeatureCount: [
+        constraints?.cadContextLines,
+        constraints?.terrainLines,
+        constraints?.cadTextEntities,
+        constraints?.cadBlockEntities,
+        constraints?.hardObstacleRings,
+        constraints?.buildingPolygons,
+        constraints?.parcelRings,
+        constraints?.forbiddenRings,
+        constraints?.protectionZoneRings,
+        constraints?.protectionZones,
+        constraints?.approvedCrossingRings,
+        constraints?.approvedCrossingZones,
+        constraints?.waterRings,
+        constraints?.roadLines,
+        constraints?.waterLines,
+        constraints?.utilityLines,
+        constraints?.redLines,
+        constraints?.guideLines,
+        constraints?.hardObstacles,
+      ].reduce((total, collection) => total + (collection?.length ?? 0), 0),
       unresolvedLayerCount,
       catalogReady: Boolean(activeCatalogId) && catalogResolution.ready,
       catalogFingerprint: { activeCatalogId, catalogDiameters: currentCatalogDiameters },
@@ -513,6 +534,14 @@ export function GravitySection({
       constraints,
       manholeConstructions: manholeSelection.selected,
       pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
+      pipeDesign: new Map(result.pipes.map((pipe) => [pipe.id, {
+        diameterMm: pipe.diameterMm,
+        slope: pipe.slope,
+        lengthM: pipe.lengthM,
+        flowLps: pipe.flowLps,
+        velocityMs: pipe.velocityMs,
+        fillRatio: pipe.fillRatio,
+      }])),
       buildingLabels: new Map(buildings.map((building) => [building.id, building.label ?? building.id])),
       outletFlowLps: result.outletFlowLps,
     }
@@ -947,6 +976,17 @@ export function GravitySection({
           {result.profile && schedule && (
             <AlbumSheetSet
               drawingSet={workingDrawingSet}
+              network={network}
+              pipeDiameterMm={new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm]))}
+              pipeDesign={new Map(result.pipes.map((pipe) => [pipe.id, {
+                diameterMm: pipe.diameterMm,
+                slope: pipe.slope,
+                lengthM: pipe.lengthM,
+                flowLps: pipe.flowLps,
+                velocityMs: pipe.velocityMs,
+                fillRatio: pipe.fillRatio,
+              }]))}
+              buildingLabels={new Map(buildings.map((building) => [building.id, building.label ?? building.id]))}
               surveyPoints={surveyPoints}
               profile={result.profile}
               schedule={schedule}

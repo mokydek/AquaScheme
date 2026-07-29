@@ -22,6 +22,7 @@ import {
 } from './catalog'
 import { formatAppError } from './errorFormatting'
 import { mergeSyntheticBasisContents } from './basisDemo'
+import { buildSyntheticStormPlanContext } from './stormDemoPlanContext'
 
 export const DEMO_STORM_PROJECT_NAME = 'Учебный проект ливневого коллектора'
 
@@ -44,9 +45,9 @@ function demoSurveyPoints(): SurveyPoint[] {
     const axis = stormDemoAxisAt(station)
     const elevation = stormDemoElevationAt(station)
     points.push(
-      { x: axis.x - 80, y: axis.y, z: elevation + 0.15 },
+      { x: axis.x - 45, y: axis.y, z: elevation + 0.15 },
       { x: axis.x, y: axis.y, z: elevation },
-      { x: axis.x + 80, y: axis.y, z: elevation - 0.1 },
+      { x: axis.x + 45, y: axis.y, z: elevation - 0.1 },
     )
   }
   return points
@@ -118,6 +119,7 @@ export async function seedStormProject(projectId: string, callbacks?: {
   const demo = buildStormDemo()
   let persistedNetwork: TracedNetwork | null = null
   const surveyPoints = demoSurveyPoints()
+  const planContext = buildSyntheticStormPlanContext()
   const boreholes = demoBoreholes()
   const outlet = demo.network.nodes.find((node) => node.kind === 'source')
 
@@ -133,12 +135,13 @@ export async function seedStormProject(projectId: string, callbacks?: {
     corridorRings: [DEMO_CORRIDOR],
     hardObstacleRings: [],
     surveyPoints,
+    ...planContext,
     unresolvedLayers: [],
     georeference: { kind: 'local_anchor', source: 'synthetic local demo coordinates' },
     sourceDeclarations: {
       buildings: 'confirmed_absent',
       utilities: 'confirmed_absent',
-      roads: 'confirmed_absent',
+      roads: 'present',
       hydrography: 'confirmed_absent',
       parcels: 'confirmed_absent',
       protectionZones: 'confirmed_absent',

@@ -77,6 +77,8 @@ export async function generateSewerPlanDxf(input: {
   network: import('@aquascheme/engine').TracedNetwork
   pipeDiameterMm: Map<string, number>
   buildingLabels?: Map<string, string>
+  constraints?: import('@aquascheme/engine').RouteConstraintInput | null
+  surveyPoints?: readonly import('@aquascheme/engine').SurveyPoint[]
 }): Promise<string> {
   const { buildSewerPlanDxf } = await import('@aquascheme/engine/dxf')
   return buildSewerPlanDxf(input)
@@ -100,6 +102,8 @@ export async function generatePlanSheetSetDxf(input: {
   pipeDiameterMm: Map<string, number>
   mainPath: Array<{ x: number; y: number }>
   buildingLabels?: Map<string, string>
+  constraints?: import('@aquascheme/engine').RouteConstraintInput | null
+  surveyPoints?: readonly import('@aquascheme/engine').SurveyPoint[]
   system?: 'sewer' | 'storm'
 }): Promise<Array<{ title: string; dxf: string }>> {
   const { buildPlanSheetSetDxf } = await import('@aquascheme/engine/dxf')
@@ -361,6 +365,8 @@ export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, s
       network: input.network,
       pipeDiameterMm: input.pipeDiameterMm,
       buildingLabels: input.buildingLabels,
+      constraints: input.constraints,
+      surveyPoints: input.surveyPoints,
       sheetTitle: sheet.title,
       window: sheet.window,
     })
@@ -371,6 +377,8 @@ export async function generateWorkingDrawingSheetDxf(input: ProjectAlbumInput, s
       network: input.network,
       pipeDiameterMm: input.pipeDiameterMm,
       buildingLabels: input.buildingLabels,
+      constraints: input.constraints,
+      surveyPoints: input.surveyPoints,
       sheetTitle: sheet.title,
     })
   }
@@ -484,6 +492,8 @@ export async function generateWorkingDrawingSetDxfs(input: ProjectAlbumInput): P
         network: input.network,
         pipeDiameterMm: input.pipeDiameterMm,
         buildingLabels: input.buildingLabels,
+        constraints: input.constraints,
+        surveyPoints: input.surveyPoints,
         sheetTitle: sheet.title,
         window: sheet.window,
       })
@@ -493,6 +503,8 @@ export async function generateWorkingDrawingSetDxfs(input: ProjectAlbumInput): P
       network: input.network,
       pipeDiameterMm: input.pipeDiameterMm,
       buildingLabels: input.buildingLabels,
+      constraints: input.constraints,
+      surveyPoints: input.surveyPoints,
       sheetTitle: sheet.title,
     })
     else if (sheet.kind === 'profile') drawing = profileFileBySheetId.get(sheet.id)

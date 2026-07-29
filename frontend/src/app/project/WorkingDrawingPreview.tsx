@@ -5,44 +5,12 @@ import type {
   SelectedManholeConstruction,
   SewerSchedule,
   SurveyPoint,
+  TracedNetwork,
   WorkingDrawingSet,
   WorkingDrawingSheet,
 } from '@aquascheme/engine'
-
-type Point = { x: number; y: number; chainageM: number }
-
-function pathPointAt(path: Point[], chainageM: number): Point {
-  if (path.length === 0) return { x: 0, y: 0, chainageM }
-  if (chainageM <= path[0].chainageM) return { ...path[0], chainageM }
-  for (let index = 1; index < path.length; index++) {
-    if (path[index].chainageM >= chainageM) {
-      const a = path[index - 1]
-      const b = path[index]
-      const ratio = (chainageM - a.chainageM) / Math.max(b.chainageM - a.chainageM, 1e-9)
-      return {
-        x: a.x + (b.x - a.x) * ratio,
-        y: a.y + (b.y - a.y) * ratio,
-        chainageM,
-      }
-    }
-  }
-  return { ...path[path.length - 1], chainageM }
-}
-
-function pathSlice(path: Point[], fromM: number, toM: number): Point[] {
-  if (path.length < 2) return path
-  return [
-    pathPointAt(path, fromM),
-    ...path.filter((point) => point.chainageM > fromM && point.chainageM < toM),
-    pathPointAt(path, toM),
-  ]
-}
-
-function picket(chainageM: number): string {
-  const pk = Math.floor(chainageM / 100)
-  const rest = Math.round((chainageM - pk * 100) * 100) / 100
-  return rest === 0 ? `ПК${pk}` : `ПК${pk}+${rest}`
-}
+import { buildPlanSheetScene, formatPlanPicket as picket } from '../../shared/planScene'
+import type { PlanPipeDesign } from '../../shared/planScene'
 
 function statusText(status: WorkingDrawingSheet['status']): string {
   return {
@@ -162,6 +130,11 @@ function CadContextLayer({
 function PlanPreview({
   sheet,
   drawingSet,
+  network,
+  schedule,
+  pipeDiameterMm,
+  pipeDesign,
+  buildingLabels,
   surveyPoints,
   showTopography,
   showFrame,
@@ -169,28 +142,45 @@ function PlanPreview({
 }: {
   sheet: WorkingDrawingSheet
   drawingSet: WorkingDrawingSet
+  network: TracedNetwork
+  schedule: SewerSchedule | null
+  pipeDiameterMm: Map<string, number>
+  pipeDesign?: Map<string, PlanPipeDesign>
+  buildingLabels?: Map<string, string>
   surveyPoints: SurveyPoint[]
   showTopography: boolean
   showFrame: boolean
   constraints?: RouteConstraintInput | null
 }) {
   const window = sheet.window
-  const sourcePath = sheet.planPathId
-    ? drawingSet.planPaths.find((path) => path.id === sheet.planPathId)?.points ?? []
-    : drawingSet.mainPath
-  if (!window || sourcePath.length < 2) {
+  if (!window) {
     return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии плана</text></DrawingFrame>
   }
+  const topo = surveyPoints.filter((point) =>
+    point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY)
+  const scene = buildPlanSheetScene({
+    sheet,
+    drawingSet,
+    network,
+    schedule,
+    pipeDiameterMm,
+    pipeDesign,
+    buildingLabels,
+    constraints,
+    surveyPointCountInWindow: topo.length,
+  })
+  if (!scene) {
+    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии плана</text></DrawingFrame>
+  }
+  const sourcePath = scene.sourcePath
+  const path = scene.selectedPath
   const width = Math.max(window.maxX - window.minX, 1)
   const height = Math.max(window.maxY - window.minY, 1)
   const content = { x: 55, y: 70, width: 1080, height: 590 }
   const scale = Math.min(content.width / width, content.height / height)
   const x = (value: number) => content.x + (value - window.minX) * scale
   const y = (value: number) => content.y + content.height - (value - window.minY) * scale
-  const path = pathSlice(sourcePath, window.fromM, window.toM)
   const route = path.map((point) => `${x(point.x)},${y(point.y)}`).join(' ')
-  const topo = surveyPoints.filter((point) =>
-    point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY)
   const stride = Math.max(1, Math.ceil(topo.length / 450))
   const overview = sourcePath
   const minX = Math.min(...overview.map((point) => point.x))
@@ -208,27 +198,73 @@ function PlanPreview({
       <g clipPath={`url(#clip-${sheet.id})`}>
         <CadContextLayer constraints={constraints} x={x} y={y} bounds={window} />
         {(constraints?.hardObstacleRings ?? []).map((ring, index) => <polygon key={`building-${index}`} points={linePoints(ring)} fill="#d7d7d7" stroke="#555" />)}
+        {(constraints?.buildingPolygons ?? []).map((ring, index) => <polygon key={`building-polygon-${index}`} points={linePoints(ring)} fill="#d7d7d7" stroke="#555" />)}
+        {(constraints?.parcelRings ?? []).map((ring, index) => <polygon key={`parcel-${index}`} points={linePoints(ring)} fill="none" stroke="#777" strokeDasharray="4 3" />)}
+        {(constraints?.forbiddenRings ?? []).map((ring, index) => <polygon key={`forbidden-${index}`} points={linePoints(ring)} fill="#f6d7d7" fillOpacity="0.5" stroke="#b42318" />)}
+        {[...(constraints?.protectionZoneRings ?? []), ...(constraints?.protectionZones ?? [])].map((ring, index) => <polygon key={`protection-${index}`} points={linePoints(ring)} fill="#fff1d6" fillOpacity="0.35" stroke="#c07800" strokeDasharray="8 5" />)}
+        {[...(constraints?.approvedCrossingRings ?? []), ...(constraints?.approvedCrossingZones ?? [])].map((ring, index) => <polygon key={`approved-crossing-${index}`} points={linePoints(ring)} fill="#dff5e7" fillOpacity="0.4" stroke="#168047" strokeDasharray="6 4" />)}
         {(constraints?.waterRings ?? []).map((ring, index) => <polygon key={`water-ring-${index}`} points={linePoints(ring)} fill="#d8f1f8" stroke="#2685b5" />)}
         {(constraints?.corridorRings ?? []).map((ring, index) => <polygon key={`corridor-${index}`} points={linePoints(ring)} fill="none" stroke="#d33232" strokeWidth="1.5" strokeDasharray="8 5" />)}
         {(constraints?.roadLines ?? []).map((line, index) => <polyline key={`road-${index}`} points={linePoints(line.points)} fill="none" stroke="#8b734f" strokeWidth="3" />)}
         {(constraints?.waterLines ?? []).map((line, index) => <polyline key={`water-${index}`} points={linePoints(line.points)} fill="none" stroke="#2685b5" strokeWidth="2" />)}
         {(constraints?.utilityLines ?? []).map((line, index) => <polyline key={`utility-${index}`} points={linePoints(line.points)} fill="none" stroke="#9b2c8c" strokeWidth="1.5" strokeDasharray="6 4" />)}
         {(constraints?.redLines ?? []).map((line, index) => <polyline key={`red-${index}`} points={linePoints(line.points)} fill="none" stroke="#d22" strokeWidth="2" />)}
+        {(constraints?.guideLines ?? []).map((line, index) => <polyline key={`guide-${index}`} points={linePoints(line.points)} fill="none" stroke="#168047" strokeWidth="1.5" strokeDasharray="8 4" />)}
+        {(constraints?.hardObstacles ?? []).map((line, index) => <polyline key={`hard-obstacle-${index}`} points={linePoints(line.points)} fill="none" stroke="#333" strokeWidth="2" />)}
         {showTopography && topo.filter((_, index) => index % stride === 0).map((point, index) => (
           <g key={`${point.x}-${point.y}-${index}`}>
             <circle cx={x(point.x)} cy={y(point.y)} r="1" fill="#777" />
             {index % 12 === 0 && <text x={x(point.x) + 3} y={y(point.y) - 3} fontSize="7" fill="#777">{point.z.toFixed(2)}</text>}
           </g>
         ))}
+        {scene.pipes.flatMap((pipe) => pipe.fragments.map((fragment, index) => (
+          <polyline
+            key={`${pipe.pipeId}-${index}`}
+            data-plan-pipe={pipe.pipeId}
+            points={linePoints(fragment)}
+            fill="none"
+            stroke={pipe.active ? '#1746b5' : '#4776bd'}
+            strokeWidth={pipe.active ? 3.5 : 1.7}
+            strokeLinejoin="round"
+          />
+        )))}
         <polyline points={route} fill="none" stroke="#1746b5" strokeWidth="5" strokeLinejoin="round" />
-        {path.map((point, index) => index === 0 || index === path.length - 1 ? (
-          <g key={`bound-${index}`}>
-            <circle cx={x(point.x)} cy={y(point.y)} r="5" fill="#fff" stroke="#1746b5" strokeWidth="2" />
-            <text x={x(point.x) + 8} y={y(point.y) - 8} fontSize="11" fontWeight="700">{picket(point.chainageM)}</text>
+        {scene.stations.map((station) => (
+          <g key={`station-${station.chainageM}`} data-plan-station={station.chainageM}>
+            {station.boundary && <line x1={x(station.x)} y1={content.y} x2={x(station.x)} y2={content.y + content.height} stroke="#d33" strokeDasharray="8 6" />}
+            <line x1={x(station.x)} y1={y(station.y) - 7} x2={x(station.x)} y2={y(station.y) + 7} stroke="#111" />
+            <circle cx={x(station.x)} cy={y(station.y)} r={station.boundary ? 5 : 3} fill="#fff" stroke="#1746b5" strokeWidth="2" />
+            <text x={x(station.x) + 8} y={y(station.y) - 8} fontSize="10" fontWeight="700">{station.label}</text>
           </g>
-        ) : null)}
+        ))}
+        {scene.nodes.map((node, index) => {
+          const labelWidth = Math.max(32, node.label.length * 6)
+          const labelX = index % 2 === 0 ? x(node.x) + 10 : x(node.x) - labelWidth - 10
+          return <g key={node.id} data-plan-node={node.id}>
+            {node.kind === 'source'
+              ? <rect x={x(node.x) - 5} y={y(node.y) - 5} width="10" height="10" fill="#fff" stroke="#1746b5" strokeWidth="2" />
+              : <circle cx={x(node.x)} cy={y(node.y)} r="5" fill="#fff" stroke="#1746b5" strokeWidth="2" />}
+            <line x1={x(node.x)} y1={y(node.y)} x2={labelX} y2={y(node.y) - 14} stroke="#333" />
+            <rect x={labelX} y={y(node.y) - 28} width={labelWidth} height="16" fill="#fff" stroke="#555" />
+            <text x={labelX + 4} y={y(node.y) - 17} fontSize="9">{node.label}</text>
+          </g>
+        })}
+        {scene.pipes.map((pipe, index) => {
+          const px = x(pipe.labelPoint.x)
+          const py = y(pipe.labelPoint.y) + (index % 2 === 0 ? -10 : 14)
+          const labelWidth = Math.max(52, pipe.label.length * 5.2)
+          return <g key={`label-${pipe.pipeId}`} data-plan-pipe-label={pipe.pipeId} transform={`translate(${px} ${py}) rotate(${-pipe.labelAngleDeg})`}>
+            <rect x="-3" y="-11" width={labelWidth} height="15" fill="#fff" fillOpacity="0.92" stroke="#1746b5" />
+            <text x="1" y="0" fontSize="8.5" fill="#1746b5">{pipe.label}</text>
+          </g>
+        })}
       </g>
       <rect x={content.x} y={content.y} width={content.width} height={content.height} fill="none" stroke="#222" />
+      {!scene.hasPlanContext && <g data-plan-context-missing="true">
+        <rect x="370" y="76" width="440" height="40" fill="#fff4dc" stroke="#c07800" strokeWidth="1.5" />
+        <text x="590" y="92" textAnchor="middle" fontSize="11" fontWeight="700" fill="#8a4c00">НЕПОЛНЫЙ ПЛАН: топографическая/CAD-подоснова отсутствует</text>
+        <text x="590" y="107" textAnchor="middle" fontSize="9" fill="#8a4c00">Показана расчётная сеть; финальный выпуск остаётся заблокированным</text>
+      </g>}
       <g>
         <rect x="940" y="32" width="185" height="112" fill="#fff" stroke="#222" />
         <polyline points={overview.map((point) => `${ox(point.x)},${oy(point.y)}`).join(' ')} fill="none" stroke="#999" strokeWidth="1.5" />
@@ -246,6 +282,7 @@ function PlanPreview({
         <line x1="120" y1="12" x2="148" y2="12" stroke="#9b2c8c" strokeDasharray="6 4" /><text x="155" y="15">коммуникации</text>
         <line x1="10" y1="31" x2="38" y2="31" stroke="#d22" /><text x="45" y="34">красные линии / коридор</text>
       </g>
+      <text x="55" y="681" fontSize="9">В окне: {scene.contextFeatureCount} объектов подосновы, {topo.length} высотных отметок, {scene.pipes.length} участков сети, {scene.nodes.length} сооружений.</text>
     </DrawingFrame>
   )
 }
@@ -269,25 +306,11 @@ function NetworkPlanPreview({
   if (networkPoints.length < 2) {
     return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии сети</text></DrawingFrame>
   }
-  const contextPoints = [
-    ...(constraints?.hardObstacleRings ?? []).flat(),
-    ...(constraints?.waterRings ?? []).flat(),
-    ...(constraints?.corridorRings ?? []).flat(),
-    ...(constraints?.roadLines ?? []).flatMap((line) => line.points),
-    ...(constraints?.waterLines ?? []).flatMap((line) => line.points),
-    ...(constraints?.utilityLines ?? []).flatMap((line) => line.points),
-    ...(constraints?.redLines ?? []).flatMap((line) => line.points),
-    ...(constraints?.cadContextLines ?? []).flatMap((line) => line.points),
-    ...(constraints?.terrainLines ?? []).flatMap((line) => line.points),
-    ...(constraints?.cadTextEntities ?? []),
-    ...(constraints?.cadBlockEntities ?? []),
-  ]
-  const allPoints = [...networkPoints, ...contextPoints]
-  const rawMinX = Math.min(...allPoints.map((point) => point.x))
-  const rawMaxX = Math.max(...allPoints.map((point) => point.x))
-  const rawMinY = Math.min(...allPoints.map((point) => point.y))
-  const rawMaxY = Math.max(...allPoints.map((point) => point.y))
-  const margin = Math.max(Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY) * 0.04, 10)
+  const rawMinX = Math.min(...networkPoints.map((point) => point.x))
+  const rawMaxX = Math.max(...networkPoints.map((point) => point.x))
+  const rawMinY = Math.min(...networkPoints.map((point) => point.y))
+  const rawMaxY = Math.max(...networkPoints.map((point) => point.y))
+  const margin = Math.max(Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY) * 0.04, 60)
   const minX = rawMinX - margin
   const maxX = rawMaxX + margin
   const minY = rawMinY - margin
@@ -490,6 +513,10 @@ function SpecificationPreview({ sheet, schedule, manholeConstructions, showFrame
 export function WorkingDrawingPreview({
   sheet,
   drawingSet,
+  network,
+  pipeDiameterMm,
+  pipeDesign,
+  buildingLabels,
   surveyPoints,
   profile,
   schedule,
@@ -500,6 +527,10 @@ export function WorkingDrawingPreview({
 }: {
   sheet: WorkingDrawingSheet
   drawingSet: WorkingDrawingSet
+  network: TracedNetwork
+  pipeDiameterMm: Map<string, number>
+  pipeDesign?: Map<string, PlanPipeDesign>
+  buildingLabels?: Map<string, string>
   surveyPoints: SurveyPoint[]
   profile: GravityProfile | null
   schedule: SewerSchedule | null
@@ -508,7 +539,7 @@ export function WorkingDrawingPreview({
   constraints?: RouteConstraintInput | null
   manholeConstructions: SelectedManholeConstruction[]
 }) {
-  if (sheet.kind === 'plan') return <PlanPreview sheet={sheet} drawingSet={drawingSet} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
+  if (sheet.kind === 'plan') return <PlanPreview sheet={sheet} drawingSet={drawingSet} network={network} schedule={schedule} pipeDiameterMm={pipeDiameterMm} pipeDesign={pipeDesign} buildingLabels={buildingLabels} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
   if (sheet.kind === 'network_plan') return <NetworkPlanPreview sheet={sheet} drawingSet={drawingSet} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
   if (sheet.kind === 'profile') return <ProfilePreview sheet={sheet} profile={sheet.profileData ?? profile} showFrame={showFrame} />
   if (sheet.kind === 'material_table') return <MaterialPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />

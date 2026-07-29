@@ -12,6 +12,8 @@ import { planWindows, profileSheetSpecs } from './norms/sheetset'
 import type { SelectedManholeConstruction } from './manhole-catalog'
 import type { CrossingRecord, ProtectiveGridDesign } from './working-drawings'
 import type { Borehole } from './geology'
+import type { RouteConstraintInput, RouteSegment } from './constrained-route'
+import type { SurveyPoint } from './types'
 
 /**
  * DXF drawing of the water supply network, in real local coordinates
@@ -1131,6 +1133,167 @@ function clipPolylineToWindow(points: DrawingPoint[], window: DrawingWindow): Dr
   return fragments.filter((fragment) => fragment.length >= 2)
 }
 
+const PLAN_UNDERLAY_LAYERS = {
+  cad: 'K2-BASE-CAD',
+  terrain: 'K2-BASE-TERRAIN',
+  text: 'K2-BASE-TEXT',
+  blocks: 'K2-BASE-BLOCK',
+  survey: 'K2-BASE-SURVEY',
+} as const
+
+function safeSourceLayerName(prefix: string, sourceLayer?: string): string {
+  const safe = (sourceLayer ?? '')
+    .normalize('NFKC')
+    .replace(/[<>/\\":;?*|=\u0000-\u001f]/g, '_')
+    .trim()
+    .replace(/\s+/g, '_')
+    .slice(0, 180)
+  return safe && safe !== '0' ? `${prefix}-${safe}` : prefix
+}
+
+function dxfLayerColor(colorNumber: number | undefined, fallback: number): number {
+  return Number.isInteger(colorNumber) && colorNumber! >= 1 && colorNumber! <= 255
+    ? colorNumber!
+    : fallback
+}
+
+/**
+ * Split at invalid source vertices instead of filtering them. Filtering could
+ * join the valid vertices on either side with a fictitious straight chord.
+ */
+function finitePolylineParts(points: DrawingPoint[]): DrawingPoint[][] {
+  const parts: DrawingPoint[][] = []
+  let current: DrawingPoint[] = []
+  for (const point of points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      if (current.length >= 2) parts.push(current)
+      current = []
+      continue
+    }
+    current.push({ x: point.x, y: point.y })
+  }
+  if (current.length >= 2) parts.push(current)
+  return parts
+}
+
+function clippedSourceParts(points: DrawingPoint[], window?: DrawingWindow): DrawingPoint[][] {
+  return finitePolylineParts(points).flatMap((part) => window ? clipPolylineToWindow(part, window) : [part])
+}
+
+function drawPlanSourceLines(
+  dxf: DxfWriter,
+  segments: RouteSegment[] | undefined,
+  prefix: string,
+  fallbackColor: number,
+  window: DrawingWindow | undefined,
+  layers: Set<string>,
+): void {
+  for (const segment of segments ?? []) {
+    for (const fragment of clippedSourceParts(segment.points, window)) {
+      const layer = safeSourceLayerName(prefix, segment.layer)
+      if (!layers.has(layer)) {
+        dxf.addLayer(layer, dxfLayerColor(segment.colorNumber, fallbackColor), LineTypes.Continuous)
+        layers.add(layer)
+      }
+      dxf.setCurrentLayerName(layer)
+      dxf.addLWPolyline(fragment.map(({ x, y }) => ({ point: { x, y } })))
+    }
+  }
+}
+
+function drawSewerPlanUnderlay(
+  dxf: DxfWriter,
+  constraints: RouteConstraintInput | null | undefined,
+  surveyPoints: readonly SurveyPoint[] | undefined,
+  window: DrawingWindow | undefined,
+): void {
+  const layers = new Set<string>()
+  const terrainHandles = new Set(
+    (constraints?.terrainLines ?? []).map((segment) => segment.sourceHandle).filter((handle): handle is string => Boolean(handle)),
+  )
+  const cadLines = constraints?.cadContextLines?.filter(
+    (segment) => !segment.sourceHandle || !terrainHandles.has(segment.sourceHandle),
+  )
+  drawPlanSourceLines(dxf, cadLines, PLAN_UNDERLAY_LAYERS.cad, 8, window, layers)
+  drawPlanSourceLines(dxf, constraints?.terrainLines, PLAN_UNDERLAY_LAYERS.terrain, Colors.Green, window, layers)
+
+  for (const entity of constraints?.cadTextEntities ?? []) {
+    if (!Number.isFinite(entity.x) || !Number.isFinite(entity.y) || (window && !pointInsideWindow(entity, window))) continue
+    const text = entity.text.trim()
+    if (!text) continue
+    const layer = safeSourceLayerName(PLAN_UNDERLAY_LAYERS.text, entity.layer)
+    if (!layers.has(layer)) {
+      dxf.addLayer(layer, dxfLayerColor(entity.colorNumber, Colors.Black), LineTypes.Continuous)
+      layers.add(layer)
+    }
+    dxf.setCurrentLayerName(layer)
+    const height = Number.isFinite(entity.height) && entity.height! > 0 ? entity.height! : 1.8
+    const rotation = Number.isFinite(entity.rotationDeg) ? entity.rotationDeg : 0
+    dxf.addText(p3(entity.x, entity.y), height, text.replace(/\s+/g, ' '), {
+      rotation,
+      secondAlignmentPoint: p3(entity.x, entity.y),
+    })
+  }
+
+  for (const entity of constraints?.cadBlockEntities ?? []) {
+    if (!Number.isFinite(entity.x) || !Number.isFinite(entity.y) || (window && !pointInsideWindow(entity, window))) continue
+    const layer = safeSourceLayerName(PLAN_UNDERLAY_LAYERS.blocks, entity.layer)
+    if (!layers.has(layer)) {
+      dxf.addLayer(layer, dxfLayerColor(entity.colorNumber, 6), LineTypes.Continuous)
+      layers.add(layer)
+    }
+    dxf.setCurrentLayerName(layer)
+    const scale = Math.max(
+      Number.isFinite(entity.scaleX) ? Math.abs(entity.scaleX!) : 1,
+      Number.isFinite(entity.scaleY) ? Math.abs(entity.scaleY!) : 1,
+    )
+    const radius = Math.max(0.25, Math.min(1.5, scale * 0.35))
+    dxf.addCircle(p3(entity.x, entity.y), radius)
+    if (entity.name.trim()) {
+      dxf.addText(p3(entity.x + radius, entity.y + radius), 1.2, entity.name.trim(), {
+        rotation: Number.isFinite(entity.rotationDeg) ? entity.rotationDeg : 0,
+        secondAlignmentPoint: p3(entity.x + radius, entity.y + radius),
+      })
+    }
+  }
+
+  const uniqueSurveyPoints = new Map<string, SurveyPoint>()
+  for (const point of [...(surveyPoints ?? []), ...(constraints?.surveyPoints ?? [])]) {
+    if (![point.x, point.y, point.z].every(Number.isFinite)) continue
+    if (window && !pointInsideWindow(point, window)) continue
+    uniqueSurveyPoints.set(`${point.x}\u0000${point.y}\u0000${point.z}`, point)
+  }
+  if (uniqueSurveyPoints.size > 0) {
+    dxf.addLayer(PLAN_UNDERLAY_LAYERS.survey, Colors.Cyan, LineTypes.Continuous)
+    dxf.setCurrentLayerName(PLAN_UNDERLAY_LAYERS.survey)
+    for (const point of uniqueSurveyPoints.values()) {
+      dxf.addPoint(point.x, point.y, point.z)
+      const marker = 0.2
+      dxf.addLine(p3(point.x - marker, point.y), p3(point.x + marker, point.y))
+      dxf.addLine(p3(point.x, point.y - marker), p3(point.x, point.y + marker))
+      dxf.addText(p3(point.x + 0.3, point.y + 0.3), 0.8, point.z.toFixed(2), {
+        secondAlignmentPoint: p3(point.x + 0.3, point.y + 0.3),
+      })
+    }
+  }
+}
+
+function networkUnderlayWindow(network: TracedNetwork, paddingM = 60): DrawingWindow | undefined {
+  const points: DrawingPoint[] = [
+    ...network.nodes,
+    ...network.pipes.flatMap((pipe) => pipe.alignment ?? []),
+  ].filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+  if (points.length === 0) return undefined
+  const xs = points.map((point) => point.x)
+  const ys = points.map((point) => point.y)
+  return {
+    minX: Math.min(...xs) - paddingM,
+    maxX: Math.max(...xs) + paddingM,
+    minY: Math.min(...ys) - paddingM,
+    maxY: Math.max(...ys) + paddingM,
+  }
+}
+
 function polylineLength(points: DrawingPoint[]): number {
   return points.slice(1).reduce((sum, point, index) => sum + Math.hypot(
     point.x - points[index].x,
@@ -1159,6 +1322,10 @@ export function buildSewerPlanDxf(input: {
   network: TracedNetwork
   pipeDiameterMm: Map<string, number>
   buildingLabels?: Map<string, string>
+  /** Imported vector master-plan context. It is clipped per sheet in model coordinates. */
+  constraints?: RouteConstraintInput | null
+  /** Topographic survey markers retained on their own DXF layer. */
+  surveyPoints?: readonly SurveyPoint[]
   /** Sheet caption; per-picket sheets pass «План К2 ПК…-ПК…. М1:500». */
   sheetTitle?: string
   /** Model-space window used by per-picket plan sheets. */
@@ -1170,6 +1337,16 @@ export function buildSewerPlanDxf(input: {
   dxf.addLayer(K1_LAYERS.buildings, Colors.Black, LineTypes.Continuous)
   dxf.addLayer(K1_LAYERS.outlet, Colors.Blue, LineTypes.Continuous)
   dxf.addLayer(K1_LAYERS.annotation, Colors.Black, LineTypes.Continuous)
+
+  // Draw the factual imported underlay first so the calculated network remains
+  // legible above it. Source polylines are clipped segment-by-segment; they are
+  // never replaced with endpoint chords.
+  drawSewerPlanUnderlay(
+    dxf,
+    input.constraints,
+    input.surveyPoints,
+    input.window ?? networkUnderlayWindow(input.network),
+  )
 
   const nodeById = new Map(input.network.nodes.map((n) => [n.id, n]))
   const outlet = input.network.nodes.find((n) => n.kind === 'source')
@@ -1270,6 +1447,8 @@ export function buildPlanSheetSetDxf(input: {
   /** Vertices of the main collector in order, for chainage windows. */
   mainPath: Array<{ x: number; y: number; chainageM?: number }>
   buildingLabels?: Map<string, string>
+  constraints?: RouteConstraintInput | null
+  surveyPoints?: readonly SurveyPoint[]
   system?: 'sewer' | 'storm'
   targetPerSheetM?: number
   marginM?: number
@@ -1291,6 +1470,8 @@ export function buildPlanSheetSetDxf(input: {
         network: input.network,
         pipeDiameterMm: input.pipeDiameterMm,
         buildingLabels: input.buildingLabels,
+        constraints: input.constraints,
+        surveyPoints: input.surveyPoints,
         sheetTitle: title,
         window: w,
       }),

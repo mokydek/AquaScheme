@@ -89,7 +89,8 @@ describe('project working-drawing album', () => {
     const set = drawingSet()
     const input = {
       projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm' as const, network, profile, schedule,
-      drawingSet: set, surveyPoints, manholeConstructions, pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      drawingSet: set, surveyPoints, manholeConstructions, pipeDiameterMm: new Map([['AB', 800]]),
+      pipeDesign: new Map([['AB', { diameterMm: 800, slope: 0.00299, lengthM: 670 }]]), outletFlowLps: 12,
     }
     const svgFor = (sheetId: string) => {
       const doc = buildProjectSheetDoc(input, sheetId) as {
@@ -109,6 +110,11 @@ describe('project working-drawing album', () => {
     const planSheet = set.sheets.find((sheet) => sheet.kind === 'plan')!
     const planSvg = svgFor(planSheet.id)
     expect(planSvg).toContain('data-horizontal-scale-denominator="500"')
+    expect(planSvg).toContain('data-plan-pipe="AB"')
+    expect(planSvg).toContain('data-plan-node="A"')
+    expect(planSvg).toContain('data-plan-node="B"')
+    expect(planSvg).toContain('data-plan-station=')
+    expect(planSvg).toContain('Ø800 · i=2.99‰ · L=670.0 м')
     const planPoints = parsePoints(planSvg, 'data-plan-route')
     const planPaperDistanceMm = Math.hypot(
       planPoints.at(-1)![0] - planPoints[0][0],
@@ -126,6 +132,20 @@ describe('project working-drawing album', () => {
 
     expect(set.manifest.pages.find((page) => page.sheetId === planSheet.id)?.pageFormat.widthMm).toBe(1560)
     expect(set.manifest.pages.find((page) => page.sheetId === profileSheet.id)?.pageFormat.widthMm).toBe(1640)
+  })
+
+  it('labels an axis-only plan as incomplete instead of presenting it as a finished drawing', () => {
+    const set = drawingSet()
+    const planSheet = set.sheets.find((sheet) => sheet.kind === 'plan')!
+    const doc = buildProjectSheetDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: set, surveyPoints: [], manholeConstructions, pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+    }, planSheet.id)
+    const serialized = JSON.stringify(doc)
+    expect(serialized).toContain('data-plan-context-missing')
+    expect(serialized).toContain('НЕПОЛНЫЙ ПЛАН')
+    expect(serialized).toContain('data-plan-pipe')
+    expect(serialized).toContain('data-plan-node')
   })
 
   it('assigns tagged crossings to only their owning profile', () => {
@@ -437,6 +457,43 @@ describe('project working-drawing album', () => {
       expect(dxf).toContain('SECTION')
       expect(dxf.trimEnd().endsWith('EOF')).toBe(true)
     }
+  })
+
+  it('passes imported CAD and survey context into single-sheet and complete-set plan DXFs', async () => {
+    const set = drawingSet()
+    const input = {
+      projectName: 'CAD context export fixture', projectCode: 'K2', system: 'storm' as const, network, profile, schedule,
+      drawingSet: set,
+      surveyPoints: [{ x: 60, y: 20, z: 101.25 }],
+      manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]),
+      outletFlowLps: 12,
+      constraints: {
+        corridorRings: [],
+        cadContextLines: [{ layer: 'GENPLAN', points: [{ x: 40, y: 10 }, { x: 90, y: 30 }] }],
+        terrainLines: [{ layer: 'RELIEF', points: [{ x: 45, y: 12 }, { x: 95, y: 32 }] }],
+        cadTextEntities: [{ x: 70, y: 22, text: 'DXF-CAD-TEXT', layer: 'NOTES' }],
+        cadBlockEntities: [{ x: 80, y: 24, name: 'DXF-CAD-BLOCK', layer: 'BLOCKS' }],
+      },
+    }
+    const planSheet = set.sheets.find((sheet) => sheet.kind === 'plan')!
+    const single = await generateWorkingDrawingSheetDxf(input, planSheet.id)
+    for (const marker of [
+      'K2-BASE-CAD-GENPLAN',
+      'K2-BASE-TERRAIN-RELIEF',
+      'DXF-CAD-TEXT',
+      'DXF-CAD-BLOCK',
+      'K2-BASE-SURVEY',
+      '101.25',
+    ]) expect(single).toContain(marker)
+
+    const complete = await generateWorkingDrawingSetDxfs(input)
+    const planFile = complete.find((file) => file.sheetId === planSheet.id)
+    expect(planFile).toBeTruthy()
+    expect(planFile!.dxf).toContain('K2-BASE-CAD-GENPLAN')
+    expect(planFile!.dxf).toContain('DXF-CAD-TEXT')
+    expect(planFile!.dxf).toContain('DXF-CAD-BLOCK')
+    expect(planFile!.dxf).toContain('101.25')
   })
 
   it('exports a complete DXF set with the exact register ids and sheet numbers', async () => {

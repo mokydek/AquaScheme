@@ -11,6 +11,8 @@ import type {
   WorkingDrawingSet,
   WorkingDrawingSheet,
 } from '@aquascheme/engine'
+import { buildPlanSheetScene } from './planScene'
+import type { PlanPipeDesign } from './planScene'
 
 export interface ProjectAlbumInput {
   projectName: string
@@ -27,6 +29,8 @@ export interface ProjectAlbumInput {
   constraints?: (RouteConstraintInput & { crossings?: CrossingRecord[] }) | null
   manholeConstructions: SelectedManholeConstruction[]
   pipeDiameterMm: Map<string, number>
+  /** Calculated per-pipe values used by plan annotations. */
+  pipeDesign?: Map<string, PlanPipeDesign>
   outletFlowLps: number
   buildingLabels?: Map<string, string>
 }
@@ -171,28 +175,6 @@ function cadContextSvg(
   return contextLines + terrainLines + blocks + labels
 }
 
-function pointAt(path: PathPoint[], chainageM: number): PathPoint {
-  if (path.length === 0) return { x: 0, y: 0, chainageM }
-  if (chainageM <= path[0].chainageM) return { ...path[0], chainageM }
-  for (let index = 1; index < path.length; index++) {
-    if (path[index].chainageM >= chainageM) {
-      const a = path[index - 1]
-      const b = path[index]
-      const ratio = (chainageM - a.chainageM) / Math.max(b.chainageM - a.chainageM, 1e-9)
-      return { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio, chainageM }
-    }
-  }
-  return { ...path[path.length - 1], chainageM }
-}
-
-function pathSlice(path: PathPoint[], fromM: number, toM: number): PathPoint[] {
-  return [
-    pointAt(path, fromM),
-    ...path.filter((point) => point.chainageM > fromM && point.chainageM < toM),
-    pointAt(path, toM),
-  ]
-}
-
 function planSvg(
   input: ProjectAlbumInput,
   sheet: WorkingDrawingSheet,
@@ -200,13 +182,25 @@ function planSvg(
   svgUnitsPerMm = 1,
 ): string {
   const window = sheet.window
-  const sourcePath = sheet.planPathId
-    ? input.drawingSet.planPaths.find((path) => path.id === sheet.planPathId)?.points ?? []
-    : input.drawingSet.mainPath
-  if (!window || sourcePath.length < 2) {
+  if (!window) {
     throw new Error(`Лист ${sheet.sheetNumber}: отсутствует подтверждённая геометрия плана.`)
   }
-  const path = pathSlice(sourcePath, window.fromM, window.toM)
+  const topo = input.surveyPoints.filter((point) =>
+    point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY)
+  const scene = buildPlanSheetScene({
+    sheet,
+    drawingSet: input.drawingSet,
+    network: input.network,
+    schedule: input.schedule,
+    pipeDiameterMm: input.pipeDiameterMm,
+    pipeDesign: input.pipeDesign,
+    buildingLabels: input.buildingLabels,
+    constraints: input.constraints,
+    surveyPointCountInWindow: topo.length,
+  })
+  if (!scene) throw new Error(`Лист ${sheet.sheetNumber}: отсутствует подтверждённая геометрия плана.`)
+  const sourcePath = scene.sourcePath
+  const path = scene.selectedPath
   const axisStart = path[0]
   const axisEnd = path[path.length - 1]
   const windowCorners = [
@@ -243,15 +237,20 @@ function planSvg(
   const constraints = [
     context,
     ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d7d7d7" stroke="#555"/>`),
+    ...(input.constraints?.buildingPolygons ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d7d7d7" stroke="#555"/>`),
+    ...(input.constraints?.parcelRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#777" stroke-width="0.8" stroke-dasharray="3 2"/>`),
+    ...(input.constraints?.forbiddenRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#f6d7d7" fill-opacity="0.5" stroke="#b42318" stroke-width="1.2"/>`),
+    ...[...(input.constraints?.protectionZoneRings ?? []), ...(input.constraints?.protectionZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="#fff1d6" fill-opacity="0.35" stroke="#c07800" stroke-width="1" stroke-dasharray="7 4"/>`),
+    ...[...(input.constraints?.approvedCrossingRings ?? []), ...(input.constraints?.approvedCrossingZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="#dff5e7" fill-opacity="0.4" stroke="#168047" stroke-width="1.2" stroke-dasharray="5 3"/>`),
     ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
     ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="8 5"/>`),
     ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#8b734f" stroke-width="3"/>`),
     ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#2685b5" stroke-width="2"/>`),
     ...(input.constraints?.utilityLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="6 4"/>`),
     ...(input.constraints?.redLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#d22" stroke-width="2"/>`),
+    ...(input.constraints?.guideLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#168047" stroke-width="1.3" stroke-dasharray="7 3"/>`),
+    ...(input.constraints?.hardObstacles ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#333" stroke-width="2"/>`),
   ].join('')
-  const topo = input.surveyPoints.filter((point) =>
-    point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY)
   const stride = Math.max(1, Math.ceil(topo.length / 360))
   const topoSvg = topo.filter((_, index) => index % stride === 0).map((point, index) => {
     const projected = project(point)
@@ -260,10 +259,38 @@ function planSvg(
       : ''
     return `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="1" fill="#666"/>${label}`
   }).join('')
-  const bounds = path.filter((_, index) => index === 0 || index === path.length - 1).map((point) => {
-    const projected = project(point)
-    return `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="4" fill="#fff" stroke="#1746b5" stroke-width="2"/><text x="${(projected.x + 7).toFixed(1)}" y="${(projected.y - 7).toFixed(1)}" font-size="10" font-weight="700">${picket(point.chainageM)}</text>`
+  const networkPipes = scene.pipes.map((pipe) => pipe.fragments.map((fragment) => {
+    const points = linePoints(fragment)
+    const stroke = pipe.active ? '#1746b5' : '#4776bd'
+    const width = pipe.active ? 3.2 : 1.6
+    return `<polyline data-plan-pipe="${xmlText(pipe.pipeId)}" points="${points}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linejoin="round"/>`
+  }).join('')).join('')
+  const occupiedLabels: Array<{ x: number; y: number }> = []
+  const pipeLabels = scene.pipes.map((pipe, index) => {
+    const projected = project(pipe.labelPoint)
+    if (occupiedLabels.some((label) => Math.hypot(label.x - projected.x, label.y - projected.y) < 68)) return ''
+    occupiedLabels.push(projected)
+    const yOffset = index % 2 === 0 ? -8 : 13
+    return `<g data-plan-pipe-label="${xmlText(pipe.pipeId)}" transform="translate(${projected.x.toFixed(1)} ${(projected.y + yOffset).toFixed(1)}) rotate(${-pipe.labelAngleDeg.toFixed(2)})"><rect x="-3" y="-9" width="${Math.max(44, pipe.label.length * 4.6).toFixed(1)}" height="13" fill="#fff" fill-opacity="0.9" stroke="#1746b5" stroke-width="0.5"/><text x="1" y="0" font-size="7.5" fill="#1746b5">${xmlText(pipe.label)}</text></g>`
   }).join('')
+  const nodeMarks = scene.nodes.map((node, index) => {
+    const projected = project(node)
+    const label = xmlText(node.label)
+    const labelWidth = Math.max(28, node.label.length * 5.2)
+    const dx = index % 2 === 0 ? 8 : -labelWidth - 8
+    const symbol = node.kind === 'source'
+      ? `<rect x="${(projected.x - 4).toFixed(1)}" y="${(projected.y - 4).toFixed(1)}" width="8" height="8" fill="#fff" stroke="#1746b5" stroke-width="2"/>`
+      : `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="4" fill="#fff" stroke="#1746b5" stroke-width="2"/>`
+    return `<g data-plan-node="${xmlText(node.id)}">${symbol}<path d="M${projected.x.toFixed(1)} ${projected.y.toFixed(1)}L${(projected.x + dx).toFixed(1)} ${(projected.y - 11).toFixed(1)}" stroke="#333" stroke-width="0.7"/><rect x="${(projected.x + dx).toFixed(1)}" y="${(projected.y - 22).toFixed(1)}" width="${labelWidth.toFixed(1)}" height="13" fill="#fff" stroke="#555" stroke-width="0.6"/><text x="${(projected.x + dx + 3).toFixed(1)}" y="${(projected.y - 13).toFixed(1)}" font-size="7.5">${label}</text></g>`
+  }).join('')
+  const stationMarks = scene.stations.map((station) => {
+    const projected = project(station)
+    const matchLine = station.boundary
+      ? `<line x1="${projected.x.toFixed(1)}" y1="55" x2="${projected.x.toFixed(1)}" y2="425" stroke="#d33" stroke-width="0.8" stroke-dasharray="5 4"/>`
+      : ''
+    return `${matchLine}<g data-plan-station="${station.chainageM.toFixed(2)}"><line x1="${projected.x.toFixed(1)}" y1="${(projected.y - 6).toFixed(1)}" x2="${projected.x.toFixed(1)}" y2="${(projected.y + 6).toFixed(1)}" stroke="#111" stroke-width="0.8"/><circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="2.2" fill="#fff" stroke="#1746b5"/><text x="${(projected.x + 4).toFixed(1)}" y="${(projected.y - 7).toFixed(1)}" font-size="7.5" font-weight="700">${xmlText(station.label)}</text></g>`
+  }).join('')
+  const missingContext = scene.hasPlanContext ? '' : `<g data-plan-context-missing="true"><rect x="${(canvasWidth / 2 - 170).toFixed(1)}" y="27" width="340" height="30" fill="#fff4dc" stroke="#c07800" stroke-width="1.2"/><text x="${(canvasWidth / 2).toFixed(1)}" y="40" text-anchor="middle" font-size="9" font-weight="700" fill="#8a4c00">НЕПОЛНЫЙ ПЛАН: топографическая/CAD-подоснова отсутствует</text><text x="${(canvasWidth / 2).toFixed(1)}" y="51" text-anchor="middle" font-size="7" fill="#8a4c00">Показана расчётная сеть; финальный выпуск должен оставаться заблокированным</text></g>`
   const overview = sourcePath
   const minX = Math.min(...overview.map((point) => point.x))
   const maxX = Math.max(...overview.map((point) => point.x))
@@ -273,32 +300,20 @@ function planSvg(
   const ox = (value: number) => canvasWidth - 175 + (value - minX) * overviewScale
   const oy = (value: number) => 110 - (value - minY) * overviewScale
   const axisRotationDeg = Math.atan2(axisEnd.y - axisStart.y, axisEnd.x - axisStart.x) * 180 / Math.PI
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${topoSvg}<polyline data-plan-route="true" points="${route}" fill="none" stroke="#1746b5" stroke-width="5" stroke-linejoin="round"/>${bounds}</g><g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/><polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/><text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><text x="40" y="485" font-size="8">Основание: классифицированная ось DWG; рельеф: ${input.surveyPoints.length} точек топосъёмки. Масштаб 1:${PLAN_SCALE_DENOMINATOR}; локальный поворот не изменяет расстояния.</text></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${topoSvg}${networkPipes}<polyline data-plan-route="true" points="${route}" fill="none" stroke="#1746b5" stroke-width="4.8" stroke-linejoin="round"/>${stationMarks}${nodeMarks}${pipeLabels}</g>${missingContext}<g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/><polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/><text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><g transform="translate(42 414)" font-size="7"><rect x="0" y="0" width="310" height="39" fill="#fff" fill-opacity="0.94" stroke="#888"/><line x1="8" y1="11" x2="34" y2="11" stroke="#1746b5" stroke-width="4"/><text x="40" y="14">проектная ось</text><circle cx="132" cy="11" r="3" fill="#fff" stroke="#1746b5"/><text x="140" y="14">колодец / камера</text><line x1="222" y1="11" x2="248" y2="11" stroke="#d33" stroke-dasharray="5 4"/><text x="254" y="14">граница листа</text><line x1="8" y1="28" x2="34" y2="28" stroke="#9b2c8c" stroke-dasharray="5 3"/><text x="40" y="31">существующая сеть</text><line x1="132" y1="28" x2="158" y2="28" stroke="#78906d"/><text x="164" y="31">рельеф / подоснова</text></g><text x="40" y="485" font-size="8">Основание: ${scene.contextFeatureCount} объектов CAD/топоподосновы; ${topo.length} отметок в окне; ${scene.pipes.length} участков сети. Масштаб 1:${PLAN_SCALE_DENOMINATOR}.</text></svg>`
 }
 
 function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
   const networkPaths = input.drawingSet.networkPaths
   const routePoints = networkPaths.flatMap((path) => path.points)
   if (routePoints.length < 2) throw new Error(`Лист ${sheet.sheetNumber}: отсутствует подтверждённая геометрия сети.`)
-  const contextPoints = [
-    ...(input.constraints?.hardObstacleRings ?? []).flat(),
-    ...(input.constraints?.waterRings ?? []).flat(),
-    ...(input.constraints?.corridorRings ?? []).flat(),
-    ...(input.constraints?.roadLines ?? []).flatMap((line) => line.points),
-    ...(input.constraints?.waterLines ?? []).flatMap((line) => line.points),
-    ...(input.constraints?.utilityLines ?? []).flatMap((line) => line.points),
-    ...(input.constraints?.redLines ?? []).flatMap((line) => line.points),
-    ...(input.constraints?.cadContextLines ?? []).flatMap((line) => line.points),
-    ...(input.constraints?.terrainLines ?? []).flatMap((line) => line.points),
-    ...(input.constraints?.cadTextEntities ?? []),
-    ...(input.constraints?.cadBlockEntities ?? []),
-  ]
-  const allPoints = [...routePoints, ...contextPoints]
-  const rawMinX = Math.min(...allPoints.map((point) => point.x))
-  const rawMaxX = Math.max(...allPoints.map((point) => point.x))
-  const rawMinY = Math.min(...allPoints.map((point) => point.y))
-  const rawMaxY = Math.max(...allPoints.map((point) => point.y))
-  const margin = Math.max(Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY) * 0.04, 10)
+  // Fit to the confirmed network, not to remote DWG frames/title blocks.
+  // Context is clipped to this engineering viewport below.
+  const rawMinX = Math.min(...routePoints.map((point) => point.x))
+  const rawMaxX = Math.max(...routePoints.map((point) => point.x))
+  const rawMinY = Math.min(...routePoints.map((point) => point.y))
+  const rawMaxY = Math.max(...routePoints.map((point) => point.y))
+  const margin = Math.max(Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY) * 0.04, 60)
   const minX = rawMinX - margin
   const maxX = rawMaxX + margin
   const minY = rawMinY - margin

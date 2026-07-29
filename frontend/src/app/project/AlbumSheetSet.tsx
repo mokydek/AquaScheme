@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { GravityProfile, RouteConstraintInput, SelectedManholeConstruction, SewerSchedule, SurveyPoint, WorkingDrawingSet, WorkingDrawingStatus } from '@aquascheme/engine'
+import type { GravityProfile, RouteConstraintInput, SelectedManholeConstruction, SewerSchedule, SurveyPoint, TracedNetwork, WorkingDrawingSet, WorkingDrawingStatus } from '@aquascheme/engine'
+import type { PlanPipeDesign } from '../../shared/planScene'
 import { WorkingDrawingPreview } from './WorkingDrawingPreview'
 
 const STATUS_LABEL: Record<WorkingDrawingStatus, string> = {
@@ -12,6 +13,10 @@ const STATUS_LABEL: Record<WorkingDrawingStatus, string> = {
 
 export function AlbumSheetSet({
   drawingSet,
+  network,
+  pipeDiameterMm,
+  pipeDesign,
+  buildingLabels,
   surveyPoints,
   profile,
   schedule,
@@ -26,6 +31,10 @@ export function AlbumSheetSet({
   error,
 }: {
   drawingSet: WorkingDrawingSet
+  network: TracedNetwork
+  pipeDiameterMm: Map<string, number>
+  pipeDesign?: Map<string, PlanPipeDesign>
+  buildingLabels?: Map<string, string>
   surveyPoints: SurveyPoint[]
   profile: GravityProfile | null
   schedule: SewerSchedule | null
@@ -162,6 +171,10 @@ export function AlbumSheetSet({
                 <WorkingDrawingPreview
                   sheet={selected}
                   drawingSet={drawingSet}
+                  network={network}
+                  pipeDiameterMm={pipeDiameterMm}
+                  pipeDesign={pipeDesign}
+                  buildingLabels={buildingLabels}
                   surveyPoints={surveyPoints}
                   profile={profile}
                   schedule={schedule}

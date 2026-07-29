@@ -339,6 +339,122 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
     expect(plan).not.toContain('L100.0')
   })
 
+  it('clips factual CAD underlay entities to the plan window without inventing chords', () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'J', kind: 'junction', x: 10, y: 10, groundElevation: 99 },
+      ],
+      pipes: [{
+        id: 'p1', kind: 'main', fromNode: 'S', toNode: 'J', lengthM: 20,
+        alignment: [{ x: 0, y: 0 }, { x: 4, y: 8 }, { x: 10, y: 10 }],
+      }],
+      totalLengthM: 20,
+    }
+    const plan = buildSewerPlanDxf({
+      projectName: 'CAD underlay fixture',
+      network,
+      pipeDiameterMm: new Map([['p1', 800]]),
+      window: { minX: 0, minY: 0, maxX: 10, maxY: 10 },
+      constraints: {
+        corridorRings: [],
+        cadContextLines: [
+          {
+            layer: 'GENPLAN',
+            points: [{ x: -5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 15 }],
+          },
+          {
+            layer: 'BROKEN',
+            points: [{ x: 1, y: 1 }, { x: Number.NaN, y: Number.NaN }, { x: 9, y: 9 }],
+          },
+        ],
+        terrainLines: [{
+          layer: 'RELIEF',
+          points: [{ x: -5, y: 2 }, { x: 15, y: 2 }],
+        }],
+        cadTextEntities: [
+          { x: 2, y: 3, text: 'CAD-TEXT-IN', layer: 'NOTES' },
+          { x: 20, y: 20, text: 'CAD-TEXT-OUT', layer: 'NOTES' },
+        ],
+        cadBlockEntities: [
+          { x: 3, y: 4, name: 'CAD-BLOCK-IN', layer: 'BLOCKS' },
+          { x: 30, y: 30, name: 'CAD-BLOCK-OUT', layer: 'BLOCKS' },
+        ],
+      },
+      surveyPoints: [
+        { x: 6, y: 7, z: 101.25 },
+        { x: 40, y: 40, z: 87.65 },
+      ],
+    })
+
+    expect(plan).toContain('K2-BASE-CAD-GENPLAN')
+    expect(plan).toContain('K2-BASE-TERRAIN-RELIEF')
+    expect(plan).toContain('K2-BASE-TEXT-NOTES')
+    expect(plan).toContain('K2-BASE-BLOCK-BLOCKS')
+    expect(plan).toContain('K2-BASE-SURVEY')
+    expect(plan).toContain('CAD-TEXT-IN')
+    expect(plan).not.toContain('CAD-TEXT-OUT')
+    expect(plan).toContain('CAD-BLOCK-IN')
+    expect(plan).not.toContain('CAD-BLOCK-OUT')
+    expect(plan).toContain('101.25')
+    expect(plan).not.toContain('87.65')
+    expect(plan).not.toContain('K2-BASE-CAD-BROKEN')
+    expect(plan).not.toMatch(/\r?\nINSERT\r?\n/)
+
+    const lines = plan.trim().split(/\r?\n/)
+    const entities: string[] = []
+    let current: string[] = []
+    for (let index = 0; index + 1 < lines.length; index += 2) {
+      const pair = [lines[index], lines[index + 1]]
+      if (pair[0] === '0' && current.length > 0) {
+        entities.push(current.join('\n'))
+        current = []
+      }
+      current.push(...pair)
+    }
+    if (current.length > 0) entities.push(current.join('\n'))
+    const cadEntity = entities.find((entity) => /(?:^|\r?\n)8\r?\nK2-BASE-CAD-GENPLAN(?:\r?\n|$)/.test(entity))
+    expect(cadEntity).toBeTruthy()
+    expect(cadEntity).toMatch(/90\r?\n3\r?\n/)
+    expect(cadEntity).toMatch(/10\r?\n0\r?\n20\r?\n5\r?\n/)
+    expect(cadEntity).toMatch(/10\r?\n5\r?\n20\r?\n5\r?\n/)
+    expect(cadEntity).toMatch(/10\r?\n5\r?\n20\r?\n10(?:\r?\n|$)/)
+
+    const surveyPointEntity = entities.find((entity) => (
+      /(?:^|\r?\n)8\r?\nK2-BASE-SURVEY(?:\r?\n|$)/.test(entity)
+      && /100\r?\nAcDbPoint\r?\n/.test(entity)
+    ))
+    expect(surveyPointEntity).toMatch(/10\r?\n6\r?\n20\r?\n7\r?\n30\r?\n101\.25(?:\r?\n|$)/)
+  })
+
+  it('excludes remote CAD title blocks from the unwindowed network plan context', () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
+        { id: 'J', kind: 'junction', x: 100, y: 0, groundElevation: 99 },
+      ],
+      pipes: [{
+        id: 'p1', kind: 'main', fromNode: 'S', toNode: 'J', lengthM: 100,
+        alignment: [{ x: 0, y: 0 }, { x: 50, y: 5 }, { x: 100, y: 0 }],
+      }],
+      totalLengthM: 100,
+    }
+    const plan = buildSewerPlanDxf({
+      projectName: 'Context window fixture',
+      network,
+      pipeDiameterMm: new Map([['p1', 800]]),
+      constraints: {
+        corridorRings: [],
+        cadTextEntities: [
+          { x: 50, y: 10, text: 'ROUTE-CONTEXT', layer: 'NOTES' },
+          { x: 1_000_000, y: 1_000_000, text: 'REMOTE-TITLE-BLOCK', layer: 'FRAME' },
+        ],
+      },
+    })
+    expect(plan).toContain('ROUTE-CONTEXT')
+    expect(plan).not.toContain('REMOTE-TITLE-BLOCK')
+  })
+
   it('draws the GOST 21.704 form 2 side table from the computed profile', () => {
     const network: TracedNetwork = {
       nodes: [

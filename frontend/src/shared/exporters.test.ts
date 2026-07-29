@@ -154,6 +154,8 @@ describe('multi-sheet specification contract', () => {
       previewTexts.push(renderToStaticMarkup(createElement(WorkingDrawingPreview, {
         sheet,
         drawingSet,
+        network: specificationNetwork,
+        pipeDiameterMm: input.pipeDiameterMm,
         surveyPoints,
         profile: specificationProfile,
         schedule: specificationSchedule,

@@ -83,6 +83,7 @@ const readyInput = () => ({
     { x: 500, y: 100, z: 99 },
     { x: 1000, y: 0, z: 98 },
   ],
+  planContextFeatureCount: 12,
   unresolvedLayerCount: 0,
   catalogReady: true,
   hydraulicsReady: true,
@@ -199,6 +200,15 @@ describe('workingDrawingMainPath', () => {
 })
 
 describe('buildWorkingDrawingSet', () => {
+  it('blocks a route-only plan even when a few elevation points are present', () => {
+    const set = buildWorkingDrawingSet({ ...readyInput(), planContextFeatureCount: 0 })
+    const plans = set.sheets.filter((sheet) => sheet.kind === 'plan')
+    expect(plans.length).toBeGreaterThan(0)
+    expect(plans.every((sheet) => sheet.status === 'BLOCKED')).toBe(true)
+    expect(plans.flatMap((sheet) => sheet.blockers).some((item) => item.code === 'PLAN_TOPOBASE_MISSING')).toBe(true)
+    expect(set.summary.finalExportAllowed).toBe(false)
+  })
+
   it('builds a data-driven register with contiguous plan/profile sheet numbers', () => {
     const set = buildWorkingDrawingSet(readyInput())
     expect(set.sheets.length).toBeGreaterThan(3)

@@ -274,6 +274,8 @@ export interface WorkingDrawingInput {
   routeBlockers?: Array<{ code?: string; message?: string } | string>
   georeference?: { kind?: string; source?: string } | null
   surveyPoints?: SurveyPoint[]
+  /** Classified CAD/topographic entities available to the plan renderer. */
+  planContextFeatureCount?: number
   unresolvedLayerCount?: number
   catalogReady: boolean
   hydraulicsReady: boolean
@@ -781,6 +783,11 @@ function sharedPlanChecks(
   ))
   if (!georeferenced) blockers.push(issue('GEOREFERENCE_MISSING', 'Не подтверждена система координат или геопривязка проекта.', 'georeference'))
   if (surveyCount < 2) blockers.push(issue('TOPOGRAPHY_MISSING', 'Недостаточно точек топографической съёмки для планов и профилей.', 'topography'))
+  if (input.planContextFeatureCount === 0) blockers.push(issue(
+    'PLAN_TOPOBASE_MISSING',
+    'Для плановых листов отсутствует классифицированная CAD/топографическая подоснова. Одна проектная ось не является рабочим планом.',
+    'topography',
+  ))
   if ((input.unresolvedLayerCount ?? 0) > 0) blockers.push(issue(
     'DWG_LAYERS_UNRESOLVED',
     `Не классифицировано слоёв DWG: ${input.unresolvedLayerCount}.`,
@@ -795,7 +802,13 @@ function sharedPlanChecks(
   const sources = [
     makeSource('route', input.network.pipes.length > 0 && missingAlignmentPipeIds.length === 0, input.routeStatus === 'calculated', undefined, `${input.network.pipes.length} участков`),
     makeSource('georeference', georeferenced, georeferenced, input.georeference?.source),
-    makeSource('topography', surveyCount >= 2, surveyCount >= 2, undefined, `${surveyCount} точек`),
+    makeSource(
+      'topography',
+      surveyCount >= 2 && input.planContextFeatureCount !== 0,
+      surveyCount >= 2 && input.planContextFeatureCount !== 0,
+      undefined,
+      `${surveyCount} точек; ${input.planContextFeatureCount ?? 'не проверено'} объектов подосновы`,
+    ),
     makeSource('dwg_classification', (input.unresolvedLayerCount ?? 0) === 0, (input.unresolvedLayerCount ?? 0) === 0),
   ]
   return { blockers, warnings, sources }
@@ -971,6 +984,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     branchProfiles: input.branchProfiles,
     schedule: input.schedule,
     surveyPoints: input.surveyPoints ?? [],
+    planContextFeatureCount: input.planContextFeatureCount,
     georeference: input.georeference,
     routeBlockers: input.routeBlockers,
     unresolvedLayerCount: input.unresolvedLayerCount ?? 0,
