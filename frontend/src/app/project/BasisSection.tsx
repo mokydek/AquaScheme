@@ -5,6 +5,7 @@ import { supabase } from '../../shared/supabase'
 import { useAuth } from '../../shared/auth'
 import type { DatasetRow } from '../../shared/datasets'
 import { saveBasisFile } from '../../shared/basisFiles'
+import { syntheticBasisArtifact } from '../../shared/basisDemo'
 import { formatAppError } from '../../shared/errorFormatting'
 import { Panel } from './Panel'
 
@@ -46,6 +47,20 @@ function failureDetail(t: ReturnType<typeof useTranslation>['t'], error: unknown
   return `${t('project.saveError')}: ${formatted}`
 }
 
+function downloadGeneratedDemoFile(itemId: string, fileName: string | undefined): void {
+  const artifact = syntheticBasisArtifact(itemId, fileName)
+  if (!artifact) return
+  const blob = new Blob([`\uFEFF${artifact.content}`], { type: artifact.mimeType })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = artifact.fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 export function BasisSection({
   projectId,
   dataset,
@@ -73,6 +88,10 @@ export function BasisSection({
   }
   const referenceFiles = content.referenceFiles ?? []
   const uploadedCount = BASIS_ITEMS.filter((i) => displayedFiles[i.id]).length
+  const syntheticCount = content.mode === 'synthetic'
+    ? BASIS_ITEMS.filter((item) => syntheticBasisArtifact(item.id, displayedFiles[item.id])).length
+    : 0
+  const originalCount = uploadedCount - syntheticCount
 
   const onFile = async (itemId: string, event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget
@@ -152,6 +171,9 @@ export function BasisSection({
       <p className="hint">{t('project.basis.hint')}</p>
       <p className="stat-line">{t('project.basis.progress', { count: uploadedCount, total: BASIS_ITEMS.length })}</p>
       {content.mode === 'synthetic' && (
+        <p className="stat-line">{t('project.basis.demoBreakdown', { synthetic: syntheticCount, originals: originalCount })}</p>
+      )}
+      {content.mode === 'synthetic' && (
         <p className="notice">{content.note ?? 'Синтетическое демо не содержит исходных документов и не разрешает инженерный выпуск.'}</p>
       )}
       {content.project && (
@@ -176,11 +198,18 @@ export function BasisSection({
             {BASIS_ITEMS.map((item) => {
               const state = rowStates[item.id]
               const storedFileName = displayedFiles[item.id]
+              const demoArtifact = content.mode === 'synthetic'
+                ? syntheticBasisArtifact(item.id, storedFileName)
+                : null
+              const inputId = `basis-${projectId}-${item.id}`
               return (
                 <tr key={item.id} className={storedFileName ? undefined : 'row-warn'}>
                   <td>{item.label}</td>
                   <td className="mono" style={{ fontSize: 11 }}>
-                    <div>{storedFileName ?? t('project.basis.missing')}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                      <span>{storedFileName ?? t('project.basis.missing')}</span>
+                      {demoArtifact && <span className="badge">{t('project.basis.demoBadge')}</span>}
+                    </div>
                     {state?.status === 'saving' && (
                       <div className="stat-line" role="status" aria-live="polite" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span className="button-spinner" aria-hidden="true" />
@@ -204,15 +233,36 @@ export function BasisSection({
                     )}
                   </td>
                   <td>
-                    <input
-                      id={`basis-${projectId}-${item.id}`}
-                      name={`basis-${projectId}-${item.id}`}
-                      className="file-input"
-                      type="file"
-                      aria-label={`${item.label}: выбрать файл`}
-                      disabled={busyId !== null}
-                      onChange={(e) => void onFile(item.id, e)}
-                    />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      <input
+                        id={inputId}
+                        name={`basis-${projectId}-${item.id}`}
+                        className="basis-file-input"
+                        type="file"
+                        aria-label={`${item.label}: выбрать файл`}
+                        disabled={busyId !== null}
+                        onChange={(e) => void onFile(item.id, e)}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busyId !== null}
+                        aria-controls={inputId}
+                        onClick={() => document.getElementById(inputId)?.click()}
+                      >
+                        {storedFileName ? t('project.basis.replaceFile') : t('project.basis.chooseFile')}
+                      </button>
+                      {demoArtifact && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          data-demo-basis-download={item.id}
+                          onClick={() => downloadGeneratedDemoFile(item.id, storedFileName)}
+                        >
+                          {t('project.basis.downloadDemo')}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )

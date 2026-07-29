@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs'
 import {
   mergeSyntheticBasisContent,
   mergeSyntheticBasisContents,
+  syntheticBasisArtifact,
+  SYNTHETIC_BASIS_ARTIFACTS,
+  SYNTHETIC_BASIS_FILES,
   SYNTHETIC_BASIS_NOTE,
 } from './basisDemo'
 
@@ -11,20 +14,20 @@ describe('mergeSyntheticBasisContent', () => {
     const existing = {
       files: {
         assignment: 'ТЗ.pdf',
-        apz: 'АПЗ исправленный 22,10.pdf',
+        apz: 'owner_apz.pdf',
         geology: 'ИГИ.pdf',
       },
     }
 
     const merged = mergeSyntheticBasisContent(existing)
 
-    expect(merged.files).toEqual(existing.files)
+    expect(merged.files).toEqual({ ...SYNTHETIC_BASIS_FILES, ...existing.files })
     expect(merged.files).not.toBe(existing.files)
     expect(existing.files).toHaveProperty('assignment', 'ТЗ.pdf')
   })
 
   it('preserves all other basis fields while refreshing synthetic demo metadata', () => {
-    const project = { name: 'Коллектор', code: '2024-51-НК' }
+    const project = { name: 'Коллектор', code: 'DEMO-K2-001' }
     const existing = {
       files: { topo: 'Топосъёмка.pdf' },
       referenceFiles: ['Генплан.pdf'],
@@ -38,23 +41,25 @@ describe('mergeSyntheticBasisContent', () => {
     const merged = mergeSyntheticBasisContent(existing)
 
     expect(merged).toMatchObject({
-      files: existing.files,
-      referenceFiles: existing.referenceFiles,
+      files: { ...SYNTHETIC_BASIS_FILES, ...existing.files },
       project,
       provenance: existing.provenance,
       acceptedRoute: existing.acceptedRoute,
       mode: 'synthetic',
       note: SYNTHETIC_BASIS_NOTE,
     })
+    expect(merged.referenceFiles).toEqual(existing.referenceFiles)
     expect(merged.project).toBe(project)
   })
 
-  it('creates an honest empty checklist only when a project has no basis content yet', () => {
+  it('creates a complete persistent nine-file checklist for a new demo project', () => {
     expect(mergeSyntheticBasisContent(null)).toEqual({
-      files: {},
+      files: SYNTHETIC_BASIS_FILES,
+      referenceFiles: [],
       mode: 'synthetic',
       note: SYNTHETIC_BASIS_NOTE,
     })
+    expect(Object.keys(SYNTHETIC_BASIS_FILES)).toHaveLength(9)
   })
 
   it('merges files from every legacy row with deterministic newest-row precedence', () => {
@@ -73,6 +78,7 @@ describe('mergeSyntheticBasisContent', () => {
     const merged = mergeSyntheticBasisContents([newest, middle, oldest])
 
     expect(merged.files).toEqual({
+      ...SYNTHETIC_BASIS_FILES,
       assignment: 'новое ТЗ.pdf',
       apz: 'АПЗ.pdf',
       geology: 'ИГИ.pdf',
@@ -81,6 +87,22 @@ describe('mergeSyntheticBasisContent', () => {
     expect(merged.project).toEqual({ code: 'NEW' })
     expect(merged).not.toHaveProperty('olderOnly')
     expect(newest.files).toEqual({ assignment: 'новое ТЗ.pdf', topo: 'новая топосъёмка.pdf' })
+  })
+
+  it('provides a downloadable, honestly marked artifact for every generated demo row', () => {
+    expect(Object.keys(SYNTHETIC_BASIS_ARTIFACTS)).toEqual(Object.keys(SYNTHETIC_BASIS_FILES))
+    for (const [itemId, fileName] of Object.entries(SYNTHETIC_BASIS_FILES)) {
+      const artifact = syntheticBasisArtifact(itemId, fileName)
+      expect(artifact).not.toBeNull()
+      expect(artifact?.fileName).toBe(fileName)
+      expect(artifact?.content.length).toBeGreaterThan(40)
+      expect(artifact?.content).toContain('synthetic-demo')
+    }
+  })
+
+  it('does not offer a generated download when a real owner file replaced the demo row', () => {
+    expect(syntheticBasisArtifact('apz', 'owner_apz.pdf')).toBeNull()
+    expect(syntheticBasisArtifact('unknown', 'unknown.json')).toBeNull()
   })
 })
 

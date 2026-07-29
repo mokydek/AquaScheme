@@ -1105,6 +1105,21 @@ textarea {
   color: #ffffff;
 }
 
+/* The durable filename is rendered from the saved project dataset. Hiding the
+   browser's transient "file not selected" text prevents it from contradicting
+   that persisted state after an upload or synthetic-demo seed. */
+.basis-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .parse-report {
   margin-top: 8px;
 }
