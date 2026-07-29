@@ -7,11 +7,14 @@ import type {
   TracedNetwork,
 } from '@aquascheme/engine'
 import type { SizingInput, SizingResult } from '@aquascheme/engine/sizing'
+import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
 import type { HydraulicsWorkerResponse } from '../workers/hydraulics.worker'
 import { supabase } from './supabase'
 import { networkFromRows, replaceNetwork } from './network'
 import type { NodeRow, PipeRow } from './network'
 import { loadActiveCatalogSizes } from './catalog'
+import { isPressurePipelineSystem } from './pressurePipeline'
+import type { ProjectSystemType } from './pressurePipeline'
 
 /** Run the EPANET sizing loop in the hydraulics worker. */
 export function runSizingInWorker(input: SizingInput): Promise<SizingResult> {
@@ -124,7 +127,7 @@ export async function persistSizing(
     .from('calc_runs')
     .insert({
       project_id: projectId,
-      status: 'done',
+      status: isSizingResultAcceptable(result) ? 'done' : 'failed',
       params: { ...norms, availableHeadM },
       summary: result as unknown as Record<string, unknown>,
       finished_at: isoTimestamp,
@@ -234,6 +237,7 @@ async function saveEquipmentDataset(
 
 export interface FullPipelineParams {
   projectId: string
+  systemType: ProjectSystemType
   buildings: Array<{
     id: string
     x: number
@@ -253,7 +257,11 @@ export interface FullPipelineParams {
 
 export type FullPipelineResult =
   | { ok: true; sizing: SizingResult }
-  | { ok: false; reason: 'migrationNeeded' | 'error' }
+  | {
+      ok: false
+      reason: 'migrationNeeded' | 'error' | 'hydraulicsFailed' | 'wrongSystem'
+      sizing?: SizingResult
+    }
 
 /**
  * Runs the whole engineering pipeline end to end: routing, hydraulic sizing,
@@ -262,6 +270,10 @@ export type FullPipelineResult =
  * results.
  */
 export async function runFullPipeline(params: FullPipelineParams): Promise<FullPipelineResult> {
+  // This pipeline is exclusively for pressurised B1 networks. K1/K2 use the
+  // Chezy-Manning gravity workflow and must never be sent to EPANET merely
+  // because a React closure still contains an older project type.
+  if (!isPressurePipelineSystem(params.systemType)) return { ok: false, reason: 'wrongSystem' }
   try {
     const network = traceNetwork(
       params.buildings.map((b) => ({ id: b.id, x: b.x, y: b.y })),
@@ -294,6 +306,9 @@ export async function runFullPipeline(params: FullPipelineParams): Promise<FullP
       availableHeadM,
       params.isoTimestamp,
     )
+    if (!isSizingResultAcceptable(sizing)) {
+      return { ok: false, reason: 'hydraulicsFailed', sizing }
+    }
 
     const afterSizing = await fetchNetworkRows(params.projectId)
     const equipment = await persistEquipment(

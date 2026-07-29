@@ -3,7 +3,7 @@ import { minFreeHeadForFloors, NORMATIVE_DEFAULTS } from './norms'
 import type { NormativeParams } from './norms'
 import type { NetworkPipeKind, TracedNetwork } from './trace'
 import { solveHydraulics } from './hydraulics'
-import type { HydraulicsResult } from './hydraulics'
+import type { HydraulicJunction, HydraulicsResult } from './hydraulics'
 
 /**
  * Iterative pipe sizing.
@@ -101,6 +101,14 @@ export interface SizingIssue {
   limit: number
 }
 
+export interface SolverWarningSummary {
+  code: number
+  message: string
+  occurrences: number
+  /** True when the accepted/final hydraulic solve still has this warning. */
+  presentInFinalSolve: boolean
+}
+
 export interface SizingResult {
   pipes: SizedPipe[]
   nodes: SizedNode[]
@@ -110,6 +118,28 @@ export interface SizingResult {
   issues: SizingIssue[]
   sourceHeadM: number
   totalDemandLps: number
+  /** Aggregated EPANET diagnostics; optional for older persisted runs. */
+  solverWarnings?: SolverWarningSummary[]
+}
+
+/**
+ * Final engineering acceptance guard used by persistence, UI and export.
+ * It intentionally re-checks node values so older persisted runs that were
+ * marked converged before transit-node pressure validation remain blocked.
+ */
+export function isSizingResultAcceptable(result: SizingResult | null | undefined): boolean {
+  if (!result?.converged) return false
+  if (result.nodes.some((node) => (
+    !Number.isFinite(node.pressureM)
+    || !Number.isFinite(node.headM)
+    || node.ok === false
+    || (node.kind !== 'source' && node.pressureM < -0.005)
+  ))) return false
+  return result.pipes.every((pipe) => (
+    Number.isFinite(pipe.flowLps)
+    && Number.isFinite(pipe.velocityMs)
+    && Number.isFinite(pipe.headlossM)
+  ))
 }
 
 function round2(value: number): number {
@@ -155,7 +185,10 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
 
   const requiredPressureFor = (nodeId: string): number | undefined => {
     const node = nodeById.get(nodeId)
-    if (!node?.buildingId) return undefined
+    if (!node || node.kind === 'source') return undefined
+    // Transit junctions must remain at or above atmospheric pressure even
+    // when no building-specific free-head requirement is attached to them.
+    if (!node.buildingId) return 0
     const floors = floorsByBuilding.get(node.buildingId)
     return floors ? minFreeHeadForFloors(floors, norms) : norms.minFreeHeadBaseM
   }
@@ -181,9 +214,10 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
   }
 
   let solves = 0
+  const solverWarningCounts = new Map<string, { code: number; message: string; occurrences: number }>()
   const solve = async (): Promise<HydraulicsResult> => {
     solves++
-    return solveHydraulics({
+    const solved = await solveHydraulics({
       source: { id: source.id, totalHeadM: sourceHeadM },
       junctions,
       pipes: net.pipes.map((p) => ({
@@ -195,15 +229,32 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
         roughnessMm: roughness,
       })),
     })
+    for (const warning of solved.warnings) {
+      const key = `${warning.code}:${warning.message}`
+      const current = solverWarningCounts.get(key)
+      solverWarningCounts.set(key, {
+        ...warning,
+        occurrences: (current?.occurrences ?? 0) + 1,
+      })
+    }
+    return solved
   }
 
-  const deficientBuildings = (res: HydraulicsResult) =>
+  const deficientNodes = (res: HydraulicsResult) =>
     junctions.filter((j) => {
       const required = requiredPressureFor(j.id)
       if (required === undefined) return false
       const pressure = res.nodes.get(j.id)?.pressureM ?? 0
       return pressure < required - 0.005
     })
+
+  // Increasing a diameter can recover dynamic head loss, but it can never
+  // overcome a static elevation deficit. Do not perform dozens of futile
+  // EPANET trials when the source piezometric level is physically too low.
+  const canRecoverByDiameter = (junction: HydraulicJunction): boolean => {
+    const required = requiredPressureFor(junction.id) ?? 0
+    return sourceHeadM >= junction.elevationM + required - 0.005
+  }
 
   let result = await solve()
   let iterations = 0
@@ -225,8 +276,10 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
 
     if (!changed) {
       // 2. Pressure pass: upsize the most loaded mains.
-      const deficient = deficientBuildings(result)
+      const deficient = deficientNodes(result)
       if (deficient.length === 0) break
+      const recoverable = deficient.filter(canRecoverByDiameter)
+      if (recoverable.length === 0) break
       const candidates = net.pipes
         .filter((p) => p.kind !== 'service' && (idxByPipe.get(p.id) ?? 0) < sizes.length - 1)
         .sort(
@@ -241,7 +294,7 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
         changed = true
       } else {
         // Mains are maxed out: try the services of deficient buildings.
-        const deficientIds = new Set(deficient.map((d) => d.id))
+        const deficientIds = new Set(recoverable.map((d) => d.id))
         const services = net.pipes.filter(
           (p) =>
             p.kind === 'service' &&
@@ -262,7 +315,7 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
     for (const p of net.pipes) {
       if ((res.pipes.get(p.id)?.velocityMs ?? 0) > ECONOMIC_V_MAX) return false
     }
-    return deficientBuildings(res).length === 0
+    return deficientNodes(res).length === 0
   }
 
   const mainsByVelocity = net.pipes
@@ -271,15 +324,20 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
       (a, b) =>
         (result.pipes.get(a.id)?.velocityMs ?? 0) - (result.pipes.get(b.id)?.velocityMs ?? 0),
     )
-  for (const p of mainsByVelocity) {
-    const idx = idxByPipe.get(p.id) ?? 0
-    if (idx <= minMainIdx) continue
-    idxByPipe.set(p.id, idx - 1)
-    const trial = await solve()
-    if (acceptable(trial)) {
-      result = trial
-    } else {
-      idxByPipe.set(p.id, idx)
+  // There is no valid minimum-cost design while a blocking hydraulic
+  // constraint is unresolved. Skipping the economy pass also prevents a
+  // cascade of identical EPANET warnings for an infeasible source head.
+  if (acceptable(result)) {
+    for (const p of mainsByVelocity) {
+      const idx = idxByPipe.get(p.id) ?? 0
+      if (idx <= minMainIdx) continue
+      idxByPipe.set(p.id, idx - 1)
+      const trial = await solve()
+      if (acceptable(trial)) {
+        result = trial
+      } else {
+        idxByPipe.set(p.id, idx)
+      }
     }
   }
 
@@ -353,8 +411,14 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
   }
 
   const converged = !issues.some(
-    (i) => i.kind === 'lowPressure' || i.kind === 'highVelocity' || i.kind === 'noSuitableItem',
+    (i) => i.kind === 'lowPressure' || i.kind === 'highPressure' || i.kind === 'highVelocity' || i.kind === 'noSuitableItem',
   )
+
+  const finalWarningKeys = new Set(result.warnings.map((warning) => `${warning.code}:${warning.message}`))
+  const solverWarnings: SolverWarningSummary[] = [...solverWarningCounts.entries()].map(([key, warning]) => ({
+    ...warning,
+    presentInFinalSolve: finalWarningKeys.has(key),
+  }))
 
   return {
     pipes,
@@ -365,5 +429,6 @@ export async function sizeNetwork(input: SizingInput): Promise<SizingResult> {
     issues,
     sourceHeadM: round2(sourceHeadM),
     totalDemandLps: round2(demand.designFlowLps),
+    solverWarnings,
   }
 }

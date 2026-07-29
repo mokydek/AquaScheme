@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
+import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import { networkFromRows } from '../../shared/network'
@@ -36,7 +37,7 @@ export function HydraulicsSection({
 }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<'done' | 'error' | null>(null)
+  const [notice, setNotice] = useState<'done' | 'blocked' | 'error' | null>(null)
 
   const canRun = pipes.length > 0 && buildings.length > 0 && source !== null
 
@@ -64,7 +65,7 @@ export function HydraulicsSection({
         ...(catalog ? { sizes: catalog.sizes, roughnessMm: catalog.roughnessMm } : {}),
       })
       await persistSizing(projectId, result, nodes, pipes, norms, availableHeadM, new Date().toISOString())
-      setNotice('done')
+      setNotice(isSizingResultAcceptable(result) ? 'done' : 'blocked')
       await onChanged()
     } catch {
       setNotice('error')
@@ -102,6 +103,9 @@ export function HydraulicsSection({
         )}
         {notice === 'done' && !busy && (
           <span className="stat-line ok">{t('project.hydraulics.done')}</span>
+        )}
+        {notice === 'blocked' && !busy && (
+          <span className="stat-line warn">{t('project.hydraulics.blocked')}</span>
         )}
       </div>
       {notice === 'error' && <p className="notice error">{t('project.hydraulics.error')}</p>}

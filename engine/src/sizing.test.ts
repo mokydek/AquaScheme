@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createDemoDataset } from './demo'
 import { minFreeHeadForFloors } from './norms'
 import { traceNetwork } from './trace'
-import { ECONOMIC_V_MAX, MIN_MAIN_NOMINAL_MM, sizeNetwork } from './sizing'
+import { ECONOMIC_V_MAX, isSizingResultAcceptable, MIN_MAIN_NOMINAL_MM, sizeNetwork } from './sizing'
+import type { TracedNetwork } from './trace'
 
 function demoInput() {
   const demo = createDemoDataset()
@@ -80,7 +81,51 @@ describe('sizeNetwork on the demo district', () => {
 
       expect(result.converged).toBe(false)
       expect(result.issues.some((i) => i.kind === 'lowPressure')).toBe(true)
+      expect(result.solves).toBeLessThan(10)
     },
     60000,
   )
+
+  it('blocks a negative-pressure transit junction even without a building id', async () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'SRC', kind: 'source', x: 0, y: 0, groundElevation: 0 },
+        { id: 'HIGH', kind: 'junction', x: 100, y: 0, groundElevation: 20 },
+        { id: 'B1', kind: 'building', x: 200, y: 0, groundElevation: 20, buildingId: 'building-1' },
+      ],
+      pipes: [
+        { id: 'P1', kind: 'main', fromNode: 'SRC', toNode: 'HIGH', lengthM: 100 },
+        { id: 'P2', kind: 'service', fromNode: 'HIGH', toNode: 'B1', lengthM: 100 },
+      ],
+      totalLengthM: 200,
+    }
+
+    const result = await sizeNetwork({
+      network,
+      buildings: [{ id: 'building-1', floors: 1, residents: 1 }],
+      availableHeadM: 10,
+    })
+
+    const transit = result.nodes.find((node) => node.id === 'HIGH')!
+    expect(transit.pressureM).toBeLessThan(0)
+    expect(transit.requiredPressureM).toBe(0)
+    expect(transit.ok).toBe(false)
+    expect(result.issues).toContainEqual(expect.objectContaining({ kind: 'lowPressure', targetId: 'HIGH' }))
+    expect(result.converged).toBe(false)
+    expect(isSizingResultAcceptable(result)).toBe(false)
+    expect(result.solves).toBe(1)
+    expect(result.solverWarnings).toEqual([
+      expect.objectContaining({ code: 6, presentInFinalSolve: true, occurrences: 1 }),
+    ])
+
+    // A legacy run cannot bypass the export gate merely by carrying a stale
+    // converged=true flag from before transit-node validation existed.
+    const staleLegacyFlag = {
+      ...result,
+      converged: true,
+      issues: [],
+      nodes: result.nodes.map((node) => node.id === 'HIGH' ? { ...node, ok: true } : node),
+    }
+    expect(isSizingResultAcceptable(staleLegacyFlag)).toBe(false)
+  })
 })

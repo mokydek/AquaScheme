@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { solveHydraulics } from './hydraulics'
 
 /**
@@ -82,5 +82,26 @@ describe('solveHydraulics reference cases', () => {
     expect(Math.abs(a.flowLps)).toBeCloseTo(10, 2)
     expect(Math.abs(b.flowLps)).toBeCloseTo(10, 2)
     expect(a.headlossM).toBeCloseTo(b.headlossM, 3)
+  })
+
+  it('captures EPANET negative-pressure warning as data instead of flooding the console', async () => {
+    const consoleWarning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const result = await solveHydraulics({
+        source: { id: 'SRC', totalHeadM: 90 },
+        junctions: [{ id: 'HIGH', elevationM: 100, demandLps: 1 }],
+        pipes: [
+          { id: 'P1', fromNode: 'SRC', toNode: 'HIGH', lengthM: 100, internalDiameterMm: 110, roughnessMm: 0.05 },
+        ],
+      })
+
+      expect(result.nodes.get('HIGH')!.pressureM).toBeLessThan(0)
+      expect(result.warnings).toEqual([
+        expect.objectContaining({ code: 6, message: expect.stringMatching(/negative pressures/i) }),
+      ])
+      expect(consoleWarning).not.toHaveBeenCalled()
+    } finally {
+      consoleWarning.mockRestore()
+    }
   })
 })

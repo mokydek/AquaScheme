@@ -42,6 +42,7 @@ import type { ViolationPipe } from '@aquascheme/engine'
 import { autoAssignParcels, fetchParcels, parcelPolygons } from '../shared/parcels'
 import type { ParcelRow } from '../shared/parcels'
 import type { SizingResult } from '@aquascheme/engine/sizing'
+import { isPressurePipelineSystem } from '../shared/pressurePipeline'
 
 interface ProjectInfo {
   id: string
@@ -86,7 +87,9 @@ export function ProjectPage() {
   const [demoCanCancel, setDemoCanCancel] = useState(false)
   const demoCancelRef = useRef<(() => void) | null>(null)
   const [pipelineBusy, setPipelineBusy] = useState(false)
-  const [pipelineNotice, setPipelineNotice] = useState<'done' | 'error' | 'migrationNeeded' | 'needData' | null>(null)
+  const [pipelineNotice, setPipelineNotice] = useState<
+    'done' | 'error' | 'migrationNeeded' | 'needData' | 'hydraulicsFailed' | 'wrongSystem' | null
+  >(null)
   const [parcels, setParcels] = useState<ParcelRow[]>([])
   const [catalogs, setCatalogs] = useState<CatalogRow[]>([])
   const [existing, setExisting] = useState<ExistingPipeRow[]>([])
@@ -232,6 +235,7 @@ export function ProjectPage() {
     setDemoBusy(true)
     setDemoNotice(null)
     setDemoFailures([])
+    setPipelineNotice(null)
     try {
       const { DEMO_STORM_PROJECT_NAME, seedStormProject } = await import('../shared/stormDemo')
       const update = await supabase
@@ -271,10 +275,20 @@ export function ProjectPage() {
     setPipelineBusy(true)
     setPipelineNotice(null)
     try {
-      const [buildingsRes, datasetsRes] = await Promise.all([
+      const [freshProjectRes, buildingsRes, datasetsRes] = await Promise.all([
+        supabase
+          .from('projects')
+          .select('system_type,active_catalog_id')
+          .eq('id', id)
+          .maybeSingle(),
         supabase.from('buildings').select('id,x,y,floors,residents,specific_demand_lpd').eq('project_id', id),
         supabase.from('datasets').select('kind,content').eq('project_id', id),
       ])
+      if (freshProjectRes.error) throw freshProjectRes.error
+      if (!isPressurePipelineSystem(freshProjectRes.data?.system_type)) {
+        setPipelineNotice('wrongSystem')
+        return
+      }
       const freshBuildings = buildingsRes.data ?? []
       const ds: Partial<Record<DatasetKind, { content: unknown }>> = {}
       for (const row of (datasetsRes.data ?? []) as Array<{ kind: DatasetKind; content: unknown }>) {
@@ -294,6 +308,7 @@ export function ProjectPage() {
       const surveyPoints = (ds.topography?.content as { points?: EngineSurveyPoint[] } | undefined)?.points ?? []
       const result = await runFullPipeline({
         projectId: id,
+        systemType: 'water',
         buildings: freshBuildings.map((b) => ({
           id: b.id,
           x: b.x,
@@ -308,7 +323,7 @@ export function ProjectPage() {
         geology,
         seismicity,
         isoTimestamp: new Date().toISOString(),
-        activeCatalogId: project?.active_catalog_id ?? null,
+        activeCatalogId: freshProjectRes.data.active_catalog_id ?? null,
       })
       setPipelineNotice(result.ok ? 'done' : result.reason)
       await load()
@@ -320,8 +335,10 @@ export function ProjectPage() {
   }
 
   const demoAndRun = async (): Promise<void> => {
-    const ok = await loadDemo()
-    if (ok && project?.system_type === 'water') await runPipeline()
+    // loadDemo deliberately creates a K2 gravity project. Its calculation is
+    // derived by GravitySection after reload; running the B1/EPANET pipeline
+    // here would reinterpret the outfall as a zero-head water reservoir.
+    await loadDemo()
   }
 
   const topoPoints = useMemo<SurveyPoint[]>(() => {
@@ -463,6 +480,7 @@ export function ProjectPage() {
           </div>
         )}
         {demoNotice === 'demoError' && <p className="notice error">{t('project.demoError')}</p>}
+        {demoNotice === 'demoDone' && <p className="notice info">{t('project.demoDone')}</p>}
         {demoFailures.length > 0 && (
           <p className="notice error">Не загрузились разделы: {demoFailures.join(', ')}</p>
         )}

@@ -18,6 +18,7 @@ import type {
   WorkType,
 } from '@aquascheme/engine'
 import type { SizingResult } from '@aquascheme/engine/sizing'
+import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
 import { supabase } from '../../shared/supabase'
 import { useAuth } from '../../shared/auth'
 import { networkFromRows } from '../../shared/network'
@@ -128,7 +129,7 @@ export function ExportSection({
   const source = datasets.source?.content as SourceData | undefined
 
   const canExport =
-    !!lastRun && !!equipment && !!source && !!datasets.geology && !!datasets.seismic
+    isSizingResultAcceptable(lastRun) && !!equipment && !!source && !!datasets.geology && !!datasets.seismic
 
   const assemble = (): ExportInput => {
     const norms: NormativeParams = {

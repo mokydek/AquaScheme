@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { buildRecommendations, ISSUE_BASIS, ISSUE_REFS } from '@aquascheme/engine'
 import type { SizedPipe, SizingResult } from '@aquascheme/engine/sizing'
+import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
 import type { BuildingRow } from '../../shared/datasets'
 import type { NodeRow } from '../../shared/network'
 import { NormBadge } from './NormBadge'
@@ -51,6 +52,7 @@ export function ResultsSection({
     () => (lastRun ? buildRecommendations(lastRun) : []),
     [lastRun],
   )
+  const hydraulicsAccepted = isSizingResultAcceptable(lastRun)
 
   const resolveTarget = (id: string): string => {
     if (!lastRun) return id
@@ -69,8 +71,8 @@ export function ResultsSection({
 
   return (
     <Panel title={t('project.results.title')} status="filled">
-      <p className={`stat-line${lastRun.converged ? ' ok' : ' warn'}`}>
-        {t(`project.results.${lastRun.converged ? 'converged' : 'notConverged'}`)}
+      <p className={`stat-line${hydraulicsAccepted ? ' ok' : ' warn'}`}>
+        {t(`project.results.${hydraulicsAccepted ? 'converged' : 'notConverged'}`)}
       </p>
 
       {recommendations.length > 0 && (

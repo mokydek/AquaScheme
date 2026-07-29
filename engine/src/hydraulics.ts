@@ -52,9 +52,16 @@ export interface PipeResult {
   unitHeadlossMPerKm: number
 }
 
+export interface HydraulicSolverWarning {
+  code: number
+  message: string
+}
+
 export interface HydraulicsResult {
   nodes: Map<string, NodeResult>
   pipes: Map<string, PipeResult>
+  /** Structured EPANET diagnostics captured from the current solve. */
+  warnings: HydraulicSolverWarning[]
 }
 
 /** Build the EPANET INP text for a single period run. */
@@ -134,7 +141,27 @@ export async function solveHydraulics(input: HydraulicsInput): Promise<Hydraulic
   ws.writeFile('net.inp', buildInp(input))
   model.open('net.inp', 'net.rpt', 'net.bin')
   try {
-    model.solveH()
+    // epanet-js 0.9.0 prints toolkit warning 6 directly to console.warn and
+    // does not expose a logger/onWarning API. Capture that one known warning
+    // synchronously so sizing can turn it into an engineering diagnostic
+    // instead of flooding DevTools once per diameter trial. Other warnings
+    // are deliberately forwarded unchanged.
+    const warnings: HydraulicSolverWarning[] = []
+    const previousWarn = console.warn
+    console.warn = (...args: unknown[]) => {
+      const first = typeof args[0] === 'string' ? args[0] : ''
+      const match = /^epanet-js \(Warning 6\):\s*(.*)$/i.exec(first)
+      if (match) {
+        warnings.push({ code: 6, message: match[1] || 'System has negative pressures.' })
+        return
+      }
+      previousWarn.apply(console, args)
+    }
+    try {
+      model.solveH()
+    } finally {
+      console.warn = previousWarn
+    }
 
     const nodes = new Map<string, NodeResult>()
     const nodeCount = model.getCount(CountType.NodeCount)
@@ -163,7 +190,7 @@ export async function solveHydraulics(input: HydraulicsInput): Promise<Hydraulic
       })
     }
 
-    return { nodes, pipes }
+    return { nodes, pipes, warnings }
   } finally {
     model.close()
   }
