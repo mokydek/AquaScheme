@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { localToLonLat } from '@aquascheme/engine'
 import type { RouteConstraintInput, RouteGeoreference, TracedNetwork } from '@aquascheme/engine'
+import { normalizeLeafletLayerInputs } from './leafletLayerInputs'
 
 type LocalPoint = { x: number; y: number }
 
@@ -91,6 +92,7 @@ export function LiveSituationMap({
   outletFlowLps?: number
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const mapControlScope = `situation-map-${useId()}`
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -266,7 +268,7 @@ export function LiveSituationMap({
     }
     legend.addTo(map)
 
-    L.control.layers(
+    const layerControl = L.control.layers(
       projection.geographic ? {
         'Карта OSM': streetMap,
         'Спутник Esri': satelliteMap,
@@ -286,6 +288,8 @@ export function LiveSituationMap({
       },
       { collapsed: false, position: 'topright' },
     ).addTo(map)
+    const layerControlContainer = layerControl.getContainer()
+    if (layerControlContainer) normalizeLeafletLayerInputs(layerControlContainer, mapControlScope)
 
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [38, 38], maxZoom: 14 })
     else map.setView(projection.geographic ? [51.12433, 71.33639] : [0, 0], projection.geographic ? 13 : 0)
@@ -298,7 +302,7 @@ export function LiveSituationMap({
       map.remove()
       setReady(false)
     }
-  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, verifiedProjectGeometryOnly, buildings, corridorRings, constraints, outletFlowLps])
+  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, verifiedProjectGeometryOnly, buildings, corridorRings, constraints, outletFlowLps, mapControlScope])
 
   return (
     <div className="live-situation-map-wrap">
