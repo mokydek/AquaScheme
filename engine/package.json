@@ -33,6 +33,10 @@
     "./constrained-route": {
       "types": "./src/constrained-route.ts",
       "default": "./src/constrained-route.ts"
+    },
+    "./reconstruction-from-survey": {
+      "types": "./src/reconstruction-from-survey.ts",
+      "default": "./src/reconstruction-from-survey.ts"
     }
   },
   "scripts": {

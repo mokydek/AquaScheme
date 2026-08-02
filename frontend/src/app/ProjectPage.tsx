@@ -25,6 +25,7 @@ import { ManholeCatalogSection } from './project/ManholeCatalogSection'
 import { fetchCatalogs } from '../shared/catalog'
 import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
+import { ReconstructionSurveySection } from './project/ReconstructionSurveySection'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
 import { GeologySection } from './project/GeologySection'
@@ -614,6 +615,12 @@ export function ProjectPage() {
               points={topoPoints}
               designedLengthM={designedLengthM}
               onChanged={load}
+            />
+          )}
+          {isReconstruction && (isSewer || isStorm) && (
+            <ReconstructionSurveySection
+              projectId={project.id}
+              system={isStorm ? 'storm' : 'sewer'}
             />
           )}
           {(isSewer || isStorm) && (
