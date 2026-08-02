@@ -1,4 +1,4 @@
-export const ENGINE_VERSION = '0.1.0'
+﻿export const ENGINE_VERSION = '0.1.0'
 
 export * from './types'
 export * from './filekind'
@@ -42,6 +42,7 @@ export * from './pressure'
 export * from './route-state'
 export * from './importnet'
 export * from './georef'
+export * from './normhierarchy'
 export * from './surveygrid'
 export * from './corridor-axis'
 export * from './existing-utilities'
