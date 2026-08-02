@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AGSK_CONCRETE_GRAVITY_PIPE_CODES,
   AGSK_SECTIONS,
+  agskConcreteGravityPipeCode,
   agskSectionForFitting,
   agskSectionForGravityPipe,
   agskSectionForPipe,
@@ -18,6 +20,20 @@ describe('АГСК-3 catalogue material sections', () => {
   it('maps gravity (sewer) pipes: concrete → 241-7, polymer → 241-2', () => {
     expect(agskSectionForGravityPipe('concrete').code).toBe('241-7')
     expect(agskSectionForGravityPipe('polymer').code).toBe('241-2')
+  })
+
+  it('resolves concrete gravity pipe positions transcribed from the catalogue', () => {
+    expect(agskConcreteGravityPipeCode(450)).toBe('241-702-0903')
+    expect(agskConcreteGravityPipeCode(400)).toBe('241-702-0902')
+    expect(agskConcreteGravityPipeCode(500)).toBe('241-702-0904')
+    // Positions rise with the diameter inside the group, so a transcription
+    // slip that swapped two sizes would show up here.
+    const sizes = Object.keys(AGSK_CONCRETE_GRAVITY_PIPE_CODES).map(Number).sort((a, b) => a - b)
+    const codes = sizes.map((s) => AGSK_CONCRETE_GRAVITY_PIPE_CODES[s])
+    expect(codes).toEqual([...codes].sort())
+    // Sizes outside the transcribed page stay null instead of being invented.
+    expect(agskConcreteGravityPipeCode(2000)).toBeNull()
+    expect(agskConcreteGravityPipeCode(123)).toBeNull()
   })
 
   it('maps fittings to their catalogue sections', () => {

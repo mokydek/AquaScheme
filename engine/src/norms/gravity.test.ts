@@ -6,6 +6,7 @@ import {
   computeGravityProfile,
   designGravitySegment,
   fillForFlow,
+  GRAVITY_DIAMETERS,
   gravityFlowM3s,
   manningVelocity,
   picketLabel,
@@ -15,6 +16,29 @@ import type { TracedNetwork } from '../trace'
 
 // Reference values are computed by hand (Chezy-Manning, n = 0.014) as required
 // by the engineering guardrails.
+
+describe('standard diameter series', () => {
+  it('offers every catalogued size, ascending and unique', () => {
+    expect([...GRAVITY_DIAMETERS]).toEqual([...GRAVITY_DIAMETERS].sort((a, b) => a - b))
+    expect(new Set(GRAVITY_DIAMETERS).size).toBe(GRAVITY_DIAMETERS.length)
+  })
+
+  it('includes DN450, catalogued as АГСК-3 241-702-0903 and demanded by municipal assignments', () => {
+    expect(GRAVITY_DIAMETERS).toContain(450)
+    // Without it the solver silently rounds a DN450 assignment to 400 or 500.
+    const between = [...GRAVITY_DIAMETERS].filter((d) => d > 400 && d < 500)
+    expect(between).toEqual([450])
+  })
+
+  it('actually selects DN450 when the flow lands between DN400 and DN500', () => {
+    let picked450 = false
+    for (let flowLps = 40; flowLps <= 400; flowLps += 5) {
+      const design = designGravitySegment(flowLps, { system: 'sewer', strategy: 'minBurial' })
+      if (design.diameterMm === 450) { picked450 = true; break }
+    }
+    expect(picked450).toBe(true)
+  })
+})
 
 describe('circular partial-flow geometry', () => {
   it('full pipe matches A = πD²/4 and R = D/4', () => {

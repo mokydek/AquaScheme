@@ -32,8 +32,15 @@ import { agskSectionForGravityPipe } from './agsk'
  * reinforced concrete non-pressure pipes (серия 3.008.1-7/89 goes up to
  * 2400 мм), so the series continues past 1500 — a storm trunk of Ф2000 must
  * be selectable, not reported as "no bigger pipe".
+ *
+ * 450 мм is catalogued: АГСК-3 позиция 241-702-0903 «Труба безнапорная
+ * цилиндрическая раструбная типа ТС ГОСТ 6482-2011, DN/ID 450» sits between
+ * 0902 (DN 400) and 0904 (DN 500). Municipal reconstruction assignments ask
+ * for it by name, and without it the solver silently rounds to 400 or 500.
+ * Таблица 5.19 (row 450..500) and п. 7.4.1 (spacing row 200..450) already
+ * carry the size, so only this series was missing it.
  */
-export const GRAVITY_DIAMETERS = [150, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1500, 1600, 2000, 2400] as const
+export const GRAVITY_DIAMETERS = [150, 200, 250, 300, 400, 450, 500, 600, 800, 1000, 1200, 1500, 1600, 2000, 2400] as const
 
 export interface CircularSection {
   /** Central angle subtended by the water surface, radians (0..2π). */

@@ -57,6 +57,32 @@ export function agskSectionForGravityPipe(material: 'concrete' | 'polymer' | 'ce
   return material === 'polymer' ? AGSK_SECTIONS.pipesPolymer : AGSK_SECTIONS.pipesOther
 }
 
+/**
+ * Position codes of группа 241-702 «Труба безнапорная цилиндрическая
+ * раструбная типа ТС ГОСТ 6482-2011», transcribed verbatim from АГСК-3
+ * PDF page 1705 — the pipe family professional НК albums specify for concrete
+ * gravity collectors. Only the sizes read off that page are listed; the rest
+ * of the series stays absent rather than guessed, because a wrong «Код
+ * продукции» in a specification is worse than an empty one.
+ */
+export const AGSK_CONCRETE_GRAVITY_PIPE_CODES: Readonly<Record<number, string>> = {
+  300: '241-702-0901',
+  400: '241-702-0902',
+  450: '241-702-0903',
+  500: '241-702-0904',
+  600: '241-702-0905',
+  800: '241-702-0906',
+}
+
+/**
+ * Catalogue code for a concrete gravity pipe of the given nominal diameter, or
+ * null when that size is not among the transcribed positions. Callers fall back
+ * to the подраздел code so the specification still carries a classifier value.
+ */
+export function agskConcreteGravityPipeCode(diameterMm: number): string | null {
+  return AGSK_CONCRETE_GRAVITY_PIPE_CODES[diameterMm] ?? null
+}
+
 /** АГСК section for a fitting/appurtenance kind. */
 export function agskSectionForFitting(kind: 'hydrant' | 'valve' | 'airValve' | 'washout' | 'well'): AgskSection {
   switch (kind) {
