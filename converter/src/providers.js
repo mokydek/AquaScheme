@@ -24,16 +24,27 @@ async function executableExists(command) {
   return false
 }
 
+/**
+ * ODA_CONVERTER_PATH may carry a wrapper prefix such as
+ * "xvfb-run -a ODAFileConverter", which has to be split into command + args.
+ * A local Windows install path is itself full of spaces
+ * ("C:\\Program Files\\ODA\\ODAFileConverter 27.1.0\\ODAFileConverter.exe"),
+ * so splitting it would look for "C:\\Program". The value is therefore only
+ * split when it is not already an executable on its own.
+ */
+async function resolveOdaCommand() {
+  const raw = (process.env.ODA_CONVERTER_PATH || 'ODAFileConverter').trim()
+  if (await executableExists(raw)) return { bin: raw, prefixArgs: [] }
+  const parts = raw.split(/\s+/).filter(Boolean)
+  return { bin: parts[0] ?? raw, prefixArgs: parts.slice(1) }
+}
+
 /** @returns {ConvertProvider} */
 export function odaProvider() {
-  // ODA_CONVERTER_PATH may carry a wrapper prefix such as
-  // "xvfb-run -a ODAFileConverter", so split it into command + args.
-  const parts = (process.env.ODA_CONVERTER_PATH || 'ODAFileConverter').split(/\s+/).filter(Boolean)
-  const bin = parts[0]
-  const prefixArgs = parts.slice(1)
   return {
     name: 'oda',
     async ready() {
+      const { bin, prefixArgs } = await resolveOdaCommand()
       const wrapperOk = await executableExists(bin)
       const converterCommand = prefixArgs.find((part) => /ODAFileConverter$/i.test(part)) ?? bin
       const converterOk = converterCommand === bin ? wrapperOk : await executableExists(converterCommand)
@@ -46,6 +57,7 @@ export function odaProvider() {
       try {
         const ready = await this.ready()
         if (!ready.ok) throw new Error(ready.reason)
+        const { bin, prefixArgs } = await resolveOdaCommand()
         const inDir = join(work, 'in')
         const outDir = join(work, 'out')
         await mkdir(inDir, { recursive: true })

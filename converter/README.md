@@ -33,6 +33,28 @@ npm start   # http://localhost:8080/health
 Без установленного ODA File Converter `/convert` вернёт ошибку — это нормально,
 пока не задан конвертер.
 
+### Локальная конвертация конфиденциального DWG (Windows)
+
+Топооснова реального объекта не должна уходить в публичный сервис, поэтому её
+конвертируют на своей машине. Установите ODA File Converter и укажите путь к
+исполняемому файлу:
+
+```powershell
+$env:ODA_CONVERTER_PATH = "C:\Program Files\ODA\ODAFileConverter 27.1.0\ODAFileConverter.exe"
+$env:CONVERT_PROVIDER = "oda"
+node src/index.js
+```
+
+Проверка: `GET http://localhost:8080/ready` должен вернуть `{"ok":true}`. Затем
+во фронтенде задайте `VITE_CONVERTER_URL=http://localhost:8080` — загруженный
+DWG будет конвертироваться локально и дальше разбираться как обычный DXF.
+
+`ODA_CONVERTER_PATH` принимает либо путь к исполняемому файлу целиком (включая
+пробелы, как в `C:\Program Files\…`), либо команду с обёрткой
+(`xvfb-run -a ODAFileConverter` для Linux-деплоя). Разбор на команду и аргументы
+происходит только тогда, когда значение само по себе не является исполняемым
+файлом.
+
 ## Деплой на Render (Docker)
 
 1. Получите ссылку на .deb ODA File Converter (Linux) на
