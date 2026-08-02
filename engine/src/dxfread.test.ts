@@ -463,6 +463,88 @@ describe('classifyDxfConstraints', () => {
     expect(data.rejectedSurveyPoints).toBe(0)
   })
 
+  it('routes cable and gas ducts as utilities instead of hydrography', () => {
+    // Real master-plan layer names spell utility ducts as «каналы», which must
+    // not be read as a watercourse: that would demand an approved water
+    // crossing over a power duct and skip the utility clearance checks.
+    const ductLayers = ['Кабельные_каналы_эл', 'кабельные_каналы_ГУВД', 'каналы_газоснабжения']
+    const chamberLayer = 'Камеры_кабельных_каналов_сетей_электроснабжения'
+    const all = [...ductLayers, chamberLayer, 'гидрография']
+    const data = classifyDxfConstraints({
+      ok: true,
+      points: [],
+      layers: all.map((name) => ({ name, segments: 1, points: 0 })),
+      segments: all.map((layer, index) => ({
+        layer,
+        points: [{ x: 0, y: index * 10 }, { x: 100, y: index * 10 }],
+      })),
+    })
+    for (const layer of ductLayers) expect(data.roles[layer]).toBe('utility')
+    // Chambers stay structures — the earlier «камеры» rule owns that decision.
+    expect(data.roles[chamberLayer]).toBe('structure')
+    expect(all.filter((layer) => data.roles[layer] === 'hydrography')).toEqual(['гидрография'])
+    expect(data.utilityLines).toHaveLength(ductLayers.length)
+    expect(data.hydrography).toHaveLength(1)
+  })
+
+  it('classifies utilities whose layer names are truncated by the source CAD', () => {
+    // Municipal bases still ship 10-character layer names.
+    const truncated: Array<[string, string]> = [
+      ['SIT_LВОДОПРО', 'utility'],
+      ['SIT_LГАЗОПРО', 'utility'],
+      ['SIT_LТЕПЛОТР', 'utility'],
+      ['SIT_LЛЭП', 'utility'],
+      ['SIT_LЛИН_СВЯ', 'utility'],
+      ['SIT_LКАНАЛИЗ', 'utility'],
+      ['SIT_LГИДРОГР', 'hydrography'],
+      ['NAD_MУЛИЦЫ', 'road'],
+      ['SIT_LЗДАНИЯ', 'building'],
+    ]
+    const data = classifyDxfConstraints({
+      ok: true,
+      points: [],
+      layers: truncated.map(([name]) => ({ name, segments: 1, points: 0 })),
+      segments: truncated.map(([layer], index) => ({
+        layer,
+        points: [{ x: 0, y: index * 10 }, { x: 100, y: index * 10 }],
+      })),
+    })
+    for (const [layer, role] of truncated) expect(data.roles[layer], layer).toBe(role)
+  })
+
+  it('derives survey points from spot-height labels when the drawing carries no Z', () => {
+    const data = classifyDxfConstraints({
+      ok: true,
+      points: [{ x: 1, y: 1, layer: 'РЕЛЬЕФ' }],
+      layers: [
+        { name: 'РЕЛЬЕФ', segments: 0, points: 1 },
+        { name: 'SIT_LТЕПЛОТР', segments: 1, points: 0 },
+      ],
+      segments: [{ layer: 'SIT_LТЕПЛОТР', points: [{ x: 0, y: 0 }, { x: 50, y: 0 }] }],
+      textEntities: [
+        { x: 10, y: 20, text: '686.86', layer: 'РЕЛЬЕФ' },
+        { x: 30, y: 25, text: '687,11', layer: 'РЕЛЬЕФ' },
+        { x: 50, y: 30, text: '12', layer: 'РЕЛЬЕФ' },          // point number, not a height
+        { x: 70, y: 35, text: 'К-1', layer: 'РЕЛЬЕФ' },
+        { x: 90, y: 40, text: '681.20', layer: 'SIT_LТЕПЛОТР' }, // heat-main invert, not ground
+      ],
+    })
+    expect(data.surveyPointSource).toBe('elevation_labels')
+    expect(data.surveyPoints).toEqual([{ x: 10, y: 20, z: 686.86 }, { x: 30, y: 25, z: 687.11 }])
+  })
+
+  it('prefers real Z geometry over labels and reports the source', () => {
+    const data = classifyDxfConstraints({
+      ok: true,
+      points: [{ x: 2, y: 2, z: 351.2, layer: 'РЕЛЬЕФ' }],
+      layers: [{ name: 'РЕЛЬЕФ', segments: 0, points: 1 }],
+      segments: [],
+      textEntities: [{ x: 10, y: 20, text: '686.86', layer: 'РЕЛЬЕФ' }],
+    })
+    expect(data.surveyPointSource).toBe('geometry')
+    expect(data.surveyPoints).toEqual([{ x: 2, y: 2, z: 351.2 }])
+  })
+
   it('honours an explicit per-layer role and leaves unknown layers unresolved', () => {
     const source = {
       ok: true,

@@ -155,9 +155,23 @@ export interface DxfConstraintData {
   roles: Record<string, DxfLayerRole>
   surveyPoints: SurveyPoint[]
   rejectedSurveyPoints: number
+  /**
+   * Where `surveyPoints` came from. `geometry` — Z of POINT entities, the
+   * reliable case. `elevation_labels` — parsed from spot-height TEXT on terrain
+   * layers because the drawing carries no Z at all; the surface is only as good
+   * as the label placement, so a consumer must surface this to the engineer.
+   */
+  surveyPointSource: 'geometry' | 'elevation_labels' | 'none'
 }
 
 const normalizedLayer = (name: string): string => name.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е')
+
+/**
+ * A spot height printed on a topographic plan: «686.86», «102,5». The decimal
+ * part is required so that point numbers and other bare integers on the same
+ * layer are not mistaken for elevations.
+ */
+const ELEVATION_LABEL = /^\d{2,4}[.,]\d{1,3}$/
 
 function pointSegmentDistance(point: ImportPoint, a: ImportPoint, b: ImportPoint): number {
   const dx = b.x - a.x
@@ -263,7 +277,12 @@ export function classifyDxfConstraints(
     if (/красн.*лин|крассн.*лин/.test(name)) return 'redLine'
     if (/железн.*дорог|ж\/д|rail/.test(name)) return 'railway'
     if (/проезж|тротуар|дорог|улиц|road/.test(name)) return 'road'
-    if (/гидрограф|водоем|водоём|река|канал|озер|озёр/.test(name) && !/канализ/.test(name)) return 'hydrography'
+    // «Канал» alone is ambiguous: a master-plan DXF spells cable, gas and heat
+    // ducts as «кабельные каналы», «каналы газоснабжения». Routing them as
+    // hydrography would demand an approved water crossing over a power duct and
+    // drop them from the utility clearance checks, so utility qualifiers win.
+    if (/гидрогр|водоем|водоём|река|канал|озер|озёр/.test(name)
+      && !/канализ|кабел|газоснаб|теплосет|электро|связи/.test(name)) return 'hydrography'
     if (/брейк|структур.*лин|breakline/.test(name)) return 'terrainBreakline'
     if (/рельеф|горизонтал|отметк|grade|elevation|survey|точк.*высот/.test(name)) return 'terrain'
     if (/охран.*зон|санитар.*зон|защит.*зон|protection/.test(name)) return 'protectionZone'
@@ -272,7 +291,12 @@ export function classifyDxfConstraints(
     if (/здани|сооруж|строени|контур.*объект|building/.test(name)) return 'building'
     if (/запрет|недопуст|forbidden/.test(name)) return 'forbiddenZone'
     if (/участ|землеотвод|границ.*зем|parcel/.test(name)) return 'parcel'
-    if (/трубопровод|водопровод|канализ|ливнев|дренаж|кабел|газоснаб|теплосет|электро|связи/.test(name)) return 'utility'
+    // Roots are deliberately short: municipal topographic bases still carry the
+    // 10-character layer names of older CAD systems, where «водопровод»
+    // arrives as «SIT_LВОДОПРО» and «линии связи» as «SIT_LЛИН_СВЯ». Matching
+    // the full word would leave every crossing utility unclassified.
+    if (/трубопровод|водопро|канализ|ливнев|дренаж|кабел|газоснаб|газопро|теплосет|теплотр|электро|связи|лин_свя|лэп/
+      .test(name)) return 'utility'
     if (/проект.*(трас|осев|коллектор)|(^|[_ -])к2([_ -]|$)/.test(name)) return 'candidateRoute'
     const info = layerInfo.get(layer)
     if (info && info.points > 0 && Number.isFinite(info.zMin) && Number.isFinite(info.zMax)) return 'terrain'
@@ -322,9 +346,26 @@ export function classifyDxfConstraints(
       return true
     })
 
-  const rawSurveyPoints = data.points
+  const geometrySurveyPoints = data.points
     .filter((point) => typeof point.z === 'number' && Number.isFinite(point.z) && point.z !== 0)
     .map((point) => ({ x: point.x, y: point.y, z: point.z as number }))
+
+  // Municipal surveys often annotate spot heights as TEXT and leave every
+  // entity flat at Z=0. Only terrain layers qualify: a height printed on a heat
+  // or water layer belongs to that utility, not to the ground surface, and
+  // mixing them would bend the profile towards buried pipes.
+  const labelSurveyPoints = geometrySurveyPoints.length > 0 ? [] : (data.textEntities ?? [])
+    .filter((entity) => roles[entity.layer ?? ''] === 'terrain'
+      && ELEVATION_LABEL.test(String(entity.text ?? '').trim())
+      && Number.isFinite(entity.x) && Number.isFinite(entity.y))
+    .map((entity) => ({
+      x: entity.x,
+      y: entity.y,
+      z: Number(String(entity.text).trim().replace(',', '.')),
+    }))
+    .filter((point) => Number.isFinite(point.z) && point.z !== 0)
+
+  const rawSurveyPoints = geometrySurveyPoints.length > 0 ? geometrySurveyPoints : labelSurveyPoints
   const sortedElevations = rawSurveyPoints.map((point) => point.z).sort((a, b) => a - b)
   const median = sortedElevations[Math.floor(sortedElevations.length / 2)] ?? 0
   const deviations = sortedElevations.map((z) => Math.abs(z - median)).sort((a, b) => a - b)
@@ -355,6 +396,9 @@ export function classifyDxfConstraints(
     roles,
     surveyPoints,
     rejectedSurveyPoints: rawSurveyPoints.length - surveyPoints.length,
+    surveyPointSource: surveyPoints.length === 0
+      ? 'none'
+      : geometrySurveyPoints.length > 0 ? 'geometry' : 'elevation_labels',
   }
 }
 
