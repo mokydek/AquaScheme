@@ -96,7 +96,7 @@
 | RLS и owner-only RPC | Реализовано в SQL | Нужна проверка реально применённой production-схемы. |
 | Атомарная замена сети | Реализовано | Одна PostgreSQL function, rollback при ошибке. |
 | Сохранение gravity result | Реализовано | RPC обновляет трубы и создаёт `calc_runs`. |
-| Идемпотентный полный bootstrap | Не реализован корректно | `0000_full_schema.sql` не включает большую часть последующих миграций. |
+| Идемпотентный полный bootstrap | Реализовано | `backend/bootstrap.sql` собирается из `migrations/` скриптом `npm run db:bootstrap`: `0000` плюс `0003`–`0015` по порядку, каждая часть идемпотентна. `npm run db:check` в составе `test:all` роняет сборку, если файл отстал. `backend/verify.sql` отдельно сверяет применённую схему и показывает недостающее, ничего не меняя. |
 | Автоматические миграции | Не реализовано | Нет Supabase CLI config/CI deploy. |
 | Converter liveness/readiness | Реализовано и проверено для production endpoint | `/health`, `/ready` и синтетический DXF→DWG→DXF round-trip успешны; локальный ODA отсутствует, конфиденциальный P04 во внешний endpoint не передавался. В коде добавлена fail‑closed CORS allowlist, но новые env/деплой Render ещё не проверены. |
 
