@@ -1,3 +1,4 @@
+import { geologyCoverageAt, type GeoCoverage } from './geocoverage'
 import type { Aggressiveness, Borehole, GeologyAttributes } from './geology'
 import type { Basis } from './normregistry'
 
@@ -17,6 +18,19 @@ export interface GeoAtPoint {
   /** Soil at the given depth from the nearest borehole. */
   soilName: string | null
   igeCode: string | null
+  /** Reliability of the values, present when an offset limit was applied. */
+  coverage?: GeoCoverage
+}
+
+export interface GeoInterpolationOptions {
+  /**
+   * Confirmed maximum perpendicular offset of a borehole from the axis, m.
+   * Boreholes beyond it are not used at all: interpolating from them projects
+   * an unrelated borehole onto the profile as if it described the route
+   * (missing-data report, M09). Without the limit the previous behaviour is
+   * kept, so existing callers are unaffected.
+   */
+  maxOffsetM?: number
 }
 
 const AGG_RANK: Record<Aggressiveness, number> = { low: 0, medium: 1, high: 2 }
@@ -47,13 +61,31 @@ function soilAtDepth(b: Borehole, depthM: number): { soilName: string | null; ig
  * table; worst aggressiveness and nearest soil for the categorical values —
  * conservative for design). depthM is the depth of interest (pipe bottom).
  */
-export function interpolateGeologyAt(boreholes: Borehole[], x: number, y: number, depthM = 2): GeoAtPoint {
-  const located = boreholes.filter((b) => b.x !== undefined && b.y !== undefined)
-  if (located.length === 0) return { waterDepthM: null, aggressiveness: null, soilName: null, igeCode: null }
+export function interpolateGeologyAt(
+  boreholes: Borehole[],
+  x: number,
+  y: number,
+  depthM = 2,
+  options: GeoInterpolationOptions = {},
+): GeoAtPoint {
+  const empty: GeoAtPoint = { waterDepthM: null, aggressiveness: null, soilName: null, igeCode: null }
+  const coverage = options.maxOffsetM === undefined
+    ? undefined
+    : geologyCoverageAt(boreholes, x, y, options.maxOffsetM)
 
-  const withDist = located
+  const located = boreholes.filter((b) => b.x !== undefined && b.y !== undefined)
+  if (located.length === 0) return coverage ? { ...empty, coverage } : empty
+
+  const withDistAll = located
     .map((b) => ({ b, d: Math.hypot((b.x as number) - x, (b.y as number) - y) }))
     .sort((p, q) => p.d - q.d)
+
+  // Beyond the confirmed offset a borehole says nothing about this station, so
+  // it is dropped rather than smoothed in.
+  const withDist = options.maxOffsetM === undefined
+    ? withDistAll
+    : withDistAll.filter((p) => p.d <= (options.maxOffsetM as number))
+  if (withDist.length === 0) return coverage ? { ...empty, coverage } : empty
 
   // Water table: IDW over boreholes that report it (exact hit wins).
   let waterDepthM: number | null = null
@@ -88,7 +120,8 @@ export function interpolateGeologyAt(boreholes: Borehole[], x: number, y: number
 
   // Soil: nearest borehole, at the depth of interest.
   const { soilName, igeCode } = soilAtDepth(withDist[0].b, depthM)
-  return { waterDepthM, aggressiveness, soilName, igeCode }
+  const result: GeoAtPoint = { waterDepthM, aggressiveness, soilName, igeCode }
+  return coverage ? { ...result, coverage } : result
 }
 
 export interface GeoStation {
@@ -107,6 +140,7 @@ export function sampleGeoAlong(
   boreholes: Borehole[],
   path: Array<{ x: number; y: number }>,
   depthM = 2,
+  options: GeoInterpolationOptions = {},
 ): GeoStation[] {
   const stations: GeoStation[] = []
   let chain = 0
@@ -116,7 +150,7 @@ export function sampleGeoAlong(
       stationM: chain,
       x: path[i].x,
       y: path[i].y,
-      geo: interpolateGeologyAt(boreholes, path[i].x, path[i].y, depthM),
+      geo: interpolateGeologyAt(boreholes, path[i].x, path[i].y, depthM, options),
     })
   }
   return stations
