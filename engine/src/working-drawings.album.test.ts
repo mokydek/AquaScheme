@@ -215,6 +215,54 @@ describe('dynamic full working-drawing album', () => {
     })
   })
 
+  it('covers every sheet family a professional НК set is checked against', () => {
+    // The acceptance gate scores composition by matching sheet titles. Keeping
+    // it here means a renamed sheet breaks a unit test instead of silently
+    // costing a quarter of the benchmark score.
+    const input = generatedLinearProject()
+    // The protective-grid sheet is issued only when the deliverable register
+    // asks for it, so the register has to request it here.
+    input.deliverableRequirements = {
+      crossingDetailSheets: false,
+      protectiveGridDetail: true,
+      source: 'synthetic approved deliverable register',
+      verified: true,
+    }
+    const branchStations = input.profile!.stations.slice(0, 6).map((station, index) => ({
+      ...station,
+      nodeId: `BR-${index}`,
+      chainageM: index * 120,
+    }))
+    input.branchProfiles = [{
+      id: 'existing-tie-in',
+      // «Ксущ» is the drawing notation for an existing sewer run, not an object name.
+      title: 'Продольный профиль на участке Ксущ1 - 111',
+      source: 'synthetic existing-network model',
+      verified: true,
+      profile: {
+        stations: branchStations,
+        maxDepthM: 4.2,
+        outletInvertElevationM: branchStations[branchStations.length - 1].invertElevationM,
+        totalLengthM: 600,
+        pipeIds: input.profile!.pipeIds.slice(0, 5),
+      },
+    }]
+
+    const titles = buildWorkingDrawingSet(input).sheets.map((sheet) => sheet.title)
+    const families: Array<[string, RegExp]> = [
+      ['план по пикетам', /план.*пк/i],
+      ['сводный план сетей', /план.*сет/i],
+      ['профиль по пикетам', /профиль.*пк/i],
+      ['профиль по существующей сети', /ксущ/i],
+      ['ведомость колодцев', /колодц/i],
+      ['защитная сетка', /сетк|решетк/i],
+      ['спецификация', /специфик/i],
+    ]
+    for (const [family, pattern] of families) {
+      expect(titles.some((title) => pattern.test(title)), family).toBe(true)
+    }
+  })
+
   it('does not force every project to match one reference album page count', () => {
     const compact = generatedLinearProject(4, 180)
     compact.specificationItemCount = 5
