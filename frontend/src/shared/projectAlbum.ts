@@ -13,6 +13,8 @@ import type {
 } from '@aquascheme/engine'
 import { buildPlanSheetScene } from './planScene'
 import type { PlanPipeDesign } from './planScene'
+import { buildTitleBlock } from './titleBlock'
+import type { TitleBlockSignatory } from './titleBlock'
 
 export interface ProjectAlbumInput {
   projectName: string
@@ -33,6 +35,10 @@ export interface ProjectAlbumInput {
   pipeDesign?: Map<string, PlanPipeDesign>
   outletFlowLps: number
   buildingLabels?: Map<string, string>
+  /** Графа 9 основной надписи: организация, разработавшая документ. */
+  organisation?: string
+  /** Графы 10, 11, 13: характер работы, фамилия и дата. Подписи не рисуются. */
+  signatories?: TitleBlockSignatory[]
 }
 
 type PdfNode = Record<string, unknown>
@@ -727,43 +733,39 @@ function engineeringFrame(_currentPage: number, pageSize: { width: number; heigh
   }
 }
 
+/**
+ * Основная надпись по форме 3 ГОСТ Р 21.101-2020, прижатая к правому нижнему
+ * углу листа — как требует п. 5.2. Прежний вариант был таблицей из пяти
+ * колонок без граф изменений и подписей; форма 3 обязательна для листов
+ * основного комплекта рабочих чертежей.
+ */
 function engineeringStamp(
   input: ProjectAlbumInput,
   designation: string,
   currentPage: number,
   totalPages: number,
 ): PdfNode {
+  const sheet = input.drawingSet.manifest.pages[currentPage - 1]
   return {
-    margin: [30, 0, 30, 8],
-    table: {
-      widths: ['*', 105, 60, 78, 58],
-      body: [
-        [
-          { text: input.projectName, rowSpan: 2, fontSize: 7.5, margin: [3, 5, 3, 0] },
-          { text: 'Шифр', alignment: 'center', fontSize: 6.5 },
-          { text: 'Стадия', alignment: 'center', fontSize: 6.5 },
-          { text: 'Лист', alignment: 'center', fontSize: 6.5 },
-          { text: 'Листов', alignment: 'center', fontSize: 6.5 },
-        ],
-        [
-          { text: '' },
-          { text: input.projectCode, alignment: 'center', bold: true, fontSize: 8 },
-          { text: 'Р', alignment: 'center', bold: true, fontSize: 8 },
-          { text: designation, alignment: 'center', bold: true, fontSize: 7.5 },
-          { text: `${currentPage}/${totalPages}`, alignment: 'center', fontSize: 7.5 },
-        ],
-      ],
-    },
-    layout: {
-      hLineWidth: () => 0.7,
-      vLineWidth: () => 0.7,
-      hLineColor: () => '#222',
-      vLineColor: () => '#222',
-      paddingLeft: () => 3,
-      paddingRight: () => 3,
-      paddingTop: () => 2,
-      paddingBottom: () => 2,
-    },
+    margin: [0, 0, 30, 8],
+    alignment: 'right',
+    columns: [
+      { text: '', width: '*' },
+      {
+        width: 'auto',
+        ...buildTitleBlock({
+          designation: `${input.projectCode} ${designation}`,
+          objectName: input.projectName,
+          sheetTitle: sheet?.title ?? input.projectName,
+          stage: 'Р',
+          sheetNumber: currentPage,
+          // Графа 8 заполняется только на первом листе.
+          totalSheets: currentPage === 1 ? totalPages : undefined,
+          organisation: input.organisation,
+          signatories: input.signatories,
+        }),
+      },
+    ],
   }
 }
 
