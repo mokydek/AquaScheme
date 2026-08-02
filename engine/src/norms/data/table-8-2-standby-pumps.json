@@ -1,0 +1,24 @@
+{
+  "document": "СН РК 4.01-03-2013*",
+  "table": "Таблица 8.2",
+  "clause": "8.2.2",
+  "title": "Число резервных насосов",
+  "sourceFile": "docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf",
+  "pdfPage": 62,
+  "domestic": [
+    { "workingMin": 1, "workingMax": 1, "firstCategory": 2, "secondCategory": 1, "thirdCategory": 1 },
+    { "workingMin": 2, "workingMax": 2, "firstCategory": 2, "secondCategory": 1, "thirdCategory": 1 },
+    { "workingMin": 3, "workingMax": null, "firstCategory": 2, "secondCategory": 2, "thirdCategory": 1, "thirdCategorySpare": 1 }
+  ],
+  "aggressive": [
+    { "workingMin": 1, "workingMax": 1, "standby": 1, "spare": 1 },
+    { "workingMin": 2, "workingMax": 3, "standby": 2 },
+    { "workingMin": 4, "workingMax": 4, "standby": 3 },
+    { "workingMin": 5, "workingMax": null, "standbyFraction": 0.5 }
+  ],
+  "notes": [
+    "ПРИМЕЧАНИЕ 1: в насосных станциях водоотведения дождевых вод резервные насосы, как правило, предусматривать не требуется, за исключением случаев, когда аварийный сброс дождевых вод в водные объекты невозможен.",
+    "ПРИМЕЧАНИЕ 2: при реконструкции, связанной с увеличением производительности, для бытовых сточных вод в станциях третьей категории допускается не устанавливать резервные агрегаты, предусматривая хранение их на складе.",
+    "ПРИМЕЧАНИЕ 3: в станциях бытовых сточных вод с погружными насосами первой категории при обосновании допускается 1 резервный и 1 на складе, второй категории — 1 резервный, независимо от количества рабочих агрегатов."
+  ]
+}
