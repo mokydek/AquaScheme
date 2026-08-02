@@ -621,6 +621,7 @@ export function ProjectPage() {
             <ReconstructionSurveySection
               projectId={project.id}
               system={isStorm ? 'storm' : 'sewer'}
+              onSaved={load}
             />
           )}
           {(isSewer || isStorm) && (

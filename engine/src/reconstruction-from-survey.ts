@@ -85,9 +85,12 @@ export function buildReconstructionFromSurvey(
   }
   const totalLengthM = chainageM.length > 0 ? chainageM[chainageM.length - 1] : 0
 
+  // A gravity run is chambers ending at an outlet. «ring»/«source» are water
+  // supply terms and would misdescribe the network downstream.
   const nodes: TracedNetwork['nodes'] = chain.map((chamber, index) => ({
     id: `MH-${index + 1}`,
-    kind: index === chain.length - 1 ? 'source' : 'ring',
+    kind: index === chain.length - 1 ? 'outlet' : 'manhole',
+    label: `КК-${index + 1}`,
     x: chamber.x,
     y: chamber.y,
     groundElevation: chamber.rimElevationM,

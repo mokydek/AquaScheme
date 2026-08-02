@@ -2,6 +2,8 @@ import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ReconstructionFromSurvey } from '@aquascheme/engine'
+import { saveDataset } from '../../shared/datasets'
+import { replaceNetwork } from '../../shared/network'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
 
@@ -16,16 +18,21 @@ import { Panel } from './Panel'
 export function ReconstructionSurveySection({
   projectId,
   system,
+  onSaved,
 }: {
   projectId: string
   system: 'sewer' | 'storm'
+  onSaved: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const [diameterMm, setDiameterMm] = useState('')
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [notice, setNotice] = useState<'saved' | 'saveError' | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const diameter = Number(diameterMm)
   const diameterReady = Number.isFinite(diameter) && diameter > 0
@@ -34,6 +41,8 @@ export function ReconstructionSurveySection({
     const file = event.target.files?.[0]
     if (!file) return
     setMessage(null)
+    setNotice(null)
+    setSaveError(null)
     setBusy(true)
     try {
       const routed = await routeUpload(file, ['dxf'])
@@ -58,6 +67,59 @@ export function ReconstructionSurveySection({
   const levelled = result
     ? result.crossings.filter((crossing) => crossing.existingElevationM !== undefined).length
     : 0
+
+  /**
+   * Writes the run into the project: the spot heights become the topography
+   * dataset and the chamber chain becomes the engineering network, so the rest
+   * of the pipeline works on it. Topography is saved first because that call
+   * marks the route stale; the network then lands with its own status.
+   */
+  const save = async () => {
+    if (!result || result.network.nodes.length < 2) return
+    setSaving(true)
+    setNotice(null)
+    setSaveError(null)
+    try {
+      if (result.surveyPoints.length > 0) {
+        const zs = result.surveyPoints.map((point) => point.z)
+        await saveDataset(
+          projectId,
+          'topography',
+          { points: result.surveyPoints },
+          {
+            total: result.surveyPoints.length,
+            accepted: result.surveyPoints.length,
+            zMin: Math.min(...zs),
+            zMax: Math.max(...zs),
+            source: 'reconstruction-survey',
+          },
+          fileName,
+        )
+      }
+      await replaceNetwork(projectId, result.network, {
+        status: 'calculated',
+        // The pipeline's own blockers travel with the route so the reasons the
+        // set is not releasable stay attached to it.
+        warnings: result.blockers,
+        report: {
+          origin: 'reconstruction-from-survey',
+          designDiameterMm: diameter,
+          chamberCount: result.network.nodes.length,
+          totalLengthM: result.totalLengthM,
+          crossings: result.crossings.length,
+          crossingsLevelled: levelled,
+          grid: result.grid.reason,
+        },
+      })
+      setNotice('saved')
+      await onSaved()
+    } catch (error) {
+      setNotice('saveError')
+      setSaveError(error instanceof Error ? error.message : null)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <Panel title={t('project.reconstruction.title')} status={result ? 'filled' : 'empty'}>
@@ -127,6 +189,23 @@ export function ReconstructionSurveySection({
           {result.blockers.map((blocker) => (
             <p className="stat-line warn" key={blocker}>{blocker}</p>
           ))}
+
+          <div className="section-actions">
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={saving || result.network.nodes.length < 2}
+              onClick={() => void save()}
+            >
+              {t('project.reconstruction.save')}
+            </button>
+          </div>
+          <p className="hint">{t('project.reconstruction.saveHint')}</p>
+          {notice && (
+            <p className={`notice ${notice === 'saved' ? 'info' : 'error'}`}>
+              {t(`project.${notice}`)}{saveError ? `: ${saveError}` : ''}
+            </p>
+          )}
 
           {result.network.nodes.length > 0 && (
             <table className="data-table">

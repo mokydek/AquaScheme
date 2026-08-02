@@ -47,6 +47,8 @@ describe('reconstruction assembled from a survey', () => {
 
     expect(result.network.nodes).toHaveLength(4)
     expect(result.network.pipes).toHaveLength(3)
+    // Gravity terms: chambers ending at an outlet, not a supply ring.
+    expect(result.network.nodes.map((n) => n.kind)).toEqual(['manhole', 'manhole', 'manhole', 'outlet'])
     expect(result.totalLengthM).toBeCloseTo(180, 0)
 
     // The profile follows the existing inverts, not a recomputed slope.

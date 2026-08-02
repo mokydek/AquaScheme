@@ -679,6 +679,8 @@ export const en = {
         rim: 'Rim, m',
         invert: 'Invert, m',
         depth: 'Depth, m',
+        save: 'Save into the project',
+        saveHint: 'Spot heights become the project survey and the chamber chain becomes the engineering network, which the hydraulics and the album are then computed from. The existing network of the project is replaced',
       },
       inflows: {
         title: 'Inflow sources (treatment plants)',
