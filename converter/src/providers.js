@@ -1,3 +1,4 @@
+import { createCloudConvert } from './cloudconvert.js'
 import { spawn } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { writeFile } from 'node:fs/promises'
@@ -97,20 +98,7 @@ export function odaProvider() {
 
 /** @returns {ConvertProvider} */
 export function cloudConvertProvider() {
-  const apiKey = process.env.CLOUDCONVERT_API_KEY
-  return {
-    name: 'cloudconvert',
-    async ready() {
-      return apiKey ? { ok: false, reason: 'CloudConvert provider is declared but not implemented.' } : { ok: false, reason: 'CLOUDCONVERT_API_KEY is not set.' }
-    },
-    async convert() {
-      if (!apiKey) throw new Error('CLOUDCONVERT_API_KEY is not set')
-      // The CloudConvert job flow (import/convert/export) would be implemented
-      // here; kept as a declared fallback so the provider can be swapped by
-      // config without changing the endpoint.
-      throw new Error('cloudconvert provider not implemented in this build')
-    },
-  }
+  return createCloudConvert()
 }
 
 /** @returns {ConvertProvider} */
