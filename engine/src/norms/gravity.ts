@@ -695,6 +695,135 @@ export function assessGravityFeasibility(
   }
 }
 
+export interface GravityBasin {
+  /** Номер бассейна от верховья, с 1. */
+  index: number
+  fromNodeId: string
+  toNodeId: string
+  fromChainageM: number
+  toChainageM: number
+  lengthM: number
+  /** Наибольшая глубина в бассейне, м. */
+  maxDepthM: number
+  /** В конце бассейна нужна перекачка; у последнего — выпуск. */
+  liftAtEnd: boolean
+}
+
+export interface GravityLift {
+  nodeId: string
+  chainageM: number
+  /** Глубина лотка перед подъёмом, м. */
+  incomingDepthM: number
+  /** Насколько лоток поднимается до минимального заглубления, м. */
+  liftHeightM: number
+}
+
+export interface GravityBasinPlan {
+  basins: GravityBasin[]
+  lifts: GravityLift[]
+  /** Наибольшая глубина после разбивки, м. */
+  maxDepthM: number
+  reason: string
+}
+
+/**
+ * Разбивка трассы на самотёчные бассейны.
+ *
+ * Когда падения местности не хватает (см. `assessGravityFeasibility`), лоток
+ * уходит всё глубже и на длинной трассе доходит до глубин, на которых копать
+ * уже нельзя. Обычное решение — разбить трассу на самотёчные бассейны и в конце
+ * каждого поднять поток насосной станцией.
+ *
+ * Предел глубины — вход, а не константа: он зависит от грунтов и способа
+ * производства работ, и в имеющемся комплекте нормативов его нет. Естественный
+ * источник — каталог конструкций колодцев проекта: глубже самой глубокой
+ * позиции каталога колодец просто не из чего собрать.
+ *
+ * Насосная станция ставится там, где глубина впервые превышает предел, а не
+ * задним числом в удобном месте: место определяется трассой и рельефом.
+ * Гидравлику напорного участка функция не считает — это отдельная задача.
+ */
+export function planGravityBasins(
+  profile: GravityProfile,
+  design: Map<string, { diameterMm: number; slope: number }>,
+  options: { maxDepthM: number; freezingDepthM: number },
+): GravityBasinPlan {
+  const stations = profile.stations
+  const minDepth = (diameterMm: number) =>
+    minSewerInvertDepthM(diameterMm || minGravityDiameterMm('sewer', 'street').value, options.freezingDepthM).value
+
+  if (stations.length < 2 || !(options.maxDepthM > 0)) {
+    return {
+      basins: [], lifts: [], maxDepthM: profile.maxDepthM,
+      reason: 'Разбивка не выполняется: нужна трасса от двух станций и положительный предел глубины.',
+    }
+  }
+
+  const lifts: GravityLift[] = []
+  const basins: GravityBasin[] = []
+  let invert = stations[0].groundElevationM - minDepth(stations[0].diameterMm)
+  let basinStart = 0
+  let basinMaxDepth = stations[0].groundElevationM - invert
+  let overallMaxDepth = basinMaxDepth
+
+  const closeBasin = (endIndex: number, liftAtEnd: boolean) => {
+    basins.push({
+      index: basins.length + 1,
+      fromNodeId: stations[basinStart].nodeId,
+      toNodeId: stations[endIndex].nodeId,
+      fromChainageM: stations[basinStart].chainageM,
+      toChainageM: stations[endIndex].chainageM,
+      lengthM: Math.round(Math.abs(stations[endIndex].chainageM - stations[basinStart].chainageM) * 100) / 100,
+      maxDepthM: Math.round(basinMaxDepth * 100) / 100,
+      liftAtEnd,
+    })
+  }
+
+  for (let i = 1; i < stations.length; i++) {
+    const station = stations[i]
+    const span = Math.abs(station.chainageM - stations[i - 1].chainageM)
+    const slope = design.get(profile.pipeIds[i - 1])?.slope ?? 0
+    // Тот же расчёт, что и в профиле: лоток идёт по уклону, но не выше
+    // минимального заглубления.
+    invert = Math.min(station.groundElevationM - minDepth(station.diameterMm), invert - slope * span)
+    const depth = station.groundElevationM - invert
+
+    if (depth > options.maxDepthM) {
+      // Предел превышен: здесь и стоит насосная станция.
+      const raised = station.groundElevationM - minDepth(station.diameterMm)
+      lifts.push({
+        nodeId: station.nodeId,
+        chainageM: station.chainageM,
+        incomingDepthM: Math.round(depth * 100) / 100,
+        liftHeightM: Math.round((raised - invert) * 100) / 100,
+      })
+      basinMaxDepth = Math.max(basinMaxDepth, depth)
+      overallMaxDepth = Math.max(overallMaxDepth, depth)
+      closeBasin(i, true)
+      basinStart = i
+      invert = raised
+      basinMaxDepth = station.groundElevationM - invert
+      continue
+    }
+    basinMaxDepth = Math.max(basinMaxDepth, depth)
+    overallMaxDepth = Math.max(overallMaxDepth, depth)
+  }
+  closeBasin(stations.length - 1, false)
+
+  return {
+    basins,
+    lifts,
+    maxDepthM: Math.round(overallMaxDepth * 100) / 100,
+    reason: lifts.length === 0
+      ? `Трасса решается одним самотёчным бассейном: наибольшая глубина ${Math.round(overallMaxDepth * 100) / 100} м `
+        + `при пределе ${options.maxDepthM} м.`
+      : `Трасса разбита на ${basins.length} самотёчных бассейна(ов) с ${lifts.length} перекачкой(ами): `
+        + `предел глубины ${options.maxDepthM} м достигается на пикетах `
+        + `${lifts.map((lift) => lift.chainageM.toFixed(0)).join(', ')} м. `
+        + 'Гидравлика напорных участков здесь не считается — это отдельная задача.',
+  }
+}
+
 /** Picket (ПК) label for a chainage, e.g. 1057 m → «ПК10+57». */
 export function picketLabel(chainageM: number): string {
   const pk = Math.floor(chainageM / 100)
