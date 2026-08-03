@@ -1,14 +1,10 @@
 {
   "_comment": "Уровень недостижимых возможностей движка. Может только снижаться; обновляется через npm run audit:reachability -- --write-baseline.",
-  "count": 63,
+  "count": 61,
   "functions": [
     {
       "name": "normalizeBoreholeLabel",
       "file": "engine/src/boreholes-from-drawing.ts"
-    },
-    {
-      "name": "corridorAxis",
-      "file": "engine/src/corridor-axis.ts"
     },
     {
       "name": "betaMaxForResidents",
@@ -209,10 +205,6 @@
     {
       "name": "velocityFor",
       "file": "engine/src/sizing.ts"
-    },
-    {
-      "name": "specificationToCsv",
-      "file": "engine/src/specification.ts"
     },
     {
       "name": "selectSpecificationSource",

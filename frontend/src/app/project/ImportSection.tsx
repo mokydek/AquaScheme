@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform, traceConstrainedNetwork } from '@aquascheme/engine'
+import { corridorAxis, importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform, traceConstrainedNetwork } from '@aquascheme/engine'
 import type { ConstrainedRouteReport, ImportReport, ImportSegment, SurveyPoint } from '@aquascheme/engine'
 import type { DxfConstraintData, DxfLayerRole, DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { replaceNetwork, routeInputHash } from '../../shared/network'
@@ -51,6 +51,9 @@ export function ImportSection({
   const [parsed, setParsed] = useState<Parsed | null>(null)
   const [selectedLayers, setSelectedLayers] = useState<Record<string, boolean>>({})
   const [layerRoles, setLayerRoles] = useState<Record<string, DxfLayerRole>>({})
+  // Ось, выведенная из коридора, — предложение, а не утверждённая ось: в
+  // трассировку она попадает только после явного согласия инженера.
+  const [useDerivedAxis, setUseDerivedAxis] = useState(false)
   const [confirmedAbsent, setConfirmedAbsent] = useState<Record<SourceConfirmationKey, boolean>>({
     buildings: false, utilities: false, roads: false, hydrography: false, parcels: false, protectionZones: false,
   })
@@ -143,6 +146,23 @@ export function ImportSection({
       event.target.value = ''
     }
   }
+
+  /**
+   * Осевая линия коридора, выведенная из его контура.
+   *
+   * Считается, только когда направляющей оси в чертеже нет: если проектировщик
+   * её начертил, подменять её выводом незачем. Узкая полоса распознаётся по
+   * 2·площадь/периметр, поэтому квартал или участок осью не станут.
+   */
+  const derivedAxis = useMemo(() => {
+    if (!parsed || parsed.kind !== 'dxf') return null
+    if (parsed.constraints.guideAxis.length > 0) return null
+    const best = parsed.constraints.corridorRings
+      .map((ring) => corridorAxis(ring))
+      .filter((axis) => axis.ok)
+      .sort((left, right) => right.lengthM - left.lengthM)[0]
+    return best ?? null
+  }, [parsed])
 
   const num = (value: string): number => Number(value.trim().replace(',', '.'))
 
@@ -320,7 +340,13 @@ export function ImportSection({
       const corridorRings = parsed.constraints.corridorRings.map((ring) => ring.map(transform))
       const routeConstraints = {
         corridorRings,
-        guideLines: mapSegments(parsed.constraints.guideAxis),
+        guideLines: mapSegments(
+          useDerivedAxis && derivedAxis
+            // Выведенная ось идёт направляющей на общих правах: она влияет на
+            // стоимость пути, но коридор и препятствия остаются главными.
+            ? [...parsed.constraints.guideAxis, { layer: 'ось коридора (выведена)', points: derivedAxis.points }]
+            : parsed.constraints.guideAxis,
+        ),
         georeference: georefMode === 'none'
           ? { kind: 'unreferenced' as const, source: 'DWG импортирован без геопривязки' }
           : { kind: 'local_anchor' as const, source: georefMode === 'proj4' ? `proj4: ${projString}` : 'две контрольные точки пользователя' },
@@ -518,6 +544,28 @@ export function ImportSection({
             Единицы DWG: {parsed.data.metadata?.insertionUnits ?? 'не указаны'} ·
             {' '}нераспознанных слоёв: {Object.values(parsed.constraints.roles).filter((role) => role === 'unknown').length}.
           </p>
+          {derivedAxis && (
+            <div className="parse-report" style={{ marginTop: 12 }}>
+              <p className="stat-line">
+                Ось коридора выведена: {derivedAxis.points.length} вершин, {derivedAxis.lengthM.toFixed(0)} м.
+              </p>
+              <p className="hint">
+                {derivedAxis.reason} Это предложение, а не утверждённая ось: подтверждает инженер.
+                Без подтверждения трассировка её не использует и идёт по коридору и препятствиям.
+              </p>
+              <label className="field-inline" htmlFor="import-use-derived-axis">
+                <input
+                  id="import-use-derived-axis"
+                  name="import-use-derived-axis"
+                  type="checkbox"
+                  checked={useDerivedAxis}
+                  onChange={(event) => setUseDerivedAxis(event.target.checked)}
+                />
+                <span>Использовать как направляющую ось при трассировке</span>
+              </label>
+            </div>
+          )}
+
           <DxfLayerRoleTable
             idPrefix="import"
             layers={parsed.data.layers}

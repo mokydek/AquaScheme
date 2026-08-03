@@ -1,4 +1,4 @@
-import { buildSpecification } from '@aquascheme/engine'
+import { buildSpecification, specificationToCsv } from '@aquascheme/engine'
 import type { ExportInput, GravityProfile, WorkingDrawingSheet } from '@aquascheme/engine'
 import { convertDrawing } from './upload'
 import { buildProjectAlbumDoc, buildProjectSheetDoc, crossingBelongsToProfile } from './projectAlbum'
@@ -576,3 +576,16 @@ export async function zipBundle(files: Record<string, BundleData>): Promise<Blob
 }
 
 export { CONVERTER_URL } from './upload'
+
+/**
+ * Спецификация в CSV с точкой с запятой и BOM.
+ *
+ * XLSX открывается не везде — сметные и складские программы обычно принимают
+ * разделённый текст. Состав строк тот же, что и в XLSX: обе выгрузки берут
+ * `buildSpecification`, поэтому разойтись они не могут.
+ */
+export function generateSpecificationCsv(input: ExportInput): Blob {
+  return new Blob([specificationToCsv(buildSpecification(input))], {
+    type: 'text/csv;charset=utf-8',
+  })
+}

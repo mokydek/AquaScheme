@@ -19,6 +19,7 @@ import type {
 } from '@aquascheme/engine'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
+import { generateSpecificationCsv } from '../../shared/exporters'
 import { supabase } from '../../shared/supabase'
 import { useAuth } from '../../shared/auth'
 import { networkFromRows } from '../../shared/network'
@@ -42,7 +43,7 @@ import type { SourceData } from '../../shared/datasets'
 import { formatAppError } from '../../shared/errorFormatting'
 import { Panel } from './Panel'
 
-type Job = 'drawing' | 'pdf' | 'spec' | 'acts' | 'docs' | 'situation' | 'bundle'
+type Job = 'drawing' | 'pdf' | 'spec' | 'specCsv' | 'acts' | 'docs' | 'situation' | 'bundle'
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 function downloadBlob(filename: string, blob: Blob): void {
@@ -261,6 +262,19 @@ export function ExportSection({
     }
   }
 
+  const exportSpecCsv = async () => {
+    await beginJob('specCsv')
+    try {
+      const blob = generateSpecificationCsv(assemble())
+      downloadBlob(`${slug}_спецификация.csv`, blob)
+      setNotice('done')
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const exportSpec = async () => {
     await beginJob('spec')
     try {
@@ -401,6 +415,7 @@ export function ExportSection({
     drawing: 'project.export.drawing',
     pdf: 'project.export.pdf',
     spec: 'project.export.spec',
+    specCsv: 'project.export.spec',
     situation: 'project.export.situation',
     docs: 'project.export.docs',
     acts: 'project.export.acts',
@@ -448,6 +463,7 @@ export function ExportSection({
         <button type="button" className={`btn btn-sm${busy === 'spec' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'spec'} onClick={() => void exportSpec()}>
           {label('spec', 'project.export.spec')}
         </button>
+        <button type="button" className={`btn btn-ghost btn-sm${busy === 'specCsv' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'specCsv'} onClick={() => void exportSpecCsv()}>Спецификация CSV</button>
         <button type="button" className={`btn btn-sm${busy === 'situation' ? ' is-loading' : ''}`} disabled={!canExport || busy !== null} aria-busy={busy === 'situation'} onClick={() => void exportSituation()}>
           {label('situation', 'project.export.situation')}
         </button>
