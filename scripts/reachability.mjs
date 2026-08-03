@@ -43,12 +43,25 @@ const frontendFiles = existsSync(join(ROOT, 'frontend', 'src'))
   ? walk(join(ROOT, 'frontend', 'src'))
   : []
 
+/**
+ * Объявления верхнего уровня: и как список кандидатов, и как границы тел.
+ *
+ * Форма объявления учитывается вся. Пока разбиралось только `export function`,
+ * `solveHydraulics` и `sizeNetwork` — входы гидравлики — не попадали в граф
+ * вовсе, и всё, что они вызывают в своём же файле, числилось сиротой: так в
+ * долг попали `buildInp` и `velocityFor`, хотя их вызывает расчёт.
+ */
+const DECLARATION = /^(?:export )?(?:default )?(?:async )?function ([A-Za-z0-9_]+)|^(?:export )?(?:const|let) ([A-Za-z0-9_]+)\s*(?:=|:)/gm
+/** Кандидат в возможности: экспортируемая функция, в любой форме записи. */
+const EXPORTED_FUNCTION = /^export (?:async )?function ([A-Za-z0-9_]+)|^export const ([A-Za-z0-9_]+)(?::[^=]+)?\s*=\s*(?:async\s*)?(?:<[^=]*>\s*)?\(/gm
+
 /** Где объявлена каждая экспортируемая функция. */
 const declaredIn = new Map()
 for (const path of engineFiles) {
   const source = readFileSync(path, 'utf8')
-  for (const match of source.matchAll(/^export function ([A-Za-z0-9_]+)/gm)) {
-    if (!declaredIn.has(match[1])) declaredIn.set(match[1], path)
+  for (const match of source.matchAll(EXPORTED_FUNCTION)) {
+    const name = match[1] ?? match[2]
+    if (!declaredIn.has(name)) declaredIn.set(name, path)
   }
 }
 
@@ -63,15 +76,22 @@ const contents = new Map([...engineFiles, ...frontendFiles].map((path) => [path,
  * ограничения заглубления канализации попали в долг, хотя их применяет
  * `minSewerInvertDepthM`, а его — расчёт профиля. Поэтому достижимость
  * считается транзитивно: от того, что вызывает интерфейс, вниз по вызовам.
+ *
+ * Границей тела служит любое объявление верхнего уровня, а не только `function`:
+ * иначе объявление, которое не считается границей, приписывается предыдущему
+ * телу, и вызовы засчитываются не тому, кто их делает.
  */
 const bodies = new Map()
 for (const path of engineFiles) {
   const source = contents.get(path)
-  const marks = [...source.matchAll(/^(?:export )?function ([A-Za-z0-9_]+)/gm)]
+  const marks = [...source.matchAll(DECLARATION)]
   for (let index = 0; index < marks.length; index++) {
     const start = marks[index].index
     const end = index + 1 < marks.length ? marks[index + 1].index : source.length
-    bodies.set(marks[index][1], source.slice(start, end))
+    const name = marks[index][1] ?? marks[index][2]
+    // Одноимённые функции в разных модулях: тела складываются, иначе
+    // достижимость зависела бы от порядка обхода файлов.
+    bodies.set(name, (bodies.get(name) ?? '') + source.slice(start, end))
   }
 }
 
@@ -102,6 +122,17 @@ for (let changed = true; changed;) {
       if (new RegExp(`\\b${candidate}\\b`).test(body)) { reachable.add(candidate); changed = true }
     }
   }
+}
+
+// Страховка от немой слепоты разбора. Если объявление записано формой, которую
+// регулярное выражение не узнаёт, тело не попадёт в граф — и вызванное из него
+// молча уедет в долг. Именно так и случилось с гидравликой. Пусть лучше упадёт.
+const bodiless = [...declaredIn.keys()].filter((name) => !bodies.has(name))
+if (bodiless.length > 0) {
+  console.error(`Ошибка разбора: у ${bodiless.length} объявлений не найдено тело`
+    + ` (${bodiless.slice(0, 8).join(', ')}). Показатель считать нельзя: вызовы из этих`
+    + ' функций не учтены, и вызванное из них будет ложно объявлено недостижимым.')
+  process.exit(1)
 }
 
 const orphans = [...declaredIn]

@@ -1,6 +1,6 @@
 {
   "_comment": "Возможности движка без пути с экрана. Может только снижаться; обновляется через npm run audit:reachability -- --write-baseline. Список internal — намеренно экспортированные внутренности, проверяемые тестом напрямую: в долг не идут.",
-  "capabilities": 16,
+  "capabilities": 15,
   "internalCount": 12,
   "functions": [
     {
@@ -10,10 +10,6 @@
     {
       "name": "buildManholeConstructionDetailDxf",
       "file": "engine/src/dxf.ts"
-    },
-    {
-      "name": "buildInp",
-      "file": "engine/src/hydraulics.ts"
     },
     {
       "name": "compareWithMasterPlan",
@@ -44,16 +40,16 @@
       "file": "engine/src/norms/vertplan.ts"
     },
     {
+      "name": "fromCatalogue",
+      "file": "engine/src/provenance.ts"
+    },
+    {
       "name": "fromJustified",
       "file": "engine/src/provenance.ts"
     },
     {
       "name": "weakest",
       "file": "engine/src/provenance.ts"
-    },
-    {
-      "name": "velocityFor",
-      "file": "engine/src/sizing.ts"
     },
     {
       "name": "selectSpecificationSource",
