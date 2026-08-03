@@ -1,0 +1,135 @@
+import { useEffect, useState } from 'react'
+import type { DatasetRow } from '../../shared/datasets'
+import { saveDataset } from '../../shared/datasets'
+import { titleBlockContentFrom } from './titleBlockContent'
+import type { TitleBlockContent } from './titleBlockContent'
+import { Panel } from './Panel'
+
+/**
+ * Организация и подписанты основной надписи (ГОСТ Р 21.101-2020, форма 3).
+ *
+ * Модель штампа была написана и проверена, графы 9–13 в ней предусмотрены, но
+ * заполнять их было нечем: данных организации и ответственных проект нигде не
+ * хранил, и на каждом листе альбома эти графы оставались пустыми.
+ *
+ * Ничего не подставляется по умолчанию. Пустая графа честнее выдуманной
+ * фамилии: подпись под проектным документом — это ответственность конкретного
+ * человека, и приложение её не назначает. Сами подписи не воспроизводятся —
+ * их ставит человек, приложение печатает только фамилию и дату.
+ */
+
+/** Графа 10: характер работы. Состав ролей — по стандарту. */
+const ROLES = ['Разраб.', 'Пров.', 'Н.контр.', 'ГИП'] as const
+
+export function TitleBlockSection({
+  projectId,
+  dataset,
+  onSaved,
+}: {
+  projectId: string
+  dataset?: DatasetRow
+  onSaved: () => Promise<void>
+}) {
+  const saved = (dataset?.content ?? {}) as TitleBlockContent
+  const [organisation, setOrganisation] = useState(saved.organisation ?? '')
+  const [names, setNames] = useState<Record<string, string>>({})
+  const [dates, setDates] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setOrganisation(saved.organisation ?? '')
+    const byRole = new Map((saved.signatories ?? []).map((item) => [item.role, item]))
+    setNames(Object.fromEntries(ROLES.map((role) => [role, byRole.get(role)?.name ?? ''])))
+    setDates(Object.fromEntries(ROLES.map((role) => [role, byRole.get(role)?.date ?? ''])))
+    // Пересобирается при смене набора: правки другого пользователя должны
+    // приходить в поля, а не оставаться перекрытыми состоянием экрана.
+  }, [dataset])
+
+  const filled = ROLES.filter((role) => (names[role] ?? '').trim() !== '').length
+
+  const commit = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const content = titleBlockContentFrom(organisation, ROLES, names, dates)
+      await saveDataset(projectId, 'title_block', content)
+      await onSaved()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Ошибка сохранения')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Panel title="Основная надпись: организация и подписанты" status={organisation.trim() && filled > 0 ? 'filled' : 'empty'}>
+      <p className="hint">
+        Графы 9–13 формы 3 по ГОСТ Р 21.101-2020. Ничего не подставляется по умолчанию: пустая графа честнее
+        выдуманной фамилии. Подписи приложение не воспроизводит — печатаются только фамилия и дата, подпись ставит
+        человек.
+      </p>
+
+      <div className="form-grid">
+        <label className="field" htmlFor={`title-block-${projectId}-organisation`}>
+          <span className="field-label">Графа 9: организация</span>
+          <input
+            id={`title-block-${projectId}-organisation`}
+            name={`title-block-${projectId}-organisation`}
+            className="input"
+            type="text"
+            value={organisation}
+            disabled={busy}
+            onChange={(event) => setOrganisation(event.target.value)}
+            onBlur={() => void commit()}
+          />
+        </label>
+      </div>
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>Графа 10: характер работы</th><th>Графа 11: фамилия</th><th>Графа 13: дата</th></tr></thead>
+          <tbody>{ROLES.map((role) => (
+            <tr key={role}>
+              <td>{role}</td>
+              <td>
+                <input
+                  id={`title-block-${projectId}-name-${role}`}
+                  name={`title-block-${projectId}-name-${role}`}
+                  className="input"
+                  type="text"
+                  aria-label={`Фамилия, ${role}`}
+                  value={names[role] ?? ''}
+                  disabled={busy}
+                  onChange={(event) => setNames((prev) => ({ ...prev, [role]: event.target.value }))}
+                  onBlur={() => void commit()}
+                />
+              </td>
+              <td>
+                <input
+                  id={`title-block-${projectId}-date-${role}`}
+                  name={`title-block-${projectId}-date-${role}`}
+                  className="input"
+                  type="text"
+                  aria-label={`Дата, ${role}`}
+                  placeholder="ММ.ГГ"
+                  value={dates[role] ?? ''}
+                  disabled={busy}
+                  onChange={(event) => setDates((prev) => ({ ...prev, [role]: event.target.value }))}
+                  onBlur={() => void commit()}
+                />
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+
+      <p className="stat-line">
+        Заполнено ролей: {filled} из {ROLES.length}
+        {organisation.trim() === '' ? '; организация не задана — графа 9 останется пустой' : ''}
+      </p>
+      {error && <p className="notice error">{error}</p>}
+      <p className="hint">Если Supabase сообщает об ограничении kind, примените миграцию backend/migrations/0017_title_block.sql.</p>
+    </Panel>
+  )
+}

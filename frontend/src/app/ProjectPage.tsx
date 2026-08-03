@@ -675,6 +675,7 @@ export function ProjectPage() {
                 constraintsDataset={datasets.route_constraints}
                 routeAuditDataset={datasets.route_audit}
                 manholeCatalogDataset={datasets.manhole_catalog}
+                titleBlockDataset={datasets.title_block}
                 boreholes={boreholes}
                 parcels={parcels}
                 activeCatalogId={project.active_catalog_id ?? null}
@@ -701,6 +702,7 @@ export function ProjectPage() {
               constraintsDataset={datasets.route_constraints}
               routeAuditDataset={datasets.route_audit}
               manholeCatalogDataset={datasets.manhole_catalog}
+              titleBlockDataset={datasets.title_block}
               boreholes={boreholes}
               parcels={parcels}
               activeCatalogId={project.active_catalog_id ?? null}

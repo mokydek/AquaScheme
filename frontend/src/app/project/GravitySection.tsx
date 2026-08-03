@@ -63,6 +63,7 @@ import { Panel } from './Panel'
 import { AlbumSheetSet } from './AlbumSheetSet'
 import { SchemeBuilder } from './SchemeBuilder'
 import { StormInletsView } from './StormInletsView'
+import type { TitleBlockSignatory } from '../../shared/titleBlock'
 import { freezingDepthStatus } from '../../shared/geologyStatus'
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -136,6 +137,7 @@ export function GravitySection({
   constraintsDataset,
   routeAuditDataset,
   manholeCatalogDataset,
+  titleBlockDataset,
   boreholes,
   parcels,
   activeCatalogId,
@@ -158,6 +160,7 @@ export function GravitySection({
   constraintsDataset?: DatasetRow
   routeAuditDataset?: DatasetRow
   manholeCatalogDataset?: DatasetRow
+  titleBlockDataset?: DatasetRow
   boreholes?: Borehole[]
   /** Project parcels; kind 'right_of_way' rings form the corridor to check. */
   parcels?: ParcelRow[]
@@ -653,6 +656,9 @@ export function GravitySection({
       geologyMaxOffsetM: geologyCoverage.maxOffsetM,
       constraints,
       manholeConstructions: manholeSelection.selected,
+      // Графы 9–13 основной надписи. Пока карточки не было, они печатались
+      // пустыми на каждом листе альбома.
+      ...((titleBlockDataset?.content ?? {}) as { organisation?: string; signatories?: TitleBlockSignatory[] }),
       pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
       pipeDesign: new Map(result.pipes.map((pipe) => [pipe.id, {
         diameterMm: pipe.diameterMm,
