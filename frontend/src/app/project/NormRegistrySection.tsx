@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   NORM_REGISTRY,
+  auditClauseHierarchy,
   createNormLock,
   isCompleteConfirmation,
   unverifiedClauses,
@@ -52,6 +53,15 @@ export function NormRegistrySection({
    * инженер.
    */
   const drift = content.normLock ? verifyNormLock(content.normLock) : null
+
+  /**
+   * Не опирается ли правило реестра на вытеснённый документ.
+   *
+   * Внутри семейства действует позднейшее издание, а СНиП рядом с действующим
+   * СП РК — методический источник, а не основание. Раньше выбор издания держался
+   * на внимательности того, кто добавлял запись.
+   */
+  const hierarchy = auditClauseHierarchy()
 
   const [confirmations, setConfirmations] = useState<Record<string, NormClauseConfirmation>>({})
   const [busy, setBusy] = useState(false)
@@ -116,6 +126,24 @@ export function NormRegistrySection({
             total: NORM_REGISTRY.length,
           })}
       </p>
+
+      {hierarchy.length > 0 && (
+        <div className="parse-report" style={{ marginTop: 12 }}>
+          <p className="stat-line warn">
+            Правил, опирающихся на вытеснённый или неизвестный документ: {hierarchy.length}.
+          </p>
+          <p className="hint">
+            Внутри семейства действует позднейшее издание; СНиП рядом с действующим СП РК —
+            методический источник, а не основание. Это проверка самого реестра, а не вашего
+            проекта: исправляется записью реестра.
+          </p>
+          <ul>
+            {hierarchy.slice(0, 10).map((issue) => (
+              <li key={issue.clauseId}>{issue.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {drift && drift.drift.length > 0 && (
         <div className="parse-report" style={{ marginTop: 12 }}>

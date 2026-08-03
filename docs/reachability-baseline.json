@@ -1,6 +1,6 @@
 {
   "_comment": "Уровень недостижимых возможностей движка. Может только снижаться; обновляется через npm run audit:reachability -- --write-baseline.",
-  "count": 65,
+  "count": 63,
   "functions": [
     {
       "name": "normalizeBoreholeLabel",
@@ -31,10 +31,6 @@
       "file": "engine/src/dxfread.ts"
     },
     {
-      "name": "summarizeRouteCoverage",
-      "file": "engine/src/geocoverage.ts"
-    },
-    {
       "name": "gridToGeologyRows",
       "file": "engine/src/geology.ts"
     },
@@ -53,10 +49,6 @@
     {
       "name": "buildInp",
       "file": "engine/src/hydraulics.ts"
-    },
-    {
-      "name": "auditClauseHierarchy",
-      "file": "engine/src/normhierarchy.ts"
     },
     {
       "name": "documentFamily",

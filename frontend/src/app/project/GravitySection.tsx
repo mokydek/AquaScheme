@@ -14,6 +14,7 @@ import {
   selectManholeConstructions,
   solveGravityNetwork,
   assessGravityFeasibility,
+  summarizeRouteCoverage,
   planGravityBasins,
   unverifiedClauses,
   workingDrawingSpecificationItemCount,
@@ -448,6 +449,29 @@ export function GravitySection({
     return { feasibility, basins, catalogMaxDepthM }
   }, [result, manholeCatalog, freezingDepth])
 
+  /**
+   * Насколько геология описывает саму трассу.
+   *
+   * Шлюз выпуска проверяет лишь то, что у скважин есть координаты. Скважины
+   * могут при этом стоять в стороне, и профиль опирался бы на значения,
+   * продолженные за пределы изысканий. Сводка считает это по станциям профиля
+   * и называет те, что вне допуска или за контуром выработок.
+   */
+  const routeCoverage = useMemo(() => {
+    const profile = result?.profile
+    const maxOffsetM = geologyCoverage.maxOffsetM
+    if (!profile || profile.stations.length === 0 || !maxOffsetM || (boreholes ?? []).length === 0) {
+      return null
+    }
+    const nodeById = new Map(network.nodes.map((node) => [node.id, node]))
+    const path = profile.stations
+      .map((station) => nodeById.get(station.nodeId))
+      .filter((node): node is NonNullable<typeof node> => node !== undefined)
+      .map((node) => ({ x: node.x, y: node.y }))
+    if (path.length === 0) return null
+    return summarizeRouteCoverage(boreholes ?? [], path, maxOffsetM)
+  }, [result, boreholes, geologyCoverage.maxOffsetM, network.nodes])
+
   const workingDrawingSet = useMemo(() => {
     // Сверки, выполненные инженером по бумажному документу, — такое же
     // подтверждение, как транскрипция из PDF, и снимают пункт для этого проекта.
@@ -864,6 +888,24 @@ export function GravitySection({
           ))}
         </div>
       </div>
+      {routeCoverage && (
+        <div className="drawing-audit" style={{ marginBottom: 12 }}>
+          <div>
+            <h5>Покрытие трассы геологией</h5>
+            <p className={`stat-line${routeCoverage.blockers.length === 0 ? ' ok' : ' warn'}`}>
+              Описано изысканиями {(routeCoverage.covered * 100).toFixed(0)}% станций
+              ({routeCoverage.measured} по замеру, {routeCoverage.interpolated} интерполяцией
+              из {routeCoverage.stations})
+              {routeCoverage.worstGapM === null
+                ? ''
+                : `; наибольшее удаление до скважины ${routeCoverage.worstGapM.toFixed(0)} м`}.
+            </p>
+            {routeCoverage.blockers.map((message) => (
+              <p className="stat-line warn" key={message}>{message}</p>
+            ))}
+          </div>
+        </div>
+      )}
       {gravityPlan && (
         <div className="drawing-audit" style={{ marginBottom: 12 }}>
           <div>
