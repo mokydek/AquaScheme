@@ -102,4 +102,63 @@ describe('reconstruction assembled from a survey', () => {
     expect(result.crossings).toHaveLength(2)
     expect(result.blockers.some((b) => b.includes('без снятой отметки'))).toBe(true)
   })
+
+  it('выводит диапазоны глубин из съёмки без участия инженера', () => {
+    // Съёмка подписывает канализацию парой отметок в каждом колодце: 688/685,
+    // 687.8/684.7, … — разность и есть глубина заложения.
+    const result = buildReconstructionFromSurvey(streetSurvey(), { designDiameterMm: 450 })
+    expect(result.depthBands.samples['канализация']).toBe(4)
+    expect(result.depthBands.bands['канализация'].minM).toBeCloseTo(3, 2)
+    expect(result.depthBands.bands['канализация'].maxM).toBeCloseTo(3.3, 2)
+    expect(result.depthBands.bands['канализация'].source).toContain('измерено на площадке')
+  })
+
+  it('без требуемого просвета отбор не выполняется и это сказано прямо', () => {
+    const result = buildReconstructionFromSurvey(streetSurvey(), { designDiameterMm: 450 })
+    expect(result.crossingTriage).toBeNull()
+    // Диапазоны при этом всё равно выведены — не хватает только величины из ТУ.
+    expect(Object.keys(result.depthBands.bands).length).toBeGreaterThan(0)
+  })
+
+  it('с требуемым просветом отбирает на вскрытие только спорные пересечения', () => {
+    const data = streetSurvey()
+    // Кабель связи на мелком залегании и газопровод — оба не отнивелированы.
+    data.segments.push({ layer: 'SIT_LЛИН_СВЯ', points: [{ x: 140, y: -20 }, { x: 140, y: 20 }] })
+    data.layers.push({ name: 'SIT_LЛИН_СВЯ', segments: 1, points: 0 })
+    // Пара отметок даёт диапазон 0,6…0,9 м: кабель лежит заведомо выше трубы.
+    data.textEntities?.push(
+      { x: 200, y: 30, layer: 'NAD_MЛИН_СВЯ', text: '688.00' },
+      { x: 200, y: 30.4, layer: 'NAD_MЛИН_СВЯ', text: '687.40' },
+      { x: 260, y: 30, layer: 'NAD_MЛИН_СВЯ', text: '687.90' },
+      { x: 260, y: 30.4, layer: 'NAD_MЛИН_СВЯ', text: '687.00' },
+    )
+    const result = buildReconstructionFromSurvey(data, {
+      designDiameterMm: 450,
+      requiredClearanceM: 0.2,
+    })
+    expect(result.crossingTriage).not.toBeNull()
+    const triage = result.crossingTriage!
+    // Водопровод отнивелирован съёмкой, кабель проходит с запасом по расчёту.
+    expect(triage.items.map((item) => item.verdict).sort())
+      .toEqual(['clears_by_margin', 'levelled'])
+    expect(triage.needLevelling).toHaveLength(0)
+    expect(result.blockers.some((b) => b.includes('Контрольное вскрытие'))).toBe(false)
+    expect(result.blockers.some((b) => b.includes('без снятой отметки'))).toBe(false)
+  })
+
+  it('оставляет на вскрытие сеть, для которой съёмка диапазона не дала', () => {
+    const data = streetSurvey()
+    // Газопровод без единой подписи: диапазон вывести не из чего.
+    data.segments.push({ layer: 'SIT_LГАЗОПРО', points: [{ x: 140, y: -20 }, { x: 140, y: 20 }] })
+    data.layers.push({ name: 'SIT_LГАЗОПРО', segments: 1, points: 0 })
+    const result = buildReconstructionFromSurvey(data, {
+      designDiameterMm: 450,
+      requiredClearanceM: 0.2,
+    })
+    const triage = result.crossingTriage!
+    expect(triage.needLevelling).toHaveLength(1)
+    expect(triage.needLevelling[0].crossing.kind).toBe('газопровод')
+    expect(triage.needLevelling[0].verdict).toBe('unknown_band')
+    expect(result.blockers.some((b) => b.includes('Контрольное вскрытие: 1 пересечений из 2'))).toBe(true)
+  })
 })

@@ -1,5 +1,11 @@
 import { agskConcreteGravityPipeCode, agskSectionForGravityPipe } from './norms/agsk'
 import { crossingsFromSurvey } from './crossings-from-survey'
+import {
+  deriveDepthBandsFromSurvey,
+  triageCrossings,
+  type CrossingTriage,
+  type DerivedDepthBands,
+} from './crossing-triage'
 import { classifyDxfConstraints, type DxfConstraintData, type DxfNetworkData } from './dxfread'
 import { extractExistingUtilities, type ExistingUtilityNetwork } from './existing-utilities'
 import { detectSurveyGrid, type SurveyGridFinding } from './surveygrid'
@@ -32,6 +38,19 @@ export interface ReconstructionSurveyOptions {
   minChamberDiameterMm?: number
   /** Layers whose annotation describes the line being reconstructed. */
   existingLayerPattern?: RegExp
+  /**
+   * Требуемый вертикальный просвет в пересечении, м.
+   *
+   * Единственная величина отбора, которой нет в исходных данных: это не
+   * измерение, а требование владельца сети из технических условий. В имеющемся
+   * комплекте нормативов её тоже нет — полнотекстовый поиск по СН РК 4.01-03-2013*
+   * и СП РК 4.01-103-2013 не дал ни требований к просветам между сетями, ни
+   * расстояний по вертикали; они в отсутствующих СН РК 3.01. Пока величина не
+   * задана, отбор не выполняется и все неотнивелированные пересечения остаются
+   * требующими вскрытия — подставлять сюда цифру «по опыту» значило бы выдать
+   * догадку за норму.
+   */
+  requiredClearanceM?: number
 }
 
 export interface ReconstructionFromSurvey {
@@ -47,6 +66,16 @@ export interface ReconstructionFromSurvey {
   /** Chainage of every chamber along the run, m. */
   chainageM: number[]
   totalLengthM: number
+  /**
+   * Диапазоны глубин залегания пересекаемых сетей, выведенные из парных
+   * отметок самой съёмки. Считаются всегда — вход инженера для этого не нужен.
+   */
+  depthBands: DerivedDepthBands
+  /**
+   * Отбор пересечений на контрольное вскрытие. `null`, когда не задан
+   * требуемый просвет: без него исход не оценивается.
+   */
+  crossingTriage: CrossingTriage | null
   /** Reasons the result is not yet a releasable project. */
   blockers: string[]
   reason: string
@@ -143,18 +172,27 @@ export function buildReconstructionFromSurvey(
     totalPipeLengthM: totalLengthM,
   }
 
-  const invertAt = (station: number): number | null => {
+  /** Отметка на пикете по линейной интерполяции между замерами в колодцах. */
+  const alongChain = (
+    station: number,
+    valueOf: (chamber: (typeof chain)[number]) => number,
+  ): number | null => {
     if (chain.length === 0) return null
     for (let i = 1; i < chainageM.length; i++) {
       if (station <= chainageM[i]) {
         const span = Math.max(chainageM[i] - chainageM[i - 1], 1e-9)
         const t = (station - chainageM[i - 1]) / span
-        return chain[i - 1].invertElevationM
-          + t * (chain[i].invertElevationM - chain[i - 1].invertElevationM)
+        return valueOf(chain[i - 1]) + t * (valueOf(chain[i]) - valueOf(chain[i - 1]))
       }
     }
-    return chain[chain.length - 1].invertElevationM
+    return valueOf(chain[chain.length - 1])
   }
+
+  const invertAt = (station: number) => alongChain(station, (chamber) => chamber.invertElevationM)
+  // Крышка колодца лежит в уровне покрытия, поэтому отметка обечайки и есть
+  // отметка земли на пикете — тот же источник, что уже даёт профилю линию
+  // поверхности. Ничего не интерполируется по площади: это замеры на самой трассе.
+  const groundAt = (station: number) => alongChain(station, (chamber) => chamber.rimElevationM)
 
   const crossings = chain.length >= 2
     ? crossingsFromSurvey(
@@ -164,10 +202,38 @@ export function buildReconstructionFromSurvey(
       { ownChamberStationsM: chainageM, designInvertAtM: invertAt },
     )
     : []
+  // Диапазоны глубин выводятся из парных отметок съёмки — вход инженера не нужен.
+  const depthBands = deriveDepthBandsFromSurvey(constraints)
+
+  const crossingTriage = crossings.length > 0
+    && Number.isFinite(options.requiredClearanceM)
+    && (options.requiredClearanceM as number) > 0
+    ? triageCrossings({
+      crossings,
+      depthBands: depthBands.bands,
+      requiredClearanceM: options.requiredClearanceM as number,
+      groundElevationAtM: groundAt,
+      designDiameterMm: options.designDiameterMm,
+    })
+    : null
+
   const unresolved = crossings.filter((crossing) => crossing.existingElevationM === undefined).length
-  if (unresolved > 0) {
+  if (crossingTriage !== null) {
+    // Отбор состоялся: вскрывать нужно не всё неотнивелированное, а только то,
+    // где исход зависит от фактической отметки.
+    if (crossingTriage.needLevelling.length > 0) {
+      blockers.push(`Контрольное вскрытие: ${crossingTriage.needLevelling.length} пересечений `
+        + `из ${crossings.length}. ${crossingTriage.summary} ${depthBands.reason}`)
+    }
+    if (crossingTriage.conflicts.length > 0) {
+      blockers.push(`Неустранимых измерением пересечений: ${crossingTriage.conflicts.length} — `
+        + 'требуется футляр, перекладка или изменение проектных отметок.')
+    }
+  } else if (unresolved > 0) {
     blockers.push(`Пересечений без снятой отметки: ${unresolved} из ${crossings.length} — `
-      + 'требуется контрольное вскрытие или данные владельца сети.')
+      + 'требуется контрольное вскрытие или данные владельца сети. '
+      + `${depthBands.reason} Отбор на вскрытие не выполнен: не задан требуемый просвет `
+      + '(технические условия владельца сети).')
   }
 
   return {
@@ -187,6 +253,8 @@ export function buildReconstructionFromSurvey(
       : null,
     chainageM,
     totalLengthM,
+    depthBands,
+    crossingTriage,
     blockers,
     reason: chain.length < 2
       ? 'Реконструкция по съёмке не собрана: нет цепочки колодцев.'
