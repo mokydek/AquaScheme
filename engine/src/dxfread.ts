@@ -219,13 +219,54 @@ function canonicalOpenPath(pointKeys: string[]): string {
   return compareStrings(forward, reverse) <= 0 ? forward : reverse
 }
 
+/** Поэлементное сравнение двух путей одинаковой длины. */
+function comparePaths(a: string[], b: string[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1
+  }
+  return 0
+}
+
+/**
+ * Наименьший поворот кольца.
+ *
+ * Раньше канонический вид искался перебором: строились все 2n повёрнутых копий,
+ * каждая через JSON.stringify, и сортировались. Это O(n²) по времени и памяти на
+ * кольцо. Топооснова же полна окружностей, которые CAD разворачивает в кольца из
+ * полутора сотен вершин: на съёмке Станкевича их 158, на Талдыколе 1863, и
+ * классификация чертежа занимала 3,3 с из 3,8 с всей сборки проекта.
+ *
+ * Кандидатами могут быть только повороты, начинающиеся с наименьшей вершины, —
+ * их обычно ровно один. Вырожденное кольцо из одинаковых вершин даст прежнюю
+ * квадратичную оценку, но такое кольцо — точка.
+ */
+function smallestRotation(values: string[]): string[] {
+  const n = values.length
+  let smallest = values[0]
+  for (const value of values) if (value < smallest) smallest = value
+  let best = 0
+  for (let start = 1; start < n; start++) {
+    if (values[start] !== smallest) continue
+    for (let k = 0; k < n; k++) {
+      const a = values[(best + k) % n]
+      const b = values[(start + k) % n]
+      if (a === b) continue
+      if (b < a) best = start
+      break
+    }
+  }
+  return best === 0 ? values : [...values.slice(best), ...values.slice(0, best)]
+}
+
 function canonicalClosedPath(pointKeys: string[]): string {
   const ring = [...pointKeys]
   if (ring.length > 1 && ring[0] === ring[ring.length - 1]) ring.pop()
   if (ring.length === 0) return '[]'
-  const rotations = (values: string[]) => values.map((_value, index) =>
-    JSON.stringify([...values.slice(index), ...values.slice(0, index)]))
-  return [...rotations(ring), ...rotations([...ring].reverse())].sort(compareStrings)[0]
+  const forward = smallestRotation(ring)
+  const backward = smallestRotation([...ring].reverse())
+  // Каждый ключ вершины — JSON-массив в скобках, поэтому склейка без
+  // разделителя остаётся однозначной.
+  return (comparePaths(forward, backward) <= 0 ? forward : backward).join('')
 }
 
 /**

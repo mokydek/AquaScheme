@@ -438,6 +438,48 @@ describe('deduplicateImportSegments', () => {
     expect(result).toHaveLength(3)
     expect(result.map((segment) => segment.points[0].z)).toEqual([350, 349, undefined])
   })
+
+  it('схлопывает любой поворот кольца, а не только записанный первым', () => {
+    // Канонический вид ищется наименьшим поворотом, а не перебором всех 2n
+    // копий кольца: перебор был квадратичным и стоил 3,3 с на классификацию
+    // топоосновы, полной развёрнутых в кольца окружностей.
+    const ring = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]
+    const rotations = ring.map((_, index) => ({
+      layer: 'RING',
+      closed: true,
+      points: [...ring.slice(index), ...ring.slice(0, index)],
+    }))
+    const reversed = rotations.map((segment) => ({
+      ...segment,
+      points: [...segment.points].reverse(),
+    }))
+    expect(deduplicateImportSegments([...rotations, ...reversed])).toHaveLength(1)
+  })
+
+  it('одинаковые вершины в кольце не схлопывают разные кольца', () => {
+    // Вырожденный случай: наименьшая вершина встречается дважды, поэтому
+    // кандидатов на поворот несколько и выбрать надо действительно меньший.
+    const P = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }]
+    const a = [P[0], P[1], P[0], P[2], P[3]]
+    // Тот же обход, начатый с другой вершины.
+    const b = [P[0], P[2], P[0], P[1], P[3]]
+    const result = deduplicateImportSegments([
+      { layer: 'RING', closed: true, points: a },
+      // Поворот того же кольца — обязан схлопнуться.
+      { layer: 'RING', closed: true, points: [...a.slice(2), ...a.slice(0, 2)] },
+      // Другой обход тех же вершин — поворотом не является, обязан остаться.
+      { layer: 'RING', closed: true, points: b },
+    ])
+    expect(result).toHaveLength(2)
+  })
+
+  it('кольцо из совпадающих вершин не зацикливает поиск', () => {
+    const same = Array.from({ length: 40 }, () => ({ x: 3, y: 4 }))
+    expect(deduplicateImportSegments([
+      { layer: 'DEGENERATE', closed: true, points: same },
+      { layer: 'DEGENERATE', closed: true, points: same },
+    ])).toHaveLength(1)
+  })
 })
 
 describe('classifyDxfConstraints', () => {

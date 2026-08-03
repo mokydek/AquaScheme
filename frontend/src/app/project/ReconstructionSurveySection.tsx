@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ReconstructionFromSurvey } from '@aquascheme/engine'
+import type { DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { saveDataset } from '../../shared/datasets'
 import { replaceNetwork } from '../../shared/network'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
@@ -26,7 +27,11 @@ export function ReconstructionSurveySection({
 }) {
   const { t } = useTranslation()
   const [diameterMm, setDiameterMm] = useState('')
+  const [clearanceM, setClearanceM] = useState('')
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
+  // Разобранный чертёж держится отдельно, чтобы просвет можно было уточнить
+  // без повторной загрузки файла: разбор дороже пересборки в несколько раз.
+  const [parsed, setParsed] = useState<DxfNetworkData | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -36,6 +41,18 @@ export function ReconstructionSurveySection({
 
   const diameter = Number(diameterMm)
   const diameterReady = Number.isFinite(diameter) && diameter > 0
+  const clearance = Number(clearanceM)
+  const clearanceReady = clearanceM.trim() !== '' && Number.isFinite(clearance) && clearance > 0
+
+  const rebuild = async (data: DxfNetworkData) => {
+    const { buildReconstructionFromSurvey } = await import('@aquascheme/engine/reconstruction-from-survey')
+    setResult(buildReconstructionFromSurvey(data, {
+      designDiameterMm: diameter,
+      system,
+      // Без величины из ТУ отбор не выполняется: подставлять её нельзя.
+      ...(clearanceReady ? { requiredClearanceM: clearance } : {}),
+    }))
+  }
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -46,21 +63,31 @@ export function ReconstructionSurveySection({
     setBusy(true)
     try {
       const routed = await routeUpload(file, ['dxf'])
-      const [{ parseDxfNetwork }, { buildReconstructionFromSurvey }] = await Promise.all([
-        import('@aquascheme/engine/dxfread'),
-        import('@aquascheme/engine/reconstruction-from-survey'),
-      ])
-      setResult(buildReconstructionFromSurvey(parseDxfNetwork(routed.text ?? ''), {
-        designDiameterMm: diameter,
-        system,
-      }))
+      const { parseDxfNetwork } = await import('@aquascheme/engine/dxfread')
+      const data = parseDxfNetwork(routed.text ?? '')
+      setParsed(data)
+      await rebuild(data)
       setFileName(file.name)
     } catch (error) {
       setMessage(uploadErrorText(t, error) ?? t('upload.unknown'))
       setResult(null)
+      setParsed(null)
     } finally {
       setBusy(false)
       event.target.value = ''
+    }
+  }
+
+  /** Пересборка по уже разобранному чертежу — по уходу фокуса, не на каждый знак. */
+  const onClearanceCommitted = async () => {
+    if (!parsed) return
+    setBusy(true)
+    try {
+      await rebuild(parsed)
+    } catch (error) {
+      setMessage(uploadErrorText(t, error) ?? t('upload.unknown'))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -108,6 +135,11 @@ export function ReconstructionSurveySection({
           totalLengthM: result.totalLengthM,
           crossings: result.crossings.length,
           crossingsLevelled: levelled,
+          // Отбор на вскрытие уходит в отчёт вместе с сетью: без него неясно,
+          // почему выпуск заблокирован именно на стольких пересечениях.
+          crossingsNeedLevelling: result.crossingTriage?.needLevelling.length ?? null,
+          requiredClearanceM: clearanceReady ? clearance : null,
+          depthBandsFromSurvey: result.depthBands.reason,
           grid: result.grid.reason,
         },
       })
@@ -140,6 +172,24 @@ export function ReconstructionSurveySection({
           onChange={(event) => setDiameterMm(event.target.value)}
         />
       </div>
+
+      <div className="section-actions">
+        <label htmlFor={`reconstruction-${projectId}-clearance`}>
+          {t('project.reconstruction.clearance')}
+        </label>
+        <input
+          id={`reconstruction-${projectId}-clearance`}
+          name={`reconstruction-${projectId}-clearance`}
+          type="number"
+          min="0"
+          step="0.05"
+          inputMode="decimal"
+          value={clearanceM}
+          onChange={(event) => setClearanceM(event.target.value)}
+          onBlur={() => void onClearanceCommitted()}
+        />
+      </div>
+      <p className="hint">{t('project.reconstruction.clearanceHint')}</p>
 
       <div className="section-actions">
         <input
@@ -176,6 +226,36 @@ export function ReconstructionSurveySection({
               levelled,
             })}
           </p>
+
+          {Object.keys(result.depthBands.bands).length > 0 && (
+            <p className="stat-line">
+              {t('project.reconstruction.depthBands', {
+                count: Object.keys(result.depthBands.bands).length,
+              })}
+            </p>
+          )}
+
+          {result.crossingTriage && (
+            <>
+              <p className="stat-line">
+                {t('project.reconstruction.triage', {
+                  need: result.crossingTriage.needLevelling.length,
+                  total: result.crossings.length,
+                  cleared: result.crossingTriage.items
+                    .filter((item) => item.verdict === 'clears_by_margin').length,
+                  levelled: result.crossingTriage.items
+                    .filter((item) => item.verdict === 'levelled').length,
+                })}
+              </p>
+              {result.crossingTriage.conflicts.length > 0 && (
+                <p className="stat-line warn">
+                  {t('project.reconstruction.triageConflicts', {
+                    count: result.crossingTriage.conflicts.length,
+                  })}
+                </p>
+              )}
+            </>
+          )}
 
           {result.existing.pipeLabels.length > 0 && (
             <p className="stat-line">
