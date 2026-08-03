@@ -93,6 +93,51 @@ test('gives up instead of polling forever', async () => {
   assert.ok(Date.now() - started < 5000, 'таймаут не сработал')
 })
 
+test('зависший запрос не держит конвертацию вечно', { timeout: 10_000 }, async () => {
+  // Предел в 180 с объявлен, но проверялся только между опросами. Если сам
+  // HTTP-вызов не отвечает, ждать было некому: обещание не завершалось никогда,
+  // а при MAX_CONCURRENT_CONVERSIONS=1 это занимало единственное место очереди.
+  for (const stalled of ['https://api.cloudconvert.com/v2/jobs', 'https://u.test', '/jobs/j', 'https://f.test']) {
+    const provider = createCloudConvert({
+      apiKey: KEY,
+      pollIntervalMs: 0,
+      timeoutMs: 120,
+      sleep: async () => {},
+      fetchImpl: async (url, init) => {
+        if (String(url).includes(stalled)) return new Promise(() => {})
+        if (String(url).endsWith('/jobs') && init?.method === 'POST') {
+          return ok({ data: { id: 'j', tasks: [{ name: 'import-file', result: { form: { url: 'https://u.test' } } }] } })
+        }
+        if (String(url) === 'https://u.test') return ok({})
+        if (String(url).endsWith('/jobs/j')) {
+          return ok({ data: { status: 'finished', tasks: [{ name: 'export-file', result: { files: [{ url: 'https://f.test' }] } }] } })
+        }
+        return bin([7])
+      },
+    })
+    const started = Date.now()
+    await assert.rejects(
+      () => provider.convert(Buffer.from([1]), 'dxf', 'dwg', ''),
+      /не ответил|не завершилось/,
+      `зависание на ${stalled} осталось незамеченным`,
+    )
+    assert.ok(Date.now() - started < 3000, `ожидание на ${stalled} не ограничено`)
+  }
+})
+
+test('проверка готовности тоже ограничена по времени', { timeout: 10_000 }, async () => {
+  const provider = createCloudConvert({
+    apiKey: KEY,
+    readyTimeoutMs: 60,
+    fetchImpl: async () => new Promise(() => {}),
+  })
+  const started = Date.now()
+  const readiness = await provider.ready()
+  assert.equal(readiness.ok, false)
+  assert.match(readiness.reason, /не ответил/)
+  assert.ok(Date.now() - started < 3000, 'проверка готовности зависла')
+})
+
 test('rejects an empty result rather than passing it on', async () => {
   const provider = createCloudConvert({
     apiKey: KEY,

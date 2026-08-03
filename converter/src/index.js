@@ -4,6 +4,7 @@ import multer from 'multer'
 import { selectProvider } from './providers.js'
 import { createCorsPolicy } from './cors-policy.js'
 import { createConversionGuard } from './conversion-guard.js'
+import { sniffFormat } from './drawing-format.js'
 
 /**
  * Drawing conversion microservice, bidirectional since requirements update 3
@@ -55,18 +56,6 @@ function guardConversion(req, res, next) {
 
 const CONTENT_TYPES = { dwg: 'application/acad', dxf: 'application/dxf' }
 
-/**
- * Source format from the file name, falling back to the DWG magic bytes
- * (binary DWG starts with an ASCII version signature such as AC1032).
- * @param {Buffer} buffer
- * @param {string} name
- * @returns {'dwg' | 'dxf'}
- */
-function sniffFormat(buffer, name) {
-  if (/\.dwg$/i.test(name)) return 'dwg'
-  if (/\.dxf$/i.test(name)) return 'dxf'
-  return buffer.subarray(0, 4).toString('latin1') === 'AC10' ? 'dwg' : 'dxf'
-}
 
 app.get('/', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store')
