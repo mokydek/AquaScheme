@@ -61,7 +61,13 @@ function useDatasetForm(
     setBusy(true)
     setNotice(null)
     try {
-      await saveDataset(projectId, kind, content)
+      // Форма правит свои поля, а не весь набор: в той же строке живут и другие
+      // ключи — например, сверки нормативных пунктов, — и запись одних только
+      // преобразованных значений их бы стёрла.
+      await saveDataset(projectId, kind, {
+        ...((dataset?.content ?? {}) as Record<string, unknown>),
+        ...content,
+      })
       setNotice('saved')
       await onSaved()
     } catch {

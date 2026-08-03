@@ -4,6 +4,7 @@ import {
   justified,
   NORM_DOCUMENTS,
   NORM_REGISTRY,
+  isCompleteConfirmation,
   unverifiedClauses,
 } from './normregistry'
 
@@ -66,5 +67,56 @@ describe('norm registry', () => {
     const eco = justified('ПЭ100', [], 'economic', 'норматив выбор не регламентирует')
     expect(eco.basis).toBe('economic')
     expect(eco.note).toContain('не регламентирует')
+  })
+})
+
+describe('сверка пункта инженером проекта', () => {
+  const target = unverifiedClauses()[0]
+  const full = {
+    clauseId: target.id,
+    edition: 'СН РК 4.01-03-2013*, изм. от 07.11.2019',
+    clause: '5.4.7',
+    page: 61,
+    confirmedBy: 'ГИП Иванов',
+  }
+
+  it('полная сверка снимает пункт с неподтверждённых', () => {
+    const before = unverifiedClauses().length
+    const after = unverifiedClauses([full]).length
+    expect(after).toBe(before - 1)
+    expect(unverifiedClauses([full]).some((c) => c.id === target.id)).toBe(false)
+  })
+
+  it('реестр при этом не меняется: сверка живёт в проекте', () => {
+    unverifiedClauses([full])
+    expect(unverifiedClauses().some((c) => c.id === target.id)).toBe(true)
+  })
+
+  it('неполная запись подтверждением не считается', () => {
+    for (const gap of [
+      { edition: '' },
+      { edition: '   ' },
+      { clause: '' },
+      { page: 0 },
+      { page: Number.NaN },
+      { confirmedBy: '' },
+    ]) {
+      const partial = { ...full, ...gap }
+      expect(isCompleteConfirmation(partial)).toBe(false)
+      expect(unverifiedClauses([partial]).some((c) => c.id === target.id)).toBe(true)
+    }
+  })
+
+  it('сверка чужого пункта ничего не снимает', () => {
+    const before = unverifiedClauses().length
+    expect(unverifiedClauses([{ ...full, clauseId: 'нет.такого.пункта' }]).length).toBe(before)
+  })
+
+  it('подтверждённый в реестре пункт повторной сверки не требует', () => {
+    // Список неподтверждённых и так его не содержит, а лишняя запись не должна
+    // ни на что влиять.
+    const verified = NORM_REGISTRY.find((c) => c.status === 'verified')!
+    const before = unverifiedClauses().length
+    expect(unverifiedClauses([{ ...full, clauseId: verified.id }]).length).toBe(before)
   })
 })

@@ -1178,6 +1178,48 @@ export function getClause(id: string): NormClause | undefined {
   return CLAUSE_BY_ID.get(id)
 }
 
-export function unverifiedClauses(): NormClause[] {
-  return NORM_REGISTRY.filter((c) => c.status === 'unverified')
+/**
+ * Сверка пункта с документом, выполненная инженером проекта.
+ *
+ * Реестр помечает пункт неподтверждённым, когда официального документа нет в
+ * комплекте репозитория. Но у проектировщика он есть, и сверка по бумаге —
+ * такое же законное подтверждение, как и транскрипция из PDF. Разница только в
+ * том, кто её выполнил, поэтому запись обязана нести, по чему сверяли:
+ * редакцию, найденный номер пункта, страницу и кто сверял.
+ *
+ * Подтверждение не меняет само значение. Если по документу значение иное, это
+ * не сверка, а исправление реестра — оно вносится в реестр, а не сюда.
+ */
+export interface NormClauseConfirmation {
+  clauseId: string
+  /** Редакция документа, по которой сверяли: «СН РК 4.01-03-2013*, изм. 2019». */
+  edition: string
+  /** Номер пункта, как он найден в документе. */
+  clause: string
+  /** Страница документа. */
+  page: number
+  /** Кто сверил. */
+  confirmedBy: string
+}
+
+/** Подтверждение засчитывается, только когда указано всё, по чему сверяли. */
+export function isCompleteConfirmation(value: NormClauseConfirmation | undefined): boolean {
+  return value !== undefined
+    && value.edition.trim() !== ''
+    && value.clause.trim() !== ''
+    && Number.isFinite(value.page) && value.page > 0
+    && value.confirmedBy.trim() !== ''
+}
+
+/**
+ * Пункты, остающиеся неподтверждёнными.
+ *
+ * Без аргумента — как записано в реестре. С подтверждениями проекта — за
+ * вычетом тех, которые инженер сверил с документом.
+ */
+export function unverifiedClauses(confirmations: NormClauseConfirmation[] = []): NormClause[] {
+  const confirmed = new Set(
+    confirmations.filter((item) => isCompleteConfirmation(item)).map((item) => item.clauseId),
+  )
+  return NORM_REGISTRY.filter((c) => c.status === 'unverified' && !confirmed.has(c.id))
 }

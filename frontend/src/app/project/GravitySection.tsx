@@ -28,7 +28,7 @@ import type {
   WorkingDrawingDeliverableRequirements,
 } from '@aquascheme/engine'
 import type { ParcelRow } from '../../shared/parcels'
-import type { NormativeParams } from '@aquascheme/engine'
+import type { NormativeParams, NormClauseConfirmation } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
@@ -420,7 +420,12 @@ export function GravitySection({
     return audit?.unresolved?.layers ?? constraints?.unresolvedLayers?.length ?? 0
   }, [constraints, routeAuditDataset])
   const workingDrawingSet = useMemo(() => {
-    const applicableUnverifiedClauses = unverifiedClauses()
+    // Сверки, выполненные инженером по бумажному документу, — такое же
+    // подтверждение, как транскрипция из PDF, и снимают пункт для этого проекта.
+    const clauseConfirmations = ((normsDataset?.content ?? {}) as {
+      clauseConfirmations?: NormClauseConfirmation[]
+    }).clauseConfirmations ?? []
+    const applicableUnverifiedClauses = unverifiedClauses(clauseConfirmations)
       .filter((clause) => clause.appliesSystem.includes(systemType))
     return buildWorkingDrawingSet({
       system: systemType,

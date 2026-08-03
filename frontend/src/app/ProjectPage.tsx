@@ -846,7 +846,11 @@ export function ProjectPage() {
           />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />
           {isWater && <DemandSection buildings={buildings} normsDataset={datasets.normative} />}
-          <NormRegistrySection />
+          <NormRegistrySection
+            projectId={project.id}
+            dataset={datasets.normative}
+            onSaved={load}
+          />
         </div>
       </div>
     </section>
