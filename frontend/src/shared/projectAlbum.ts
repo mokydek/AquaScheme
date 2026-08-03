@@ -11,7 +11,9 @@ import type {
   WorkingDrawingSet,
   WorkingDrawingSheet,
 } from '@aquascheme/engine'
-import { buildPlanSheetScene } from './planScene'
+import { contoursFromSurvey } from '@aquascheme/engine'
+import type { ContourResult } from '@aquascheme/engine'
+import { buildPlanSheetScene, clipPlanPolyline } from './planScene'
 import type { PlanPipeDesign } from './planScene'
 import { buildTitleBlock } from './titleBlock'
 import type { TitleBlockSignatory } from './titleBlock'
@@ -181,6 +183,65 @@ function cadContextSvg(
   return contextLines + terrainLines + blocks + labels
 }
 
+/**
+ * Горизонтали считаются один раз на альбом и сразу по всей съёмке.
+ *
+ * Полистный расчёт был бы неверен: треугольники на краю окна у соседних листов
+ * получились бы разными, и горизонталь на склейке не сошлась бы. Поэтому
+ * поверхность строится по всем точкам, а лист лишь вырезает своё окно.
+ */
+const albumContourCache = new WeakMap<SurveyPoint[], ContourResult>()
+
+function albumContours(points: SurveyPoint[]): ContourResult {
+  const cached = albumContourCache.get(points)
+  if (cached) return cached
+  const built = contoursFromSurvey(points)
+  albumContourCache.set(points, built)
+  return built
+}
+
+/**
+ * Горизонтали на лист плана.
+ *
+ * Это единственные горизонтали с известной отметкой: линейная графика рельефа
+ * из чертежа приходит без отметок (проверено на обоих реальных объектах — ни
+ * кода 38, ни Z у вершин), поэтому подписать её нечем. Выведенные из съёмки
+ * подписываются, и каждая пятая проводится утолщённой.
+ */
+function contourSvg(relief: ContourResult, project: SvgProjector, bounds: Bounds): string {
+  if (relief.lines.length === 0) return ''
+  const parts: string[] = []
+  const labelled: Array<{ x: number; y: number }> = []
+  for (const line of relief.lines) {
+    for (const fragment of clipPlanPolyline(line.points, bounds)) {
+      const projected = fragment.map(project)
+      if (projected.length < 2) continue
+      parts.push(
+        `<polyline data-contour="${line.levelM}" points="${projected
+          .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')}"`
+        + ` fill="none" stroke="#8a6b3d" stroke-width="${line.index ? 1.1 : 0.6}"`
+        + ' stroke-linejoin="round" stroke-opacity="0.85"/>',
+      )
+      if (!line.index || projected.length < 3) continue
+      // Подпись ставится на утолщённой горизонтали и разворачивается по её
+      // направлению — как на топоплане. Рядом стоящие подписи пропускаются,
+      // иначе на пологом участке они слипаются в кашу.
+      const middle = projected[Math.floor(projected.length / 2)]
+      if (labelled.some((mark) => Math.hypot(mark.x - middle.x, mark.y - middle.y) < 90)) continue
+      labelled.push(middle)
+      const before = projected[Math.floor(projected.length / 2) - 1]
+      let angle = Math.atan2(middle.y - before.y, middle.x - before.x) * 180 / Math.PI
+      if (angle > 90 || angle < -90) angle += 180
+      parts.push(
+        `<g transform="translate(${middle.x.toFixed(1)} ${middle.y.toFixed(1)}) rotate(${angle.toFixed(1)})">`
+        + '<rect x="-11" y="-4.5" width="22" height="9" fill="#fff" fill-opacity="0.9"/>'
+        + `<text x="0" y="2.5" text-anchor="middle" font-size="6.5" fill="#8a6b3d">${line.levelM.toFixed(2)}</text></g>`,
+      )
+    }
+  }
+  return parts.join('')
+}
+
 function planSvg(
   input: ProjectAlbumInput,
   sheet: WorkingDrawingSheet,
@@ -257,6 +318,13 @@ function planSvg(
     ...(input.constraints?.guideLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#168047" stroke-width="1.3" stroke-dasharray="7 3"/>`),
     ...(input.constraints?.hardObstacles ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#333" stroke-width="2"/>`),
   ].join('')
+  const relief = albumContours(input.surveyPoints)
+  const contours = contourSvg(relief, project, {
+    minX: window.minX,
+    maxX: window.maxX,
+    minY: window.minY,
+    maxY: window.maxY,
+  })
   const stride = Math.max(1, Math.ceil(topo.length / 360))
   const topoSvg = topo.filter((_, index) => index % stride === 0).map((point, index) => {
     const projected = project(point)
@@ -306,7 +374,7 @@ function planSvg(
   const ox = (value: number) => canvasWidth - 175 + (value - minX) * overviewScale
   const oy = (value: number) => 110 - (value - minY) * overviewScale
   const axisRotationDeg = Math.atan2(axisEnd.y - axisStart.y, axisEnd.x - axisStart.x) * 180 / Math.PI
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${topoSvg}${networkPipes}<polyline data-plan-route="true" points="${route}" fill="none" stroke="#1746b5" stroke-width="4.8" stroke-linejoin="round"/>${stationMarks}${nodeMarks}${pipeLabels}</g>${missingContext}<g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/><polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/><text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><g transform="translate(42 414)" font-size="7"><rect x="0" y="0" width="310" height="39" fill="#fff" fill-opacity="0.94" stroke="#888"/><line x1="8" y1="11" x2="34" y2="11" stroke="#1746b5" stroke-width="4"/><text x="40" y="14">проектная ось</text><circle cx="132" cy="11" r="3" fill="#fff" stroke="#1746b5"/><text x="140" y="14">колодец / камера</text><line x1="222" y1="11" x2="248" y2="11" stroke="#d33" stroke-dasharray="5 4"/><text x="254" y="14">граница листа</text><line x1="8" y1="28" x2="34" y2="28" stroke="#9b2c8c" stroke-dasharray="5 3"/><text x="40" y="31">существующая сеть</text><line x1="132" y1="28" x2="158" y2="28" stroke="#78906d"/><text x="164" y="31">рельеф / подоснова</text></g><text x="40" y="485" font-size="8">Основание: ${scene.contextFeatureCount} объектов CAD/топоподосновы; ${topo.length} отметок в окне; ${scene.pipes.length} участков сети. Масштаб 1:${PLAN_SCALE_DENOMINATOR}.</text></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${contours}${topoSvg}${networkPipes}<polyline data-plan-route="true" points="${route}" fill="none" stroke="#1746b5" stroke-width="4.8" stroke-linejoin="round"/>${stationMarks}${nodeMarks}${pipeLabels}</g>${missingContext}<g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/><polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/><text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><g transform="translate(42 414)" font-size="7"><rect x="0" y="0" width="310" height="39" fill="#fff" fill-opacity="0.94" stroke="#888"/><line x1="8" y1="11" x2="34" y2="11" stroke="#1746b5" stroke-width="4"/><text x="40" y="14">проектная ось</text><circle cx="132" cy="11" r="3" fill="#fff" stroke="#1746b5"/><text x="140" y="14">колодец / камера</text><line x1="222" y1="11" x2="248" y2="11" stroke="#d33" stroke-dasharray="5 4"/><text x="254" y="14">граница листа</text><line x1="8" y1="28" x2="34" y2="28" stroke="#9b2c8c" stroke-dasharray="5 3"/><text x="40" y="31">существующая сеть</text><line x1="132" y1="28" x2="158" y2="28" stroke="#78906d"/><text x="164" y="31">рельеф / подоснова</text><line x1="222" y1="28" x2="248" y2="28" stroke="#8a6b3d" stroke-width="1.1"/><text x="254" y="31">${relief.lines.length > 0 ? `горизонтали, сечение ${relief.stepM} м` : 'горизонтали не построены'}</text></g><text x="40" y="485" font-size="8">Основание: ${scene.contextFeatureCount} объектов CAD/топоподосновы; ${topo.length} отметок в окне; ${scene.pipes.length} участков сети. ${relief.lines.length > 0 ? `Горизонтали через ${relief.stepM} м выведены по ${input.surveyPoints.length} отметкам съёмки.` : xmlText(relief.reason)} Масштаб 1:${PLAN_SCALE_DENOMINATOR}.</text></svg>`
 }
 
 function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {

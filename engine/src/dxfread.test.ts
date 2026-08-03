@@ -577,6 +577,39 @@ describe('classifyDxfConstraints', () => {
     expect(data.contextLines).toHaveLength(1)
     expect(data.terrainLines).toHaveLength(1)
   })
+
+  it('не записывает в рельеф слой только за то, что у него есть отметки', () => {
+    // Прежнее правило «в слое есть точки с конечным Z → terrain» на реальном
+    // чертеже относило к рельефу растительность, кустарники, коды условных
+    // знаков и слой `0` — 6 453 линии из 6 490, — и лист плана рисовал их
+    // цветом горизонталей.
+    const data = classifyDxfConstraints({
+      ok: true,
+      points: [{ x: 5, y: 5, z: 345.6 }],
+      layers: [
+        { name: 'растительность', segments: 1, points: 3, zMin: 344, zMax: 348 },
+        { name: '71211200_Кустарники_заросли', segments: 1, points: 3, zMin: 344, zMax: 348 },
+        { name: '0', segments: 1, points: 9, zMin: 333, zMax: 383 },
+        { name: 'РЕЛЬЕФ', segments: 1, points: 0 },
+      ],
+      segments: [
+        { layer: 'растительность', points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] },
+        { layer: '71211200_Кустарники_заросли', points: [{ x: 0, y: 2 }, { x: 10, y: 2 }] },
+        { layer: '0', points: [{ x: 0, y: 4 }, { x: 10, y: 4 }] },
+        { layer: 'РЕЛЬЕФ', points: [{ x: 0, y: 6 }, { x: 10, y: 6 }] },
+      ],
+    })
+    expect(data.roles['растительность']).toBe('unknown')
+    expect(data.roles['71211200_Кустарники_заросли']).toBe('unknown')
+    expect(data.roles['0']).toBe('unknown')
+    // Слой, названный рельефом, рельефом и остаётся.
+    expect(data.roles['РЕЛЬЕФ']).toBe('terrain')
+    expect(data.terrainLines).toHaveLength(1)
+    // Ничего не потеряно: снятое с рельефа выводится ситуационной подложкой,
+    // а отметки съёмки берутся из геометрии независимо от роли слоя.
+    expect(data.contextLines).toHaveLength(4)
+    expect(data.surveyPoints).toHaveLength(1)
+  })
 })
 
 function surveyFixture(zs: Array<number | null>): string {

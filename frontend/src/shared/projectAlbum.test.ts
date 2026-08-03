@@ -148,6 +148,39 @@ describe('project working-drawing album', () => {
     expect(serialized).toContain('data-plan-node')
   })
 
+  it('проводит на листе плана горизонтали по отметкам съёмки и подписывает их', () => {
+    // Сетка отметок вдоль трассы: скат с перепадом 3 м даёт сечение 0,5 м.
+    const grid: Array<{ x: number; y: number; z: number }> = []
+    for (let i = 0; i <= 12; i++) {
+      for (let j = 0; j <= 4; j++) {
+        grid.push({ x: i * 55, y: j * 25, z: 100 - i * 0.25 + j * 0.05 })
+      }
+    }
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints: grid, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content)
+    expect(serialized).toContain('data-contour')
+    expect(serialized).toContain('Горизонтали через 0.5 м выведены по 65 отметкам съёмки')
+    expect(serialized).toContain('горизонтали, сечение 0.5 м')
+    // Подпись отметки стоит на утолщённых горизонталях: кратные 2,5 м.
+    expect(serialized).toContain('97.50')
+  })
+
+  it('без достаточной съёмки не рисует горизонтали и говорит почему', () => {
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints: [], manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content)
+    expect(serialized).not.toContain('data-contour')
+    expect(serialized).toContain('горизонтали не построены')
+    expect(serialized).toContain('Точек съёмки меньше трёх')
+  })
+
   it('assigns tagged crossings to only their owning profile', () => {
     const legacy = { id: 'LEGACY', stationM: 10, kind: 'utility' }
     expect(crossingBelongsToProfile(legacy, undefined, ['MAIN'])).toBe(true)

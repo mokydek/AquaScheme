@@ -268,7 +268,6 @@ export function classifyDxfConstraints(
   roleOverrides: Partial<Record<string, DxfLayerRole>> = {},
 ): DxfConstraintData {
   const roles: Record<string, DxfLayerRole> = {}
-  const layerInfo = new Map(data.layers.map((layer) => [layer.name, layer]))
   const roleOf = (layer: string): DxfLayerRole => {
     const name = normalizedLayer(layer)
     if (roleOverrides[layer]) return roleOverrides[layer] as DxfLayerRole
@@ -298,8 +297,14 @@ export function classifyDxfConstraints(
     if (/трубопровод|водопро|канализ|ливнев|дренаж|кабел|газоснаб|газопро|теплосет|теплотр|электро|связи|лин_свя|лэп/
       .test(name)) return 'utility'
     if (/проект.*(трас|осев|коллектор)|(^|[_ -])к2([_ -]|$)/.test(name)) return 'candidateRoute'
-    const info = layerInfo.get(layer)
-    if (info && info.points > 0 && Number.isFinite(info.zMin) && Number.isFinite(info.zMax)) return 'terrain'
+    // Раньше здесь стоял отлов: «в слое есть точки с конечным Z — значит
+    // рельеф». В топосъёмке этому условию отвечает почти всё. На реальном
+    // чертеже Талдыколя он относил к рельефу 6 453 линии из 6 490 — слой `0`
+    // (362 тыс. вершин), «растительность», «Кустарники_заросли» и коды
+    // условных знаков, — и лист плана рисовал кусты цветом горизонталей.
+    // Настоящие слои рельефа на обоих объектах опознаются по имени. Ничего не
+    // теряется: вся эта геометрия остаётся в contextLines и выводится как
+    // ситуационная подложка.
     return 'unknown'
   }
 
