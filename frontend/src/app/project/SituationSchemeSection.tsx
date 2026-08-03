@@ -15,13 +15,15 @@ import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow, SourceData } from '../../shared/datasets'
 import type { ParcelRow } from '../../shared/parcels'
 import { Panel } from './Panel'
+import { PressureMainView } from './PressureMainView'
+import type { PumpCatalogContent } from './PumpCatalogSection'
 import { PipeCalculationsView } from './PipeCalculationsView'
 import { LiveSituationMap } from './LiveSituationMap'
 import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
 import { freezingDepthStatus } from '../../shared/geologyStatus'
 import { formatAppError } from '../../shared/errorFormatting'
 
-type View = 'inputs' | 'constraints' | 'route' | 'profile' | 'calculations' | 'crossings' | 'blockers' | 'comparison'
+type View = 'inputs' | 'constraints' | 'route' | 'profile' | 'calculations' | 'pressure' | 'crossings' | 'blockers' | 'comparison'
 
 interface RouteState {
   status: 'stale' | 'blocked' | 'preliminary' | 'calculated'
@@ -49,6 +51,7 @@ const TABS: Array<{ id: View; label: string }> = [
   { id: 'route', label: 'Трасса на карте' },
   { id: 'profile', label: 'Продольный профиль' },
   { id: 'calculations', label: 'Трубы и диаметры' },
+  { id: 'pressure', label: 'Напор и насосы' },
   { id: 'crossings', label: 'Пересечения' },
   { id: 'blockers', label: 'Блокеры' },
   { id: 'comparison', label: 'Сравнение' },
@@ -66,6 +69,7 @@ export function SituationSchemeSection({
   constraintsDataset,
   routeAuditDataset,
   sourceDataset,
+  pumpCatalogDataset,
   parcels,
   activeCatalogId,
   routeState,
@@ -82,6 +86,7 @@ export function SituationSchemeSection({
   constraintsDataset?: DatasetRow
   routeAuditDataset?: DatasetRow
   sourceDataset?: DatasetRow
+  pumpCatalogDataset?: DatasetRow
   parcels?: ParcelRow[]
   activeCatalogId: string | null
   routeState: RouteState
@@ -375,6 +380,13 @@ export function SituationSchemeSection({
       ) : <p className="notice error">Сеть не рассчитана.</p>)}
 
       {view === 'calculations' && model && <PipeCalculationsView pipes={model.gravity.pipes} nodeLabel={nodeLabel} />}
+      {view === 'pressure' && (model
+        ? <PressureMainView
+            pressure={model.pressure}
+            designFlowLps={model.outletFlowLps}
+            catalog={(pumpCatalogDataset?.content ?? {}) as PumpCatalogContent}
+          />
+        : <p className="notice error">Сеть не рассчитана.</p>)}
       {view === 'profile' && (
         model?.gravity.profile ? <div>{surveyCoverage && <p className={surveyCoverage.gapPoints > 0 ? 'notice error' : 'stat-line ok'}>Покрытие топосъёмкой: медиана {surveyCoverage.medianNearestM} м, P95 {surveyCoverage.p95NearestM} м, максимум {surveyCoverage.maximumNearestM} м; пробелов более {surveyCoverage.gapThresholdM} м — {surveyCoverage.gapPoints}.</p>}<div className="table-wrap"><table className="data-table"><thead><tr><th>Узел</th><th className="num">Пикетаж, м</th><th className="num">Земля, м</th><th className="num">Лоток, м</th><th className="num">Глубина, м</th></tr></thead><tbody>{model.gravity.profile.stations.map((station) => <tr key={station.nodeId}><td>{nodeLabel(station.nodeId)}</td><td className="num">{station.chainageM.toFixed(1)}</td><td className="num">{station.groundElevationM.toFixed(2)}</td><td className="num">{station.invertElevationM.toFixed(2)}</td><td className="num">{station.depthM.toFixed(2)}</td></tr>)}</tbody></table></div></div> : <p className="notice error">Профиль заблокирован: нет связной самотёчной ветви до ЛНС или отметок рельефа.</p>
       )}

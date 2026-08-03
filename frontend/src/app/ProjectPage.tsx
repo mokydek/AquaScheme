@@ -24,6 +24,7 @@ import { ParcelsSection } from './project/ParcelsSection'
 import { BasisSection } from './project/BasisSection'
 import { CatalogSection } from './project/CatalogSection'
 import { ManholeCatalogSection } from './project/ManholeCatalogSection'
+import { PumpCatalogSection } from './project/PumpCatalogSection'
 import { fetchCatalogs } from '../shared/catalog'
 import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
@@ -723,6 +724,7 @@ export function ProjectPage() {
               constraintsDataset={datasets.route_constraints}
               routeAuditDataset={datasets.route_audit}
               sourceDataset={datasets.source}
+              pumpCatalogDataset={datasets.pump_catalog}
               parcels={parcels}
               activeCatalogId={project.active_catalog_id ?? null}
               routeState={{
@@ -811,6 +813,7 @@ export function ProjectPage() {
                 onChanged={load}
               />
               <ManholeCatalogSection projectId={project.id} dataset={datasets.manhole_catalog} onSaved={load} />
+              <PumpCatalogSection projectId={project.id} dataset={datasets.pump_catalog} onSaved={load} />
             </>
           )}
           <BuildingsSection

@@ -14,6 +14,9 @@ export type DatasetKind =
   | 'route_constraints'
   | 'route_audit'
   | 'manhole_catalog'
+  // Каталог насосов на трассу не влияет, поэтому его изменение, в отличие от
+  // каталога колодцев, не переводит расчёт трассы в 'stale'.
+  | 'pump_catalog'
 
 export interface DatasetRow {
   id: string
