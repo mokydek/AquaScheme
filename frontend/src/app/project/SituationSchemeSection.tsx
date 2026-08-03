@@ -8,7 +8,7 @@ import {
   solveGravityNetwork,
   solvePressureMain,
 } from '@aquascheme/engine'
-import type { RouteConstraintInput } from '@aquascheme/engine'
+import type { RouteConstraintInput, SurveyPoint } from '@aquascheme/engine'
 import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
 import { networkFromRows, replaceNetwork, routeInputHash } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
@@ -132,6 +132,18 @@ export function SituationSchemeSection({
     [activeCatalogId, currentCatalogDiameters, currentCatalogError],
   )
 
+  // Отметки съёмки берутся в одном месте: они приходят либо разобранными
+  // вместе с ограничениями чертежа, либо отдельным набором топографии. Пока
+  // выбор повторялся в каждом расчёте, он успел разойтись — покрытие трассы
+  // проверялось выражением, которое пустой массив в ограничениях считало
+  // готовым ответом и до набора топографии уже не доходило.
+  const surveyPoints = useMemo(
+    () => (constraints?.surveyPoints?.length
+      ? constraints.surveyPoints
+      : ((topographyDataset?.content ?? {}) as { points?: SurveyPoint[] }).points ?? []),
+    [constraints, topographyDataset],
+  )
+
   const model = useMemo(() => {
     if (routeState.status === 'blocked' || routeState.status === 'stale' || pipes.length === 0 || !catalogResolution.ready) return null
     const network = networkFromRows(nodes, pipes)
@@ -211,9 +223,6 @@ export function SituationSchemeSection({
     try {
       await paint('Проверка исходных точек, ЛНС и системы координат…')
       if (!constraints || !constraints.lns || !source) throw new Error('Нет ЛНС, выпуска или структурированных ограничений DWG.')
-      const surveyPoints = constraints.surveyPoints?.length
-        ? constraints.surveyPoints
-        : ((topographyDataset?.content ?? {}) as { points?: Array<{ x: number; y: number; z: number }> }).points ?? []
       await paint('Построение маски запретных зон и инженерного коридора…')
       const running = runEngineeringRouteInWorker({
         facilities: buildings.map((building) => ({
@@ -302,10 +311,9 @@ export function SituationSchemeSection({
   }, [basisDataset, model])
   const surveyCoverage = useMemo(() => {
     if (!model) return null
-    const survey = constraints?.surveyPoints ?? ((topographyDataset?.content ?? {}) as { points?: Array<{ x: number; y: number; z: number }> }).points ?? []
     const paths = model.network.pipes.flatMap((pipe) => pipe.alignment?.length ? [{ points: pipe.alignment }] : [])
-    return assessRouteSurveyCoverage(paths, survey, 50, 75)
-  }, [model, constraints, topographyDataset])
+    return assessRouteSurveyCoverage(paths, surveyPoints, 50, 75)
+  }, [model, surveyPoints])
 
   return (
     <Panel title="Ситуационная схема и инженерная трасса" status={model ? 'filled' : 'empty'}>
@@ -361,6 +369,7 @@ export function SituationSchemeSection({
           pipeDiameterMm={model.pipeDiameterMm}
           corridorRings={corridorRings}
           constraints={constraints ?? undefined}
+          surveyPoints={surveyPoints}
           outletFlowLps={model.outletFlowLps}
         />
       ) : <p className="notice error">Сеть не рассчитана.</p>)}

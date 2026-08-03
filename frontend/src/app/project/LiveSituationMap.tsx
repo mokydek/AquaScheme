@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { localToLonLat } from '@aquascheme/engine'
-import type { RouteConstraintInput, RouteGeoreference, TracedNetwork } from '@aquascheme/engine'
+import { contoursFromSurvey, localToLonLat } from '@aquascheme/engine'
+import type { RouteConstraintInput, RouteGeoreference, SurveyPoint, TracedNetwork } from '@aquascheme/engine'
 import { normalizeLeafletLayerInputs } from './leafletLayerInputs'
+import { contourMapShapes } from './contourLayer'
 
 type LocalPoint = { x: number; y: number }
 
@@ -84,6 +85,7 @@ export function LiveSituationMap({
   buildings,
   corridorRings,
   constraints,
+  surveyPoints,
   outletFlowLps,
 }: {
   network: TracedNetwork
@@ -94,11 +96,22 @@ export function LiveSituationMap({
   buildings: Array<{ x: number; y: number; label?: string | null }>
   corridorRings: Array<Array<LocalPoint>>
   constraints?: RouteConstraintInput
+  surveyPoints?: SurveyPoint[]
   outletFlowLps?: number
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapControlScope = `situation-map-${useId()}`
   const [ready, setReady] = useState(false)
+
+  // Горизонтали считаются в местных метрах и кладутся на карту той же
+  // проекцией, что и остальные слои. Переводить их в градусы отдельно нельзя:
+  // для непривязанного чертежа это подставило бы якорь по умолчанию и увело
+  // рельеф за сотни километров от объекта, тогда как карта в этом случае
+  // намеренно остаётся в координатной плоскости.
+  const relief = useMemo(
+    () => (surveyPoints && surveyPoints.length >= 3 ? contoursFromSurvey(surveyPoints) : null),
+    [surveyPoints],
+  )
 
   useEffect(() => {
     const container = containerRef.current
@@ -144,6 +157,20 @@ export function LiveSituationMap({
     const parcelLayer = L.layerGroup()
     const protectionLayer = L.layerGroup()
     const approvedCrossingLayer = L.layerGroup()
+    const contourLayer = L.layerGroup()
+
+    const contours = contourMapShapes(relief, toMapPoint)
+    for (const line of contours.lines) {
+      L.polyline(line.points, {
+        color: '#a8783c', weight: line.weight, opacity: line.opacity, interactive: false,
+      }).addTo(contourLayer)
+    }
+    for (const label of contours.labels) {
+      L.marker(label.at, {
+        interactive: false,
+        icon: L.divIcon({ className: 'contour-map-label', html: label.text, iconSize: [40, 14], iconAnchor: [20, 7] }),
+      }).addTo(contourLayer)
+    }
 
     for (const ring of corridorRings) {
       const positions = ring.map(toMapPoint)
@@ -280,6 +307,9 @@ export function LiveSituationMap({
         'Рельеф OpenTopoMap': reliefMap,
       } : {},
       {
+        ...(relief && relief.lines.length > 0
+          ? { [`Горизонтали съёмки, через ${relief.stepM} м`]: contourLayer }
+          : {}),
         'Полоса отвода (проверочная)': corridorLayer,
         'Направляющая ось генплана': guideLayer,
         'Красные линии DWG': redLineLayer,
@@ -316,7 +346,7 @@ export function LiveSituationMap({
       map.remove()
       setReady(false)
     }
-  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, verifiedProjectGeometryOnly, buildings, corridorRings, constraints, outletFlowLps, mapControlScope])
+  }, [network, pipeDiameterMm, pipeDisplayLabel, pipePaths, verifiedProjectGeometryOnly, buildings, corridorRings, constraints, outletFlowLps, mapControlScope, relief])
 
   return (
     <div className="live-situation-map-wrap">
@@ -328,6 +358,17 @@ export function LiveSituationMap({
           : ''}
         Плановая ось строится по структурированным слоям DWG, а инженерные отметки берутся из топосъёмки. Синий цвет — самотёк до ЛНС, оранжевый — отдельная напорная система после ЛНС.
       </p>
+      {relief && (
+        relief.lines.length > 0 ? (
+          <p className="stat-line">
+            Горизонтали по треугольникам съёмки: {relief.lines.length} линий через {relief.stepM} м, отметки от {relief.zMinM.toFixed(2)} до {relief.zMaxM.toFixed(2)} м.
+            {' '}Треугольников {relief.triangles}; отброшено как накрывающие неснятые участки — {relief.skippedTriangles} (сторона длиннее {relief.maxEdgeM.toFixed(1)} м).
+            {' '}За снятую площадь рельеф не продолжается: в пробелах съёмки горизонталей нет, и это не изъян отрисовки.
+          </p>
+        ) : (
+          <p className="notice">Горизонтали не построены: {relief.reason}</p>
+        )
+      )}
       {constraints?.georeference?.kind === 'survey_grid' ? (
         <p className="notice">Координаты подтверждены координатной сеткой чертежа: масштаб, разворот и начало координат известны, поэтому планы и профили выпускать можно. Датум из сетки не следует, и подложка OSM не подкладывается — иначе объект встал бы не на своё место. Задайте proj4 либо контрольные точки, если нужна карта.</p>
       ) : !constraints?.georeference

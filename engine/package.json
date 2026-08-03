@@ -10,10 +10,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./terrain": {
-      "types": "./src/terrain.ts",
-      "default": "./src/terrain.ts"
-    },
     "./hydraulics": {
       "types": "./src/hydraulics.ts",
       "default": "./src/hydraulics.ts"
@@ -45,7 +41,6 @@
   },
   "dependencies": {
     "@tarikjabiri/dxf": "^2.8.9",
-    "@turf/turf": "^7.2.0",
     "dxf-parser": "^1.1.2",
     "epanet-js": "^0.9.0"
   },

@@ -941,6 +941,17 @@ textarea {
   font-weight: 700;
 }
 
+/* Подпись отметки утолщённой горизонтали: читается поверх подложки, но не
+   перебивает проектную сеть — рельеф здесь подоснова, а не предмет чертежа. */
+.contour-map-label {
+  display: grid !important;
+  place-items: center;
+  background: rgb(255 255 255 / 78%);
+  color: #7a5525;
+  font: 600 10px/1 var(--font-mono);
+  white-space: nowrap;
+}
+
 .situation-map-legend {
   display: flex;
   flex-direction: column;
