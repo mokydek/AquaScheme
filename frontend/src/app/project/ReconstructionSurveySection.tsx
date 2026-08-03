@@ -2,7 +2,8 @@ import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ReconstructionFromSurvey } from '@aquascheme/engine'
-import type { DxfNetworkData } from '@aquascheme/engine/dxfread'
+import type { DxfLayerRole, DxfNetworkData } from '@aquascheme/engine/dxfread'
+import { DxfLayerRoleTable } from './DxfLayerRoleTable'
 import { saveDataset } from '../../shared/datasets'
 import { replaceNetwork } from '../../shared/network'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
@@ -32,6 +33,9 @@ export function ReconstructionSurveySection({
   // Разобранный чертёж держится отдельно, чтобы просвет можно было уточнить
   // без повторной загрузки файла: разбор дороже пересборки в несколько раз.
   const [parsed, setParsed] = useState<DxfNetworkData | null>(null)
+  // Роли, назначенные инженером: без них нераспознанные слои блокируют выпуск,
+  // а снять блок на этом пути было негде.
+  const [roleOverrides, setRoleOverrides] = useState<Partial<Record<string, DxfLayerRole>>>({})
   const [fileName, setFileName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -44,14 +48,33 @@ export function ReconstructionSurveySection({
   const clearance = Number(clearanceM)
   const clearanceReady = clearanceM.trim() !== '' && Number.isFinite(clearance) && clearance > 0
 
-  const rebuild = async (data: DxfNetworkData) => {
+  const rebuild = async (
+    data: DxfNetworkData,
+    overrides: Partial<Record<string, DxfLayerRole>> = roleOverrides,
+  ) => {
     const { buildReconstructionFromSurvey } = await import('@aquascheme/engine/reconstruction-from-survey')
     setResult(buildReconstructionFromSurvey(data, {
       designDiameterMm: diameter,
       system,
+      roleOverrides: overrides,
       // Без величины из ТУ отбор не выполняется: подставлять её нельзя.
       ...(clearanceReady ? { requiredClearanceM: clearance } : {}),
     }))
+  }
+
+  /** Назначение роли слою пересобирает проект: роль меняет и подоснову, и сети. */
+  const onLayerRole = async (layer: string, role: DxfLayerRole) => {
+    const next = { ...roleOverrides, [layer]: role }
+    setRoleOverrides(next)
+    if (!parsed) return
+    setBusy(true)
+    try {
+      await rebuild(parsed, next)
+    } catch (error) {
+      setMessage(uploadErrorText(t, error) ?? t('upload.unknown'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -312,6 +335,16 @@ export function ReconstructionSurveySection({
           {result.blockers.map((blocker) => (
             <p className="stat-line warn" key={blocker}>{blocker}</p>
           ))}
+
+          {parsed && (
+            <DxfLayerRoleTable
+              idPrefix={`reconstruction-${projectId}`}
+              layers={parsed.layers}
+              roles={result.constraints.roles}
+              onChange={(layer, role) => void onLayerRole(layer, role)}
+              disabled={busy}
+            />
+          )}
 
           <div className="section-actions">
             <button

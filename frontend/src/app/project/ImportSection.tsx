@@ -15,6 +15,7 @@ import type { SourceData } from '../../shared/datasets'
 import { Panel } from './Panel'
 import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
 import { buildDxfCadContext } from '../../shared/dxfContext'
+import { DxfLayerRoleTable, DXF_ROLE_OPTIONS } from './DxfLayerRoleTable'
 
 type Parsed =
   | { kind: 'dxf'; data: DxfNetworkData; constraints: DxfConstraintData }
@@ -23,26 +24,6 @@ type Parsed =
 type GeorefMode = 'none' | 'points' | 'proj4'
 type SourceConfirmationKey = 'buildings' | 'utilities' | 'roads' | 'hydrography' | 'parcels' | 'protectionZones'
 
-const ROLE_OPTIONS: Array<{ value: DxfLayerRole; label: string }> = [
-  { value: 'corridor', label: 'Коридор' },
-  { value: 'guideAxis', label: 'Направляющая ось' },
-  { value: 'redLine', label: 'Красная линия' },
-  { value: 'utility', label: 'Существующая коммуникация' },
-  { value: 'road', label: 'Автомобильная дорога' },
-  { value: 'railway', label: 'Железная дорога' },
-  { value: 'hydrography', label: 'Гидрография' },
-  { value: 'terrain', label: 'Высоты/рельеф' },
-  { value: 'terrainBreakline', label: 'Структурная линия рельефа' },
-  { value: 'building', label: 'Здание' },
-  { value: 'structure', label: 'Сооружение' },
-  { value: 'parcel', label: 'Земельный участок' },
-  { value: 'protectionZone', label: 'Охранная зона' },
-  { value: 'forbiddenZone', label: 'Запрещённая зона' },
-  { value: 'approvedCrossing', label: 'Согласованное окно пересечения' },
-  { value: 'candidateRoute', label: 'Готовая ось (только импорт)' },
-  { value: 'ignore', label: 'Проверено: не инженерный слой' },
-  { value: 'unknown', label: 'Не классифицировано' },
-]
 
 const CP_KEYS = ['ax', 'ay', 'AX', 'AY', 'bx', 'by', 'BX', 'BY'] as const
 type CpKey = (typeof CP_KEYS)[number]
@@ -133,7 +114,7 @@ export function ImportSection({
             .eq('kind', 'route_audit')
             .maybeSingle()
           const rawSavedRoles = ((savedAudit?.content ?? {}) as { roles?: Record<string, string> }).roles ?? {}
-          const allowedRoles = new Set(ROLE_OPTIONS.map((option) => option.value))
+          const allowedRoles = new Set(DXF_ROLE_OPTIONS.map((option) => option.value))
           const savedRoles = Object.fromEntries(Object.entries(rawSavedRoles).map(([name, role]) => [
             name,
             allowedRoles.has(role as DxfLayerRole) ? role as DxfLayerRole : 'unknown',
@@ -537,23 +518,15 @@ export function ImportSection({
             Единицы DWG: {parsed.data.metadata?.insertionUnits ?? 'не указаны'} ·
             {' '}нераспознанных слоёв: {Object.values(parsed.constraints.roles).filter((role) => role === 'unknown').length}.
           </p>
-          <details open={Object.values(parsed.constraints.roles).some((role) => role === 'unknown')} style={{ marginTop: 12 }}>
-            <summary className="field-label">Сопоставление всех слоёв DWG</summary>
-            <p className="hint">Каждому неизвестному слою назначьте инженерную роль либо явно выберите «не инженерный слой». Пока остаются неизвестные слои, расчёт будет BLOCKED.</p>
-            <div className="table-wrap" style={{ maxHeight: 360 }}><table className="data-table"><thead><tr><th>Слой</th><th>Роль</th><th className="num">Линий</th><th className="num">Точек</th><th>Признаки</th></tr></thead><tbody>
-              {parsed.data.layers.map((layer) => <tr key={layer.name}>
-                <td className="mono">{layer.name}</td>
-                 <td><select id={`import-layer-role-${encodeURIComponent(layer.name)}`} name={`import-layer-role-${encodeURIComponent(layer.name)}`} aria-label={`DWG layer role: ${layer.name}`} className="input input-sm" value={layerRoles[layer.name] ?? parsed.constraints.roles[layer.name] ?? 'unknown'} onChange={(event) => void setLayerRole(layer.name, event.target.value as DxfLayerRole)}>{ROLE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></td>
-                <td className="num">{layer.segments}</td><td className="num">{layer.points}</td>
-                <td>{[
-                  ...Object.entries(layer.entityTypes ?? {}).map(([kind, count]) => `${kind}: ${count}`),
-                  ...(layer.textSamples ?? []).slice(0, 3).map((sample) => `«${sample}»`),
-                  ...(layer.lineTypes ?? []).map((lineType) => `линия ${lineType}`),
-                  ...(layer.colorNumbers ?? []).map((color) => `цвет ${color}`),
-                ].join(', ') || '—'}</td>
-              </tr>)}
-            </tbody></table></div>
-          </details>
+          <DxfLayerRoleTable
+            idPrefix="import"
+            layers={parsed.data.layers}
+            roles={Object.fromEntries(parsed.data.layers.map((layer) => [
+              layer.name,
+              layerRoles[layer.name] ?? parsed.constraints.roles[layer.name] ?? 'unknown',
+            ]))}
+            onChange={(layer, role) => void setLayerRole(layer, role)}
+          />
           <details style={{ marginTop: 12 }}>
             <summary className="field-label">Подтверждение отсутствующих групп исходных данных</summary>
             <p className="hint">Ставьте отметку только после проверки всех слоёв и исходных документов. Это действие записывается в аудит проекта.</p>

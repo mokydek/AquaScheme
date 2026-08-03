@@ -6,7 +6,12 @@ import {
   type CrossingTriage,
   type DerivedDepthBands,
 } from './crossing-triage'
-import { classifyDxfConstraints, type DxfConstraintData, type DxfNetworkData } from './dxfread'
+import {
+  classifyDxfConstraints,
+  type DxfConstraintData,
+  type DxfLayerRole,
+  type DxfNetworkData,
+} from './dxfread'
 import { extractExistingUtilities, type ExistingUtilityNetwork } from './existing-utilities'
 import { detectSurveyGrid, type SurveyGridFinding } from './surveygrid'
 import { picketLabelExact } from './norms/sheetset'
@@ -39,6 +44,14 @@ export interface ReconstructionSurveyOptions {
   minChamberDiameterMm?: number
   /** Layers whose annotation describes the line being reconstructed. */
   existingLayerPattern?: RegExp
+  /**
+   * Роли слоёв, назначенные инженером вручную.
+   *
+   * Без них путь реконструкции был тупиковым: нераспознанные слои блокируют
+   * выпуск, а снять блок было негде — таблица сопоставления существовала только
+   * в секции импорта чертежа.
+   */
+  roleOverrides?: Partial<Record<string, DxfLayerRole>>
   /**
    * Требуемый вертикальный просвет в пересечении, м.
    *
@@ -89,7 +102,7 @@ export function buildReconstructionFromSurvey(
   options: ReconstructionSurveyOptions,
 ): ReconstructionFromSurvey {
   const system = options.system ?? 'sewer'
-  const constraints = classifyDxfConstraints(data)
+  const constraints = classifyDxfConstraints(data, options.roleOverrides ?? {})
   const grid = detectSurveyGrid(data)
   const existing = extractExistingUtilities(data, options.existingLayerPattern ?? /канализ/i)
   const chain = existing.chain

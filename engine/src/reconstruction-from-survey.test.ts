@@ -123,6 +123,33 @@ describe('reconstruction assembled from a survey', () => {
     expect(result.blockers.some((b) => b.includes('без снятой отметки'))).toBe(true)
   })
 
+  it('принимает роли слоёв, назначенные инженером', () => {
+    const data = streetSurvey()
+    data.segments.push({ layer: 'ЗАБОРЫ', points: [{ x: 0, y: 30 }, { x: 200, y: 30 }] })
+    data.layers.push({ name: 'ЗАБОРЫ', segments: 1, points: 0 })
+
+    // По имени слой не опознаётся и блокирует выпуск.
+    const auto = buildReconstructionFromSurvey(data, { designDiameterMm: 450 })
+    expect(auto.constraints.roles['ЗАБОРЫ']).toBe('unknown')
+
+    // Инженер отмечает его как не инженерный — слой перестаёт быть нерешённым.
+    const reviewed = buildReconstructionFromSurvey(data, {
+      designDiameterMm: 450,
+      roleOverrides: { 'ЗАБОРЫ': 'ignore' },
+    })
+    expect(reviewed.constraints.roles['ЗАБОРЫ']).toBe('ignore')
+    const unknownCount = (result: typeof auto) =>
+      Object.values(result.constraints.roles).filter((r) => r === 'unknown').length
+    expect(unknownCount(reviewed)).toBe(unknownCount(auto) - 1)
+
+    // Роль меняет и сам разбор, а не только счётчик нерешённых.
+    const asUtility = buildReconstructionFromSurvey(data, {
+      designDiameterMm: 450,
+      roleOverrides: { 'ЗАБОРЫ': 'utility' },
+    })
+    expect(asUtility.constraints.utilityLines.length).toBe(auto.constraints.utilityLines.length + 1)
+  })
+
   it('выводит диапазоны глубин из съёмки без участия инженера', () => {
     // Съёмка подписывает канализацию парой отметок в каждом колодце: 688/685,
     // 687.8/684.7, … — разность и есть глубина заложения.
