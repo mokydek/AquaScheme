@@ -210,6 +210,31 @@ export async function generateManholeSheetsDxf(
   }
 }
 
+/**
+ * Ведомость объёмов работ как XLSX.
+ *
+ * Двумя листами: посчитанное и непосчитанное. Второй лист не декоративен —
+ * сметчик должен видеть, каких величин проекту не хватило, а не считать
+ * отсутствие строки нулём.
+ */
+export async function generateQuantityBillXlsx(
+  bill: import('@aquascheme/engine').QuantityBill,
+): Promise<Uint8Array> {
+  const XLSX = await import('xlsx')
+  const book = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(bill.rows.map((row) => ({
+    'Наименование работ': row.name,
+    'Ед. изм.': row.unit,
+    'Кол-во': row.quantity,
+    'Из чего получено': row.derivedFrom,
+  }))), 'Объёмы')
+  XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(bill.gaps.map((gap) => ({
+    'Не посчитано': gap.name,
+    'Чего не хватает': gap.missing,
+  }))), 'Не посчитано')
+  return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
+}
+
 /** Sewer specification sheet (ГОСТ 21.110 form, НК.С) as DXF. */
 export async function generateSewerSpecSheetDxf(
   projectName: string,

@@ -52,6 +52,7 @@ import {
   generateManholeSheetsDxf,
   generateSewerSpecSheetDxf,
   generateSewerSpecXlsx,
+  generateQuantityBillXlsx,
   generateSewerScheduleXlsx,
   generateSituationDxf,
   zipBundle,
@@ -63,6 +64,8 @@ import { Panel } from './Panel'
 import { AlbumSheetSet } from './AlbumSheetSet'
 import { SchemeBuilder } from './SchemeBuilder'
 import { StormInletsView } from './StormInletsView'
+import { QuantityBillView } from './QuantityBillView'
+import type { QuantityBillSettings } from './QuantityBillView'
 import type { TitleBlockSignatory } from '../../shared/titleBlock'
 import { freezingDepthStatus } from '../../shared/geologyStatus'
 
@@ -188,6 +191,12 @@ export function GravitySection({
   const [catalogDiameters, setCatalogDiameters] = useState<readonly number[] | undefined>(undefined)
   const [catalogError, setCatalogError] = useState<string | null>(null)
   const [catalogLoadedForId, setCatalogLoadedForId] = useState<string | null>(null)
+  // Величины земляных работ: норматива на них в реестре нет, поэтому они
+  // задаются инженером и хранятся с прочими исходными данными проекта.
+  const savedQuantitySettings = ((drainageDataset?.content ?? {}) as { quantityBill?: QuantityBillSettings }).quantityBill ?? {}
+  const [quantitySettings, setQuantitySettings] = useState<QuantityBillSettings>(savedQuantitySettings)
+  const [quantityExporting, setQuantityExporting] = useState(false)
+  useEffect(() => { setQuantitySettings(savedQuantitySettings) }, [drainageDataset])
 
   useEffect(() => {
     let active = true
@@ -675,6 +684,33 @@ export function GravitySection({
 
   // The full К1 sheet set, mirroring the professional НК album: общие данные,
   // ситуационная схема, план, продольный профиль, ведомость колодцев и труб.
+  const exportQuantityBill = async () => {
+    if (!result?.profile || !schedule) return
+    setQuantityExporting(true)
+    try {
+      const { buildQuantityBill } = await import('@aquascheme/engine')
+      const bytes = await generateQuantityBillXlsx(buildQuantityBill({
+        profile: result.profile,
+        schedule,
+        constructions: manholeSelection.selected,
+        ...quantitySettings,
+      }))
+      const blob = new Blob([bytes], { type: XLSX_TYPE })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slug}_ведомость_объёмов.xlsx`
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      setBundleError(formatAppError(error))
+    } finally {
+      setQuantityExporting(false)
+    }
+  }
+
   const exportBundle = async () => {
     if (!result?.profile || !schedule) return
     if (!finalOutputAllowed) {
@@ -1215,6 +1251,23 @@ export function GravitySection({
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
             </button>
           </div>
+
+          {result.profile && schedule && (
+            <QuantityBillView
+              profile={result.profile}
+              schedule={schedule}
+              constructions={manholeSelection.selected}
+              settings={quantitySettings}
+              exporting={quantityExporting}
+              fieldPrefix={`quantity-${projectId}`}
+              onSettingsChange={(next) => {
+                setQuantitySettings(next)
+                const content = (drainageDataset?.content ?? {}) as Record<string, unknown>
+                void saveDataset(projectId, 'drainage', { ...content, quantityBill: next })
+              }}
+              onExport={() => void exportQuantityBill()}
+            />
+          )}
 
           {systemType === 'storm' && result.profile && (
             <StormInletsView

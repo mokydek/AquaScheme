@@ -14,6 +14,7 @@ import type {
 import { WorkingDrawingPreview } from '../app/project/WorkingDrawingPreview'
 import {
   generateManholeSheetsDxf,
+  generateQuantityBillXlsx,
   generateProjectSheetPdf,
   generateSewerScheduleXlsx,
   generateWorkingDrawingSheetDxf,
@@ -36,6 +37,26 @@ const constructions: SelectedManholeConstruction[] = [{
     { name: 'Плита', unit: 'шт', baseQuantity: 1, catalogCode: 'SLAB', quantity: 1 },
   ],
 }]
+
+describe('ведомость объёмов работ XLSX', () => {
+  it('выпускается двумя листами: посчитанное и непосчитанное', async () => {
+    // Второй лист не декоративен: сметчик должен видеть, каких величин проекту
+    // не хватило, а не считать отсутствие строки нулём.
+    const XLSX = await import('xlsx')
+    const bytes = await generateQuantityBillXlsx({
+      rows: [{ name: 'Укладка трубопровода Ø500 мм', unit: 'м', quantity: 125, derivedFrom: 'ведомость труб проекта' }],
+      gaps: [{ name: 'Разработка грунта в траншее', missing: 'зазор от трубы до стенки траншеи' }],
+      totalLengthM: 125,
+    })
+    const book = XLSX.read(bytes)
+    expect(book.SheetNames).toEqual(['Объёмы', 'Не посчитано'])
+    const volumes = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets['Объёмы'])
+    expect(volumes[0]['Кол-во']).toBe(125)
+    expect(volumes[0]['Из чего получено']).toBe('ведомость труб проекта')
+    const gaps = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets['Не посчитано'])
+    expect(gaps[0]['Чего не хватает']).toMatch(/зазор/)
+  })
+})
 
 describe('листы колодцев', () => {
   it('дают лист решений и ведомость материалов по каждому колодцу', async () => {
