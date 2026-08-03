@@ -208,4 +208,27 @@ describe('reconstruction assembled from a survey', () => {
     expect(triage.needLevelling[0].verdict).toBe('unknown_band')
     expect(result.blockers.some((b) => b.includes('Контрольное вскрытие: 1 пересечений из 2'))).toBe(true)
   })
+
+  it('выявляет переходы под автомобильными дорогами', () => {
+    const data = streetSurvey()
+    // Дорога поперёк трассы примерно на ПК1.
+    data.segments.push({ layer: 'SIT_LДОРОГИ', points: [{ x: 100, y: -30 }, { x: 100, y: 30 }] })
+    data.layers.push({ name: 'SIT_LДОРОГИ', segments: 1, points: 0 })
+    const result = buildReconstructionFromSurvey(data, { designDiameterMm: 450 })
+
+    expect(result.roadCrossings).toHaveLength(1)
+    expect(result.roadCrossings[0].kind).toBe('автомобильная дорога')
+    expect(result.roadCrossings[0].stationM).toBeCloseTo(100, 0)
+    expect(result.roadCrossings[0].source).toContain('SIT_LДОРОГИ')
+    // Длина футляра не подставляется: она считается по ширине дороги, а её в
+    // чертеже нет, и принятое по умолчанию значение стало бы догадкой в проекте.
+    expect(result.roadCrossings[0].casingLengthM).toBeUndefined()
+    expect(result.blockers.some((message) => message.includes('футляра'))).toBe(true)
+  })
+
+  it('без дорог в чертеже переходов не выдумывается', () => {
+    const result = buildReconstructionFromSurvey(streetSurvey(), { designDiameterMm: 450 })
+    expect(result.roadCrossings).toEqual([])
+    expect(result.blockers.some((message) => message.includes('футляра'))).toBe(false)
+  })
 })

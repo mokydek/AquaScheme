@@ -16,6 +16,7 @@ import { extractExistingUtilities, type ExistingUtilityNetwork } from './existin
 import { detectSurveyGrid, type SurveyGridFinding } from './surveygrid'
 import { picketLabelExact } from './norms/sheetset'
 import { manholeSpacingM } from './norms/sewer'
+import { findRoadCrossings } from './norms/structures'
 import type { GravityProfile, SewerSchedule } from './norms/gravity'
 import type { SurveyPoint } from './types'
 import type { TracedNetwork } from './trace'
@@ -82,6 +83,14 @@ export interface ReconstructionFromSurvey {
   /** Chainage of every chamber along the run, m. */
   chainageM: number[]
   totalLengthM: number
+  /**
+   * Пересечения трассы с автомобильными дорогами.
+   *
+   * Отдельно от `crossings`: те приходят из пересечений с коммуникациями, а эти
+   * — с осями дорог, и требуют футляра. Длина футляра не подставляется, она
+   * считается по ширине дороги, которой в чертеже нет.
+   */
+  roadCrossings: CrossingRecord[]
   /**
    * Диапазоны глубин залегания пересекаемых сетей, выведенные из парных
    * отметок самой съёмки. Считаются всегда — вход инженера для этого не нужен.
@@ -235,6 +244,30 @@ export function buildReconstructionFromSurvey(
     )
   }
 
+  // Пересечения с дорогами не выявлялись вовсе: crossingsFromSurvey пересекает
+  // ось с коммуникациями, а дороги — отдельная роль слоя. Переход под дорогой
+  // требует футляра, и без карточки он в проект просто не попадал.
+  //
+  // Длина футляра здесь не подставляется. Она считается по ширине дороги, а
+  // чертёж ширины не несёт: подставилось бы принятое по умолчанию значение, то
+  // есть догадка в проектном документе. Требование футляра к тому же из ТЗ, а
+  // не из норматива, и в реестре оно не подтверждено.
+  const roadCrossings: CrossingRecord[] = chain.length >= 2
+    ? findRoadCrossings(
+      chain.map((chamber) => ({ x: chamber.x, y: chamber.y })),
+      constraints.roadLines.map((line, index) => ({
+        id: line.layer ?? `дорога-${index + 1}`,
+        points: line.points,
+      })),
+    ).map((crossing, index) => ({
+      id: `Д-${index + 1}`,
+      stationM: Math.round(crossing.stationM * 100) / 100,
+      kind: 'автомобильная дорога',
+      source: `пересечение оси с дорогой «${crossing.roadId}» по чертежу`,
+      designInvertElevationM: invertAt(crossing.stationM) ?? undefined,
+    }))
+    : []
+
   // Диапазоны глубин выводятся из парных отметок съёмки — вход инженера не нужен.
   const depthBands = deriveDepthBandsFromSurvey(constraints)
 
@@ -249,6 +282,14 @@ export function buildReconstructionFromSurvey(
       designDiameterMm: options.designDiameterMm,
     })
     : null
+
+  if (roadCrossings.length > 0) {
+    blockers.push(
+      `Переходов под автомобильными дорогами: ${roadCrossings.length} `
+      + `(пикеты ${roadCrossings.map((crossing) => crossing.stationM.toFixed(0)).join(', ')} м). `
+      + 'Каждый требует футляра; длина футляра считается по ширине дороги, которой в чертеже нет.',
+    )
+  }
 
   const unresolved = crossings.filter((crossing) => crossing.existingElevationM === undefined).length
   if (crossingTriage !== null) {
@@ -286,6 +327,8 @@ export function buildReconstructionFromSurvey(
       : { kind: 'unreferenced', source: grid.reason },
     chainageM,
     totalLengthM,
+    /** Пересечения с автомобильными дорогами: каждое требует футляра. */
+    roadCrossings,
     depthBands,
     crossingTriage,
     blockers,
