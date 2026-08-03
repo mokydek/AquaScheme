@@ -396,6 +396,9 @@ export function ProjectPage() {
         activeCatalogId: freshProjectRes.data.active_catalog_id ?? null,
       })
       setPipelineNotice(result.ok ? 'done' : result.reason)
+      // Подробность ошибки конвейера. Сбрасывается и при успехе, и когда её
+      // нет: иначе на экране осталась бы причина прошлого запуска.
+      setPipelineDetail(result.ok ? null : result.detail ?? null)
       await load()
     } catch (error) {
       setPipelineDetail(formatAppError(error))

@@ -89,6 +89,16 @@ test('база принимает все состояния трассы, кот
   assertAccepted([...written], accepted, 'projects.route_status')
 })
 
+test('RPC сохранения сети принимает все состояния трассы движка', () => {
+  // Функция проверяет состояние строже таблицы: 'stale' она не принимает, его
+  // ставят другие пути. Поэтому одного ограничения таблицы мало — расхождение
+  // здесь дало бы «invalid route status» на самом сохранении.
+  const match = bootstrap.match(/p_route_status not in \(([^)]*)\)/)
+  assert.ok(match, 'в bootstrap.sql не найдена проверка состояния в replace_project_network')
+  const engine = unionMembers('../engine/src/engineering-network.ts', 'EngineeringRouteStatus')
+  assertAccepted(engine, literals(match[1]), 'replace_project_network(p_route_status)')
+})
+
 test('вид, которого нет в ограничении, проверка ловит', () => {
   // Сама проверка тоже должна падать, иначе она бесполезна: договор, который
   // ничего не запрещает, отличить от отсутствующего нельзя.

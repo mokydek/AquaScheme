@@ -10,6 +10,7 @@ import type { SizingInput, SizingResult } from '@aquascheme/engine/sizing'
 import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
 import type { HydraulicsWorkerResponse } from '../workers/hydraulics.worker'
 import { supabase } from './supabase'
+import { formatAppError } from './errorFormatting'
 import { networkFromRows, replaceNetwork } from './network'
 import type { NodeRow, PipeRow } from './network'
 import { loadActiveCatalogSizes } from './catalog'
@@ -155,7 +156,10 @@ export async function persistSizing(
   }
 }
 
-export type EquipmentPersistResult = { ok: true } | { ok: false; reason: 'migrationNeeded' | 'error' }
+export type EquipmentPersistResult =
+  | { ok: true }
+  /** `detail` — текст самой ошибки: без него пользователь видит только «ошибка». */
+  | { ok: false; reason: 'migrationNeeded' | 'error'; detail?: string }
 
 /** Select materials, place fittings and persist them onto the project. */
 export async function persistEquipment(
@@ -213,7 +217,11 @@ export async function persistEquipment(
     return { ok: true }
   } catch (error) {
     const code = (error as { code?: string } | null)?.code
-    return { ok: false, reason: code === '23514' ? 'migrationNeeded' : 'error' }
+    return {
+      ok: false,
+      reason: code === '23514' ? 'migrationNeeded' : 'error',
+      detail: formatAppError(error),
+    }
   }
 }
 
@@ -227,11 +235,23 @@ async function saveEquipmentDataset(
     .eq('project_id', projectId)
     .eq('kind', 'equipment')
     .maybeSingle()
-  if (selectError) return { ok: false, reason: selectError.code === '23514' ? 'migrationNeeded' : 'error' }
+  if (selectError) {
+    return {
+      ok: false,
+      reason: selectError.code === '23514' ? 'migrationNeeded' : 'error',
+      detail: formatAppError(selectError),
+    }
+  }
   const write = existing
     ? await supabase.from('datasets').update({ content }).eq('id', existing.id)
     : await supabase.from('datasets').insert({ project_id: projectId, kind: 'equipment', content })
-  if (write.error) return { ok: false, reason: write.error.code === '23514' ? 'migrationNeeded' : 'error' }
+  if (write.error) {
+    return {
+      ok: false,
+      reason: write.error.code === '23514' ? 'migrationNeeded' : 'error',
+      detail: formatAppError(write.error),
+    }
+  }
   return null
 }
 
@@ -260,6 +280,16 @@ export type FullPipelineResult =
   | {
       ok: false
       reason: 'migrationNeeded' | 'error' | 'hydraulicsFailed' | 'wrongSystem'
+      /**
+       * Текст ошибки для пользователя.
+       *
+       * Конвейер ловил исключение и отдавал голое `error`. Вместе с ним
+       * пропадали единственные сообщения, по которым видно, что делать:
+       * «требуется применить миграцию 0012», «некорректные связи узлов со
+       * зданиями». Страница показывала «Ошибка» без единой подробности, хотя
+       * место под неё в разметке было.
+       */
+      detail?: string
       sizing?: SizingResult
     }
 
@@ -322,7 +352,7 @@ export async function runFullPipeline(params: FullPipelineParams): Promise<FullP
     if (!equipment.ok) return equipment
 
     return { ok: true, sizing }
-  } catch {
-    return { ok: false, reason: 'error' }
+  } catch (error) {
+    return { ok: false, reason: 'error', detail: formatAppError(error) }
   }
 }
