@@ -1,0 +1,266 @@
+{
+  "_comment": "Уровень недостижимых возможностей движка. Может только снижаться; обновляется через npm run audit:reachability -- --write-baseline.",
+  "count": 65,
+  "functions": [
+    {
+      "name": "normalizeBoreholeLabel",
+      "file": "engine/src/boreholes-from-drawing.ts"
+    },
+    {
+      "name": "corridorAxis",
+      "file": "engine/src/corridor-axis.ts"
+    },
+    {
+      "name": "betaMaxForResidents",
+      "file": "engine/src/demand.ts"
+    },
+    {
+      "name": "createDemoDataset",
+      "file": "engine/src/demo.ts"
+    },
+    {
+      "name": "demoElevation",
+      "file": "engine/src/demo.ts"
+    },
+    {
+      "name": "buildManholeConstructionDetailDxf",
+      "file": "engine/src/dxf.ts"
+    },
+    {
+      "name": "deduplicateImportSegments",
+      "file": "engine/src/dxfread.ts"
+    },
+    {
+      "name": "summarizeRouteCoverage",
+      "file": "engine/src/geocoverage.ts"
+    },
+    {
+      "name": "gridToGeologyRows",
+      "file": "engine/src/geology.ts"
+    },
+    {
+      "name": "parseGroundwaterRange",
+      "file": "engine/src/geology.ts"
+    },
+    {
+      "name": "parseIgeDescriptions",
+      "file": "engine/src/geology.ts"
+    },
+    {
+      "name": "interpolateGeologyAt",
+      "file": "engine/src/geoprofile.ts"
+    },
+    {
+      "name": "buildInp",
+      "file": "engine/src/hydraulics.ts"
+    },
+    {
+      "name": "auditClauseHierarchy",
+      "file": "engine/src/normhierarchy.ts"
+    },
+    {
+      "name": "documentFamily",
+      "file": "engine/src/normhierarchy.ts"
+    },
+    {
+      "name": "documentTier",
+      "file": "engine/src/normhierarchy.ts"
+    },
+    {
+      "name": "editionYear",
+      "file": "engine/src/normhierarchy.ts"
+    },
+    {
+      "name": "resolveConflict",
+      "file": "engine/src/normhierarchy.ts"
+    },
+    {
+      "name": "accumulateGravityFlows",
+      "file": "engine/src/norms/gravity.ts"
+    },
+    {
+      "name": "circularSection",
+      "file": "engine/src/norms/gravity.ts"
+    },
+    {
+      "name": "designFillingCap",
+      "file": "engine/src/norms/gravity.ts"
+    },
+    {
+      "name": "designGravitySegment",
+      "file": "engine/src/norms/gravity.ts"
+    },
+    {
+      "name": "fillForFlow",
+      "file": "engine/src/norms/gravity.ts"
+    },
+    {
+      "name": "gravityFlowM3s",
+      "file": "engine/src/norms/gravity.ts"
+    },
+    {
+      "name": "manningVelocity",
+      "file": "engine/src/norms/gravity.ts"
+    },
+    {
+      "name": "compareWithMasterPlan",
+      "file": "engine/src/norms/masterplan.ts"
+    },
+    {
+      "name": "selectPumps",
+      "file": "engine/src/norms/pumps.ts"
+    },
+    {
+      "name": "standbyPumpCount",
+      "file": "engine/src/norms/pumps.ts"
+    },
+    {
+      "name": "designFilling",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "kGenMax",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "manholeSpacingM",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "minSewerCrownCoverM",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "minSewerDepthM",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "minSewerInvertDepthFromFrostM",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "sewerBurialDepthConstraints",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "stormInletSpacingM",
+      "file": "engine/src/norms/sewer.ts"
+    },
+    {
+      "name": "paginateByStations",
+      "file": "engine/src/norms/sheetset.ts"
+    },
+    {
+      "name": "sliceProfile",
+      "file": "engine/src/norms/sheetset.ts"
+    },
+    {
+      "name": "imperviousSurfaceCoefficientZ",
+      "file": "engine/src/norms/storm-runoff.ts"
+    },
+    {
+      "name": "stormAreaCorrectionK",
+      "file": "engine/src/norms/storm-runoff.ts"
+    },
+    {
+      "name": "stormBaseBeta",
+      "file": "engine/src/norms/storm-runoff.ts"
+    },
+    {
+      "name": "stormParameterA",
+      "file": "engine/src/norms/storm-runoff.ts"
+    },
+    {
+      "name": "stormSurfaceCoefficientZ",
+      "file": "engine/src/norms/storm-runoff.ts"
+    },
+    {
+      "name": "stormTravelTimeMin",
+      "file": "engine/src/norms/storm-runoff.ts"
+    },
+    {
+      "name": "weightedStormCoefficientZ",
+      "file": "engine/src/norms/storm-runoff.ts"
+    },
+    {
+      "name": "findRoadCrossings",
+      "file": "engine/src/norms/structures.ts"
+    },
+    {
+      "name": "plannedElevationAt",
+      "file": "engine/src/norms/vertplan.ts"
+    },
+    {
+      "name": "plannedSurfaceAlong",
+      "file": "engine/src/norms/vertplan.ts"
+    },
+    {
+      "name": "buildingPreset",
+      "file": "engine/src/presets.ts"
+    },
+    {
+      "name": "sourcePreset",
+      "file": "engine/src/presets.ts"
+    },
+    {
+      "name": "auditProvenance",
+      "file": "engine/src/provenance.ts"
+    },
+    {
+      "name": "fromJustified",
+      "file": "engine/src/provenance.ts"
+    },
+    {
+      "name": "weakest",
+      "file": "engine/src/provenance.ts"
+    },
+    {
+      "name": "velocityFor",
+      "file": "engine/src/sizing.ts"
+    },
+    {
+      "name": "specificationToCsv",
+      "file": "engine/src/specification.ts"
+    },
+    {
+      "name": "selectSpecificationSource",
+      "file": "engine/src/specsource.ts"
+    },
+    {
+      "name": "createGravitySolver",
+      "file": "engine/src/systems.ts"
+    },
+    {
+      "name": "buildTerrain",
+      "file": "engine/src/terrain.ts"
+    },
+    {
+      "name": "cubicMetersPerDayToLitersPerSecond",
+      "file": "engine/src/units.ts"
+    },
+    {
+      "name": "litersPerSecondToCubicMetersPerHour",
+      "file": "engine/src/units.ts"
+    },
+    {
+      "name": "workingDrawingInputHash",
+      "file": "engine/src/working-drawings.ts"
+    },
+    {
+      "name": "workingDrawingMainPath",
+      "file": "engine/src/working-drawings.ts"
+    },
+    {
+      "name": "workingDrawingNetworkPaths",
+      "file": "engine/src/working-drawings.ts"
+    },
+    {
+      "name": "workingDrawingPlanPaths",
+      "file": "engine/src/working-drawings.ts"
+    },
+    {
+      "name": "workingDrawingScheduleCoverage",
+      "file": "engine/src/working-drawings.ts"
+    }
+  ]
+}

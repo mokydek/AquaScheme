@@ -25,7 +25,8 @@
     "benchmark": "node scripts/benchmark.mjs",
     "benchmark:required": "node scripts/benchmark.mjs --required",
     "benchmark:visual": "node scripts/visual-benchmark.mjs",
-    "validate:release": "npm run test:all && npm run typecheck && npm run build && npm run benchmark:required"
+    "validate:release": "npm run test:all && npm run typecheck && npm run build && npm run benchmark:required",
+    "audit:reachability": "node scripts/reachability.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "0.1.100"
