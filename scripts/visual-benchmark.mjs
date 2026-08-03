@@ -90,8 +90,18 @@ function differencePng(referencePixels, generatedPixels) {
 
 const reference = await openPdf(referencePath)
 const generated = await openPdf(generatedPath)
-if (reference.numPages !== expectedPages || generated.numPages !== expectedPages) {
-  console.error(`visual-benchmark: page count mismatch; expected ${expectedPages}, reference ${reference.numPages}, generated ${generated.numPages}`)
+// Расхождение в числе страниц раньше прекращало работу до всякого измерения.
+// Из-за этого показатель совпадения нельзя было получить, пока альбом не
+// совпадёт с эталоном полностью, — то есть инструмент не мерил прогресс, а
+// только подтверждал финиш. Теперь сравниваются общие страницы, а несовпадение
+// состава входит в отчёт и само по себе валит приёмку.
+const pageCountMatch = reference.numPages === expectedPages && generated.numPages === expectedPages
+if (!pageCountMatch) {
+  console.error(`visual-benchmark: состав не совпал; ожидалось ${expectedPages}, эталон ${reference.numPages}, сгенерировано ${generated.numPages}. Сравниваются общие страницы.`)
+}
+const comparedPages = Math.min(reference.numPages, generated.numPages)
+if (comparedPages === 0) {
+  console.error('visual-benchmark: сравнивать нечего — в одном из файлов нет страниц.')
   process.exit(1)
 }
 
@@ -101,7 +111,7 @@ const referencePages = join(artifactRoot, 'reference-pages')
 const generatedPages = join(artifactRoot, 'generated-pages')
 const differencePages = join(artifactRoot, 'diff-pages')
 for (const directory of [referencePages, generatedPages, differencePages]) mkdirSync(directory, { recursive: true })
-for (let page = 1; page <= expectedPages; page++) {
+for (let page = 1; page <= comparedPages; page++) {
   const [referenceRender, generatedRender] = await Promise.all([
     renderNormalized(reference, page),
     renderNormalized(generated, page),
@@ -137,8 +147,16 @@ const report = {
   render: { width, height, useSystemFonts: true },
   threshold,
   expectedPages,
+  pageCount: {
+    expected: expectedPages,
+    reference: reference.numPages,
+    generated: generated.numPages,
+    compared: comparedPages,
+    match: pageCountMatch,
+  },
   summary,
-  passed: pages.every((page) => page.passed) && summary.average.combined >= threshold,
+  // Приёмка не смягчена: несовпадение состава валит её так же, как и раньше.
+  passed: pageCountMatch && pages.every((page) => page.passed) && summary.average.combined >= threshold,
   pages,
 }
 const reportPath = resolve(dirname(manifestPath), manifest.visualReport ?? 'out/reports/page-comparison.json')
@@ -158,6 +176,7 @@ const markdownRows = pages.map((page) =>
 ).join('\n')
 const markdown = `# AquaScheme final visual validation\n\nGenerated: ${report.generatedAt}  \nExpected pages: ${expectedPages}  \nThreshold: ${(threshold * 100).toFixed(3)}%  \nAverage: ${(summary.average.combined * 100).toFixed(3)}%  \nWorst: ${(summary.minimum.combined * 100).toFixed(3)}%  \nResult: **${report.passed ? 'PASS' : 'FAIL'}**\n\nThis report covers rendered visual similarity only. Engineering values, source provenance and normative applicability remain independent mandatory gates.\n\n| Page | MediaBox | RGB pixel | Ink IoU | Structure | Overall | Result | Difference reason |\n| ---: | :---: | ---: | ---: | ---: | ---: | :---: | --- |\n${markdownRows}\n`
 writeFileSync(markdownPath, markdown, 'utf8')
+console.log(`сравнено страниц: ${comparedPages} из ${expectedPages} (эталон ${reference.numPages}, сгенерировано ${generated.numPages})`)
 console.log(`average: ${(summary.average.combined * 100).toFixed(3)}%; worst: ${(summary.minimum.combined * 100).toFixed(3)}%`)
 console.log(`report: ${reportPath}`)
 console.log(`html: ${htmlPath}`)

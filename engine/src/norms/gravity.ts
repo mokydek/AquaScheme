@@ -612,6 +612,89 @@ export function computeGravityProfile(input: {
   }
 }
 
+export interface GravityFeasibility {
+  /** Падение местности от верховой станции до выпуска, м. */
+  availableFallM: number
+  /** Падение, которого требуют принятые уклоны, м. */
+  requiredFallM: number
+  /** Сколько лотку приходится добирать заглублением, м. */
+  shortfallM: number
+  maxDepthM: number
+  /** Уклон местности по трассе, ‰. */
+  terrainSlopePermille: number
+  /** Средний принятый уклон, ‰. */
+  designSlopePermille: number
+  feasible: boolean
+  reason: string
+}
+
+/**
+ * Осуществим ли самотёк по этой трассе.
+ *
+ * Самотёчный коллектор опирается на падение местности. Когда его не хватает,
+ * решатель всё равно выдаёт профиль — просто лоток уходит всё глубже, и на
+ * длинной трассе глубина вырастает до величин, при которых копать уже нельзя.
+ * Ошибкой это не считается ни на одном участке по отдельности: каждый из них
+ * по норме исправен, а неосуществима трасса целиком.
+ *
+ * На Талдыколе это видно в чистом виде: 2,5 м падения на 16,3 км — 0,15 ‰ при
+ * потребных единицах ‰, — и профиль уходит на 59 м.
+ *
+ * Своего предела глубины функция не вводит: величина зависит от грунтов и
+ * способа производства работ, в имеющемся комплекте нормативов её нет.
+ * Сравнивается только требуемое падение с фактическим, а вывод — что разницу
+ * придётся добирать заглублением, перепадными колодцами (п. 7.4.5) или
+ * насосной станцией. Решение за инженером.
+ */
+export function assessGravityFeasibility(
+  profile: GravityProfile,
+  design: Map<string, { diameterMm: number; slope: number }>,
+): GravityFeasibility {
+  const stations = profile.stations
+  if (stations.length < 2) {
+    return {
+      availableFallM: 0, requiredFallM: 0, shortfallM: 0, maxDepthM: profile.maxDepthM,
+      terrainSlopePermille: 0, designSlopePermille: 0, feasible: true,
+      reason: 'Трасса короче двух станций: осуществимость самотёка не оценивается.',
+    }
+  }
+  const head = stations[0]
+  const outlet = stations[stations.length - 1]
+  const lengthM = Math.abs(outlet.chainageM - head.chainageM)
+  const availableFallM = head.groundElevationM - outlet.groundElevationM
+  // Уклон безразмерный, поэтому требуемое падение — сумма «уклон × длина
+  // участка» по фактическим расстояниям между станциями.
+  let requiredFallM = 0
+  for (let i = 1; i < stations.length; i++) {
+    const span = Math.abs(stations[i].chainageM - stations[i - 1].chainageM)
+    const pipeId = profile.pipeIds[i - 1]
+    const slope = design.get(pipeId)?.slope ?? 0
+    requiredFallM += span * slope
+  }
+  const shortfallM = Math.round((requiredFallM - availableFallM) * 100) / 100
+  const terrainSlopePermille = lengthM > 0 ? (availableFallM / lengthM) * 1000 : 0
+  const designSlopePermille = lengthM > 0 ? (requiredFallM / lengthM) * 1000 : 0
+  const feasible = shortfallM <= 0
+  return {
+    availableFallM: Math.round(availableFallM * 100) / 100,
+    requiredFallM: Math.round(requiredFallM * 100) / 100,
+    shortfallM,
+    maxDepthM: profile.maxDepthM,
+    terrainSlopePermille: Math.round(terrainSlopePermille * 100) / 100,
+    designSlopePermille: Math.round(designSlopePermille * 100) / 100,
+    feasible,
+    reason: feasible
+      ? `Падения местности хватает: ${Math.round(availableFallM * 100) / 100} м при потребных `
+        + `${Math.round(requiredFallM * 100) / 100} м на ${lengthM.toFixed(0)} м трассы.`
+      : `Падения местности не хватает на ${shortfallM} м: уклон местности `
+        + `${(Math.round(terrainSlopePermille * 100) / 100).toFixed(2)} ‰ против потребных `
+        + `${(Math.round(designSlopePermille * 100) / 100).toFixed(2)} ‰ на ${lengthM.toFixed(0)} м. `
+        + `Разницу добирает заглубление — наибольшая глубина ${profile.maxDepthM} м. `
+        + 'Одним самотёчным участком трасса не решается: нужны перепадные колодцы, '
+        + 'разбивка на бассейны или насосная станция. Решение принимает инженер.',
+  }
+}
+
 /** Picket (ПК) label for a chainage, e.g. 1057 m → «ПК10+57». */
 export function picketLabel(chainageM: number): string {
   const pk = Math.floor(chainageM / 100)
