@@ -1342,7 +1342,18 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     number++
   }
 
-  const crossingCount = Math.max(input.utilityFeatureCount ?? 0, input.crossings?.length ?? 0)
+  // Листов ровно столько, сколько нужно карточкам.
+  //
+  // Раньше здесь стояло max(utilityFeatureCount, число карточек). Но
+  // utilityFeatureCount — это полилинии коммуникаций в чертеже, а не
+  // пересечения: одна магистраль пересекает трассу единожды, а в чертеже несёт
+  // сотни отрезков по всей площадке. На съёмке Станкевича 4363 линии против 36
+  // пересечений давали 546 листов, из которых 541 был пуст.
+  //
+  // Нижняя граница в один лист сохранена: когда коммуникации в чертеже есть, а
+  // карточки не сформированы, лист выпускается и несёт стоп-фактор — иначе их
+  // отсутствие прошло бы незамеченным.
+  const crossingCount = input.crossings?.length ?? 0
   if (input.deliverableRequirements?.crossingDetailSheets) {
     const crossingsPerSheet = 8
     const detailSheetCount = Math.max(1, Math.ceil(crossingCount / crossingsPerSheet))

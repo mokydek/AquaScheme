@@ -12,6 +12,7 @@ import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
 import { NormsSection, RegionSection, SeismicSection, SourceSection } from './project/FormSections'
 import { DeliverablesSection } from './project/DeliverablesSection'
+import { CrossingsSection } from './project/CrossingsSection'
 import { DemandSection } from './project/DemandSection'
 import { TraceSection } from './project/TraceSection'
 import { HydraulicsSection } from './project/HydraulicsSection'
@@ -66,6 +67,8 @@ interface ProjectInfo {
 
 interface RouteStateReport {
   synthetic?: boolean
+  /** Проектный диаметр, записанный сборкой по съёмке: верх трубы отстоит от лотка ровно на него. */
+  designDiameterMm?: number
   gravity?: { redLineCrossings?: number; utilityCrossings?: number; roadCrossings?: number; waterCrossings?: number; outsideCorridorSegments?: number }
   pressure?: { redLineCrossings?: number; utilityCrossings?: number; roadCrossings?: number; waterCrossings?: number; outsideCorridorSegments?: number }
   quality?: { totalLengthM?: number; routedTerminals?: number; outsideCorridorSegments?: number }
@@ -438,6 +441,11 @@ export function ProjectPage() {
     const content = datasets.topography?.content as { points?: SurveyPoint[] } | null | undefined
     return content?.points ?? []
   }, [datasets.topography])
+
+  // Просвет в карточке пересечения считается от верха трубы, поэтому нужен
+  // проектный диаметр. Его записывает сборка по съёмке; при импорте чертежа
+  // его нет, и просвет тогда честно не считается.
+  const designDiameterForCrossings = project?.route_report?.designDiameterMm
 
   const sourceData = (datasets.source?.content ?? null) as SourceData | null
 
@@ -828,6 +836,12 @@ export function ProjectPage() {
           <DeliverablesSection
             projectId={project.id}
             constraintsDataset={datasets.route_constraints}
+            onSaved={load}
+          />
+          <CrossingsSection
+            projectId={project.id}
+            constraintsDataset={datasets.route_constraints}
+            designDiameterMm={designDiameterForCrossings}
             onSaved={load}
           />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />

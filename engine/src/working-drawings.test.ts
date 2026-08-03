@@ -433,7 +433,11 @@ describe('buildWorkingDrawingSet', () => {
     ]))
     const crossingSheet = set.sheets.find((sheet) => sheet.id.startsWith('crossings-'))!
     expect(crossingSheet.status).toBe('BLOCKED')
-    expect(crossingSheet.blockers.map((item) => item.code)).toContain('CROSSING_CARDS_MISSING')
+    // На самом листе карточек код точнее: состав комплекта требует лист, а
+    // подтверждённых карточек нет вовсе. Прежде здесь ожидался общий
+    // CROSSING_CARDS_MISSING, но лист получал его лишь потому, что число листов
+    // считалось от полилиний коммуникаций в чертеже.
+    expect(crossingSheet.blockers.map((item) => item.code)).toContain('CROSSING_DETAIL_SOURCE_MISSING')
   })
 
   it('blocks final profiles when geology coverage is unverified', () => {
@@ -498,6 +502,44 @@ describe('buildWorkingDrawingSet', () => {
     expect(crossingSheet.status).toBe('BLOCKED')
     expect(crossingSheet.blockers[0].message).toContain('владелец')
     expect(crossingSheet.blockers[0].message).toContain('отметка существующей сети')
+  })
+
+  it('листов карточек столько, сколько карточек, а не линий в чертеже', () => {
+    // utilityFeatureCount — полилинии коммуникаций в чертеже, а не пересечения:
+    // магистраль пересекает трассу единожды, а отрезков несёт сотни. На съёмке
+    // Станкевича 4363 линии против 36 пересечений давали 546 листов, из них
+    // 541 пустой.
+    const crossings = Array.from({ length: 36 }, (_, index) => ({
+      id: `X-${index + 1}`, stationM: index * 10, kind: 'utility', source: 'classified DWG',
+    }))
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      utilityFeatureCount: 4363,
+      crossings,
+      deliverableRequirements: deliverables({ crossingDetailSheets: true }),
+    })
+    const detailSheets = set.sheets.filter((sheet) => sheet.variant === 'crossing_detail')
+    expect(detailSheets).toHaveLength(5)
+    // Ни один лист не должен оказаться пустым.
+    for (const sheet of detailSheets) {
+      expect(sheet.blockers.some((item) => item.code === 'CROSSING_CARDS_MISSING')).toBe(false)
+    }
+  })
+
+  it('без карточек лист всё равно выпускается и несёт стоп-фактор', () => {
+    // Иначе отсутствие карточек при начерченных коммуникациях прошло бы молча.
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      utilityFeatureCount: 12,
+      crossings: [],
+      deliverableRequirements: deliverables({ crossingDetailSheets: true }),
+    })
+    const detailSheets = set.sheets.filter((sheet) => sheet.variant === 'crossing_detail')
+    expect(detailSheets).toHaveLength(1)
+    expect(detailSheets[0].blockers.map((item) => item.code)).toContain('CROSSING_DETAIL_SOURCE_MISSING')
+    // И профиль независимо сообщает, что при начерченных коммуникациях карточек нет.
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    expect(profileSheet.blockers.map((item) => item.code)).toContain('CROSSING_CARDS_MISSING')
   })
 
   it('blocks a crossing whose confirmed clearance is below the required clearance', () => {
