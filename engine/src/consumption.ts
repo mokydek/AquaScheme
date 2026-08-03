@@ -27,6 +27,10 @@ export interface Consumption {
   drainageMeanFlowLps: number
   /** Общий коэффициент неравномерности при этом среднем расходе, таблица 5.13. */
   kGenMax: number
+  /** Какой метод дал `drainageFlowLps`. */
+  drainageFlowMethod: 'water-demand' | 'kgen-table'
+  /** Расход по водопотреблению, л/с — для сравнения методов. */
+  drainageFlowByWaterDemandLps: number
   /**
    * Тот же расход, но через общий коэффициент неравномерности сточных вод, а не
    * через коэффициенты водопотребления.
@@ -48,14 +52,19 @@ export function computeConsumption(
   // Средний секундный расход: суточный объём, разнесённый на сутки.
   const meanFlowLps = (water.avgDailyM3 * 1000) / 86400
   const kGen = kGenMax(meanFlowLps)
+  const byKGenLps = Math.round(meanFlowLps * kGen.value * 100) / 100
+  // Метод выбирает инженер; по умолчанию поведение прежнее.
+  const method = params.drainageFlowMethod ?? 'water-demand'
   return {
     water,
     // Wastewater = domestic demand without irrigation. Fire flow is a water
     // supply reserve, not a discharge, so it is excluded here.
     drainageDailyM3: water.maxDailyM3,
-    drainageFlowLps: water.designFlowLps,
+    drainageFlowLps: method === 'kgen-table' ? byKGenLps : water.designFlowLps,
+    drainageFlowMethod: method,
+    drainageFlowByWaterDemandLps: water.designFlowLps,
     drainageMeanFlowLps: Math.round(meanFlowLps * 100) / 100,
     kGenMax: kGen.value,
-    drainageFlowByKGenLps: Math.round(meanFlowLps * kGen.value * 100) / 100,
+    drainageFlowByKGenLps: byKGenLps,
   }
 }

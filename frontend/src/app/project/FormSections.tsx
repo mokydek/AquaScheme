@@ -524,7 +524,9 @@ export function NormsSection(props: {
     { ...NORMATIVE_DEFAULTS },
     props.onSaved,
   )
-  const fields: Array<{ key: keyof typeof NORMATIVE_DEFAULTS; label: string }> = [
+  // Метод — не число, поэтому в общий список числовых полей не входит.
+  const fields: Array<{ key: 'perCapitaDemandLpd' | 'dayMaxCoefficient' | 'alphaMax'
+    | 'fireFlowLps' | 'minFreeHeadBaseM' | 'freeHeadPerFloorM' | 'maxFreeHeadM'; label: string }> = [
     { key: 'perCapitaDemandLpd', label: 'perCapita' },
     { key: 'dayMaxCoefficient', label: 'kDayMax' },
     { key: 'alphaMax', label: 'alphaMax' },
@@ -548,10 +550,30 @@ export function NormsSection(props: {
           />
         ))}
       </div>
+      <label className="field" htmlFor="normative-drainage-method">
+        <span className="field-label">{t('project.norms.drainageMethod')}</span>
+        <select
+          id="normative-drainage-method"
+          name="normative-drainage-method"
+          className="input"
+          value={String(form.values.drainageFlowMethod ?? 'water-demand')}
+          onChange={form.set('drainageFlowMethod')}
+        >
+          <option value="water-demand">{t('project.norms.drainageByWater')}</option>
+          <option value="kgen-table">{t('project.norms.drainageByKGen')}</option>
+        </select>
+      </label>
+      <p className="hint">{t('project.norms.drainageMethodHint')}</p>
+
       <SectionFooter
         busy={form.busy}
         notice={form.notice}
-        onSave={() => void form.save((v) => numbersOrNull(v, fields.map((f) => f.key)))}
+        onSave={() => void form.save((v) => {
+          const numbers = numbersOrNull(v, fields.map((f) => f.key))
+          if (numbers === null) return null
+          // Метод сохраняется как есть: приводить его к числу нечего.
+          return { ...numbers, drainageFlowMethod: v.drainageFlowMethod ?? 'water-demand' }
+        })}
       />
     </Panel>
   )

@@ -943,6 +943,10 @@ export const en = {
         flooding: 'Flood prone area',
       },
       norms: {
+        drainageMethod: 'Wastewater design flow method',
+        drainageByWater: 'From the water demand design flow (as before)',
+        drainageByKGen: 'From the general unevenness coefficient, table 5.13',
+        drainageMethodHint: 'The two differ materially: at 20 000 residents table 5.13 gives about 104 L/s against 87 L/s from the water demand — 20% more, so the choice changes the diameter. Both are always computed and shown side by side; the default keeps the previous behaviour',
         title: 'Code parameters',
         hint: 'Prefilled with SP RK 4.01-101 and SNiP 2.04.02 values. The engineer may adjust them per project',
         perCapita: 'Per capita demand, L/day per resident',

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { computeConsumption } from './consumption'
+import { NORMATIVE_DEFAULTS } from './norms'
 import { computeNetworkDemand } from './demand'
 
 const BUILDINGS = [
@@ -61,5 +62,35 @@ describe('расход стока по коэффициенту неравном
     const result = computeConsumption([])
     expect(result.drainageMeanFlowLps).toBe(0)
     expect(result.drainageFlowByKGenLps).toBe(0)
+  })
+})
+
+describe('выбор метода расчёта расхода стока', () => {
+  const buildings = Array.from({ length: 200 }, (_, index) => ({
+    id: `B-${index + 1}`, floors: 5, residents: 100,
+  }))
+
+  it('по умолчанию поведение прежнее', () => {
+    const result = computeConsumption(buildings)
+    expect(result.drainageFlowMethod).toBe('water-demand')
+    expect(result.drainageFlowLps).toBe(result.drainageFlowByWaterDemandLps)
+  })
+
+  it('выбранный метод меняет именно расчётный расход', () => {
+    const byKGen = computeConsumption(buildings, {
+      ...NORMATIVE_DEFAULTS, drainageFlowMethod: 'kgen-table',
+    })
+    expect(byKGen.drainageFlowMethod).toBe('kgen-table')
+    expect(byKGen.drainageFlowLps).toBe(byKGen.drainageFlowByKGenLps)
+    // Оба значения считаются при любом выборе: расхождение видно всегда.
+    expect(byKGen.drainageFlowByWaterDemandLps).toBeGreaterThan(0)
+    expect(byKGen.drainageFlowByWaterDemandLps).not.toBe(byKGen.drainageFlowByKGenLps)
+  })
+
+  it('на этом размере таблица 5.13 даёт больший расход, чем водопотребление', () => {
+    // 20 000 жителей: занижение диаметра при выборе по водопотреблению — не
+    // умозрительный риск, а измеренное расхождение.
+    const result = computeConsumption(buildings)
+    expect(result.drainageFlowByKGenLps).toBeGreaterThan(result.drainageFlowByWaterDemandLps)
   })
 })

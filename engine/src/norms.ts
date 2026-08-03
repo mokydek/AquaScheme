@@ -36,6 +36,20 @@ export interface NormativeParams {
   freeHeadPerFloorM: number
   /** Maximum allowed free head, m. */
   maxFreeHeadM: number
+  /**
+   * Чем пикуется расчётный расход сточных вод.
+   *
+   * `water-demand` — сток принимается равным расчётному водопотреблению без
+   * полива (запись реестра `drainage.equalsWater`); так считалось всегда, и
+   * это значение по умолчанию.
+   *
+   * `kgen-table` — средний секундный расход умножается на общий коэффициент
+   * неравномерности по таблице 5.13.
+   *
+   * Величины расходятся заметно: при 20 000 жителей таблица даёт на 20% больше.
+   * Выбор метода — решение инженера, поэтому он вынесен сюда, а не зашит.
+   */
+  drainageFlowMethod?: 'water-demand' | 'kgen-table'
 }
 
 export const NORMATIVE_DEFAULTS: NormativeParams = {
@@ -46,6 +60,7 @@ export const NORMATIVE_DEFAULTS: NormativeParams = {
   minFreeHeadBaseM: 10,
   freeHeadPerFloorM: 4,
   maxFreeHeadM: 60,
+  drainageFlowMethod: 'water-demand',
 }
 
 /** Default design freezing depth, m. Site specific, engineer must confirm. */
