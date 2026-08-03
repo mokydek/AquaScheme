@@ -14,6 +14,8 @@ import {
   selectManholeConstructions,
   solveGravityNetwork,
   assessGravityFeasibility,
+  auditProjectProvenance,
+  provenanceLabel,
   summarizeRouteCoverage,
   planGravityBasins,
   unverifiedClauses,
@@ -472,14 +474,53 @@ export function GravitySection({
     return summarizeRouteCoverage(boreholes ?? [], path, maxOffsetM)
   }, [result, boreholes, geologyCoverage.maxOffsetM, network.nodes])
 
-  const workingDrawingSet = useMemo(() => {
-    // Сверки, выполненные инженером по бумажному документу, — такое же
-    // подтверждение, как транскрипция из PDF, и снимают пункт для этого проекта.
+  // Сверки, выполненные инженером по бумажному документу, — такое же
+  // подтверждение, как транскрипция из PDF, и снимают пункт для этого проекта.
+  const applicableUnverifiedClauses = useMemo(() => {
     const clauseConfirmations = ((normsDataset?.content ?? {}) as {
       clauseConfirmations?: NormClauseConfirmation[]
     }).clauseConfirmations ?? []
-    const applicableUnverifiedClauses = unverifiedClauses(clauseConfirmations)
+    return unverifiedClauses(clauseConfirmations)
       .filter((clause) => clause.appliesSystem.includes(systemType))
+  }, [normsDataset, systemType])
+
+  /**
+   * Происхождение ключевых величин проекта.
+   *
+   * Читает те же состояния, что и шлюзы набора чертежей, поэтому разойтись с
+   * ними не может. Ценность в другом разрезе: шлюз говорит «нельзя выпустить»,
+   * а эта сводка — что именно измерено, что взято из задания, а что принято по
+   * умолчанию и потому выпуску мешает.
+   */
+  const provenance = useMemo(() => auditProjectProvenance({
+    surveyPointCount: surveyPoints.length,
+    surveyPointSource: surveyPoints.length > 0 ? 'geometry' : 'none',
+    georeference: constraints?.georeference ?? null,
+    freezingDepth: {
+      valueM: freezingDepth.valueM,
+      status: freezingDepth.verified ? 'verified' : freezingDepth.available ? 'unverified' : 'missing',
+      source: freezingDepth.source,
+    },
+    geologyCoverage,
+    spatialBoreholeCount,
+    designDiameterMm: schedule?.pipes[0]?.diameterMm ?? null,
+    requiredClearanceM: constraints?.crossings?.[0]?.requiredClearanceM ?? null,
+    deliverables: constraints?.deliverableRequirements ?? null,
+    catalogReady: Boolean(activeCatalogId) && catalogResolution.ready,
+    manholeCatalogReady: schedule
+      ? schedule.manholes.length > 0
+        && manholeSelection.selected.length === schedule.manholes.length
+        && manholeSelection.unmatched.length === 0
+      : false,
+    normsVerified: applicableUnverifiedClauses.length === 0,
+    ...(systemType === 'storm' ? { stormRunoff: stormRunoffStatus } : {}),
+  }), [
+    surveyPoints, constraints, freezingDepth, geologyCoverage, spatialBoreholeCount,
+    schedule, activeCatalogId, catalogResolution.ready, manholeSelection,
+    applicableUnverifiedClauses, systemType, stormRunoffStatus,
+  ])
+
+  const workingDrawingSet = useMemo(() => {
     return buildWorkingDrawingSet({
       system: systemType,
       network,
@@ -558,6 +599,7 @@ export function GravitySection({
     catalogResolution.ready,
     constraints,
     freezingDepth,
+    applicableUnverifiedClauses,
     geologyCoverage,
     geologyDataset,
     gravityPlan,
@@ -888,6 +930,44 @@ export function GravitySection({
           ))}
         </div>
       </div>
+      <div className="drawing-audit" style={{ marginBottom: 12 }}>
+        <div>
+          <h5>Происхождение исходных величин</h5>
+          <p className={`stat-line${provenance.blockers.length === 0 ? ' ok' : ' warn'}`}>
+            Пригодно к выпуску {Math.round(provenance.verifiedShare * 100)}% величин
+            ({provenance.total - provenance.blockers.length} из {provenance.total}).
+          </p>
+          <p className="hint">
+            Шлюз выпуска говорит, что выпустить нельзя; эта сводка — чем именно подтверждена
+            каждая величина. Величины из задания и ТУ идут отдельным разрядом: это авторитетный
+            вход проекта, а не принятое по умолчанию.
+          </p>
+          <div className="table-wrap" style={{ maxHeight: 300 }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Величина</th>
+                  <th scope="col">Происхождение</th>
+                  <th scope="col">Чем подтверждена</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(provenance.fields).map(([field, item]) => (
+                  <tr key={field} className={item.provenance.verified ? undefined : 'row-warn'}>
+                    <td>{field}</td>
+                    <td>{provenanceLabel(item.provenance.kind)}</td>
+                    <td>
+                      {item.provenance.source}
+                      {item.provenance.note ? ` — ${item.provenance.note}` : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       {routeCoverage && (
         <div className="drawing-audit" style={{ marginBottom: 12 }}>
           <div>

@@ -21,6 +21,16 @@ export type ProvenanceKind =
   | 'derived'
   /** Из каталога проекта: код АГСК, марка насоса, тип колодца. */
   | 'catalogue'
+  /**
+   * Заявлено заданием на проектирование или техническими условиями: проектный
+   * диаметр, требуемый просвет в пересечении, состав комплекта.
+   *
+   * Отдельный разряд, потому что это авторитетный вход проекта, а не догадка:
+   * «принято по умолчанию» такие величины описывает неверно и делает
+   * непригодным к выпуску то, что на самом деле подтверждено документом.
+   * Подтверждается ссылкой на документ и подписью ответственного.
+   */
+  | 'stated'
   /** Из норматива с подтверждённым пунктом. */
   | 'normative'
   /** Принято по умолчанию или инженерным решением; требует подтверждения. */
@@ -47,14 +57,18 @@ export interface Traced<T> {
   provenance: Provenance
 }
 
+// Порядок по убыванию доверия. Взаимное расположение прежних разрядов не
+// менялось: `stated` встал между каталогом и нормативом, потому что задание
+// конкретнее общей нормы, но и не является измерением.
 const RANK: Record<ProvenanceKind, number> = {
-  measured: 5, derived: 4, catalogue: 3, normative: 2, assumed: 1, absent: 0,
+  measured: 6, derived: 5, catalogue: 4, stated: 3, normative: 2, assumed: 1, absent: 0,
 }
 
 const LABEL: Record<ProvenanceKind, string> = {
   measured: 'измерено',
   derived: 'выведено из измеренного',
   catalogue: 'каталог проекта',
+  stated: 'заявлено заданием или ТУ',
   normative: 'норматив',
   assumed: 'принято по умолчанию',
   absent: 'отсутствует',
@@ -130,7 +144,7 @@ export interface ProvenanceAudit {
  */
 export function auditProvenance(fields: Record<string, Traced<unknown>>): ProvenanceAudit {
   const byKind: Record<ProvenanceKind, number> = {
-    measured: 0, derived: 0, catalogue: 0, normative: 0, assumed: 0, absent: 0,
+    measured: 0, derived: 0, catalogue: 0, stated: 0, normative: 0, assumed: 0, absent: 0,
   }
   const blockers: ProvenanceAudit['blockers'] = []
   const entries = Object.entries(fields)
