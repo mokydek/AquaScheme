@@ -11,6 +11,7 @@ import type { GeologyInput, SeismicInput, SurveyPoint as EngineSurveyPoint } fro
 import { TopographySection } from './project/TopographySection'
 import { BuildingsSection } from './project/BuildingsSection'
 import { NormsSection, RegionSection, SeismicSection, SourceSection } from './project/FormSections'
+import { DeliverablesSection } from './project/DeliverablesSection'
 import { DemandSection } from './project/DemandSection'
 import { TraceSection } from './project/TraceSection'
 import { HydraulicsSection } from './project/HydraulicsSection'
@@ -824,6 +825,11 @@ export function ProjectPage() {
             onChanged={load}
           />
           <SeismicSection projectId={project.id} dataset={datasets.seismic} onSaved={load} />
+          <DeliverablesSection
+            projectId={project.id}
+            constraintsDataset={datasets.route_constraints}
+            onSaved={load}
+          />
           <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />
           {isWater && <DemandSection buildings={buildings} normsDataset={datasets.normative} />}
           <NormRegistrySection />
