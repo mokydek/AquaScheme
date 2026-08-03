@@ -37,6 +37,7 @@ import type { NormativeParams, NormClauseConfirmation } from '@aquascheme/engine
 import { networkFromRows } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
+import { saveDataset } from '../../shared/datasets'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import { formatAppError } from '../../shared/errorFormatting'
 import {
@@ -60,6 +61,8 @@ import { resolveGravityBranchProfilesForDrawings } from '../../shared/gravityBra
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
 import { AlbumSheetSet } from './AlbumSheetSet'
+import { SchemeBuilder } from './SchemeBuilder'
+import { StormInletsView } from './StormInletsView'
 import { freezingDepthStatus } from '../../shared/geologyStatus'
 
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -265,6 +268,20 @@ export function GravitySection({
       })
     }).length
   }, [boreholes, geologyCoverage.maxOffsetM, network.pipes])
+
+  // Ширина улицы хранится в наборе дождевой канализации: это исходное данное
+  // проекта, а не состояние экрана. Локальное состояние нужно только для
+  // немедленного отклика — на перезагрузке значение приходит из набора.
+  const savedStreetWidthM = ((drainageDataset?.content ?? {}) as { streetWidthM?: number }).streetWidthM ?? null
+  const [streetWidthM, setStreetWidthM] = useState<number | null>(savedStreetWidthM)
+  useEffect(() => { setStreetWidthM(savedStreetWidthM) }, [savedStreetWidthM])
+  const saveStreetWidth = async (value: number | null) => {
+    setStreetWidthM(value)
+    const content = (drainageDataset?.content ?? {}) as Record<string, unknown>
+    // Набор перезаписывается целиком, поэтому остальные ключи переносятся явно:
+    // иначе выбор источника водоснабжения и водосборы были бы стёрты.
+    await saveDataset(projectId, 'drainage', { ...content, streetWidthM: value })
+  }
 
   const stormCatchments = useMemo(
     () => (((drainageDataset?.content ?? {}) as {
@@ -1192,6 +1209,39 @@ export function GravitySection({
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
             </button>
           </div>
+
+          {systemType === 'storm' && result.profile && (
+            <StormInletsView
+              profile={result.profile}
+              streetWidthM={streetWidthM}
+              onStreetWidthChange={(value) => void saveStreetWidth(value)}
+              fieldId={`storm-street-width-${projectId}`}
+            />
+          )}
+
+          {/*
+            Пошаговая сборка ситуационной схемы: каждый слой называет данные, из
+            которых нарисован, а отсутствующие показывает прямо, а не пропускает.
+            Компонент существовал со своим SchemeView и переводами на трёх
+            языках, но не отрисовывался нигде — путь с экрана к нему отсутствовал.
+          */}
+          <SchemeBuilder
+            scheme={{
+              title: `${systemType === 'storm' ? 'К2' : 'К1'}. ${projectName}`,
+              network,
+              buildings: buildings.map((building) => ({ x: building.x, y: building.y, label: building.label })),
+              pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
+              outletFlowLps: result.outletFlowLps,
+              corridorRings: constraints?.corridorRings,
+            }}
+            steps={{
+              network,
+              pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
+              buildingsCount: buildings.length,
+              corridorRings: constraints?.corridorRings?.length ?? 0,
+              outletFlowLps: result.outletFlowLps,
+            }}
+          />
 
           {result.profile && schedule && (
             <AlbumSheetSet
