@@ -182,17 +182,23 @@ function pdfFontVfs(module: unknown): Record<string, string> {
   throw new Error('pdfmake font VFS is unavailable')
 }
 
-/** Per-manhole material table sheets + the protective grille sheet. */
+/**
+ * Листы колодцев: параметрические решения, ведомости материалов по каждому
+ * колодцу и лист защитной сетки, если она есть в подобранных конструкциях.
+ */
 export async function generateManholeSheetsDxf(
   projectName: string,
   schedule: import('@aquascheme/engine').SewerSchedule,
   constructions: import('@aquascheme/engine').SelectedManholeConstruction[] = [],
-): Promise<{ tables: Array<{ title: string; dxf: string }>; grille?: string }> {
-  const { buildManholeMaterialSheetsDxf, buildProtectiveGrilleSheetDxf } = await import('@aquascheme/engine/dxf')
+): Promise<{ detail: string; tables: Array<{ title: string; dxf: string }>; grille?: string }> {
+  const {
+    buildManholeConstructionDetailDxf, buildManholeMaterialSheetsDxf, buildProtectiveGrilleSheetDxf,
+  } = await import('@aquascheme/engine/dxf')
   const grilleComponents = constructions.flatMap((construction) => construction.components
     .filter((component) => /сетк/i.test(component.name))
     .map((component) => ({ quantity: component.quantity, source: construction.source })))
   return {
+    detail: buildManholeConstructionDetailDxf(projectName, schedule, constructions),
     tables: buildManholeMaterialSheetsDxf(projectName, schedule, constructions),
     ...(grilleComponents.length > 0 ? {
       grille: buildProtectiveGrilleSheetDxf(

@@ -48,6 +48,7 @@ import {
   generateSewerNotePdf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
+  generateManholeSheetsDxf,
   generateSewerSpecSheetDxf,
   generateSewerSpecXlsx,
   generateSewerScheduleXlsx,
@@ -671,7 +672,7 @@ export function GravitySection({
         liftStation: assessLiftStationNeed(result.profile.stations.map((s) => s.depthM)).needed.value,
         highGroundwater: groundwaterDepthM !== undefined && groundwaterDepthM < result.profile.maxDepthM,
       })
-      const [general, situation, plan, profile, xlsx, specSheet, specXlsx, drawingFiles] = await Promise.all([
+      const [general, situation, plan, profile, xlsx, manholeSheets, specSheet, specXlsx, drawingFiles] = await Promise.all([
         generateSewerGeneralDataDxf({
           projectName,
           schedule,
@@ -688,6 +689,7 @@ export function GravitySection({
         generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels }),
         generateSewerProfileDxf({ projectName, profile: result.profile, crossings: constraints?.crossings ?? [] }),
         generateSewerScheduleXlsx(schedule, manholeSelection.selected),
+        generateManholeSheetsDxf(projectName, schedule, manholeSelection.selected),
         generateSewerSpecSheetDxf(projectName, specItems),
         generateSewerSpecXlsx(specItems),
         generateWorkingDrawingSetDxfs(projectAlbumInput()),
@@ -698,10 +700,18 @@ export function GravitySection({
         [`${slug}_03_план_${systemType === 'storm' ? 'К2' : 'К1'}_сводный.dxf`]: plan,
         [`${slug}_04_профиль_${systemType === 'storm' ? 'К2' : 'К1'}_сводный.dxf`]: profile,
         [`${slug}_05_ведомость.xlsx`]: xlsx,
+        // Листы колодцев: параметрические решения и ведомость материалов по
+        // каждому колодцу. Строились и проверялись, но в комплект не попадали —
+        // собиравшая их функция не вызывалась ниоткуда.
+        [`${slug}_05a_колодцы_решения.dxf`]: manholeSheets.detail,
         [`${slug}_06_спецификация_НК.dxf`]: specSheet,
         [`${slug}_06_спецификация_НК.xlsx`]: specXlsx,
       }
       const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.()]+/g, '_')
+      manholeSheets.tables.forEach((sheet, index) => {
+        files[`${slug}_05b_${String(index + 1).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
+      })
+      if (manholeSheets.grille) files[`${slug}_05c_защитная_сетка.dxf`] = manholeSheets.grille
       for (const sheet of drawingFiles) {
         files[`${slug}_${String(sheet.sheetNumber).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
       }

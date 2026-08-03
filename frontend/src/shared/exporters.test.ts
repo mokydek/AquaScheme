@@ -13,6 +13,7 @@ import type {
 } from '@aquascheme/engine'
 import { WorkingDrawingPreview } from '../app/project/WorkingDrawingPreview'
 import {
+  generateManholeSheetsDxf,
   generateProjectSheetPdf,
   generateSewerScheduleXlsx,
   generateWorkingDrawingSheetDxf,
@@ -35,6 +36,35 @@ const constructions: SelectedManholeConstruction[] = [{
     { name: 'Плита', unit: 'шт', baseQuantity: 1, catalogCode: 'SLAB', quantity: 1 },
   ],
 }]
+
+describe('листы колодцев', () => {
+  it('дают лист решений и ведомость материалов по каждому колодцу', async () => {
+    // Функция существовала и не вызывалась ниоткуда: листы строились и в
+    // комплект не попадали. Проверяем то, ради чего лист и нужен, — тип
+    // конструкции, её источник и посчитанные количества элементов.
+    const sheets = await generateManholeSheetsDxf('Тестовый объект', schedule, constructions)
+    expect(sheets.detail).toContain('TEST-WELL')
+    expect(sheets.detail).toContain('Каталог, лист 7')
+    expect(sheets.tables).toHaveLength(1)
+    expect(sheets.tables[0].dxf).toContain('Кольцо')
+    expect(sheets.tables[0].dxf).toContain('Плита')
+  })
+
+  it('лист защитной сетки выпускается только когда сетка есть в конструкции', async () => {
+    const without = await generateManholeSheetsDxf('Тестовый объект', schedule, constructions)
+    expect(without.grille).toBeUndefined()
+
+    const withGrille = await generateManholeSheetsDxf('Тестовый объект', schedule, [{
+      ...constructions[0],
+      components: [
+        ...constructions[0].components,
+        { name: 'Сетка защитная', unit: 'шт', baseQuantity: 1, quantity: 2 },
+      ],
+    }])
+    expect(withGrille.grille).toBeDefined()
+    expect(withGrille.grille).toContain('Каталог, лист 7')
+  })
+})
 
 describe('working schedule XLSX', () => {
   it('exports selected construction provenance and calculated component quantities', async () => {
