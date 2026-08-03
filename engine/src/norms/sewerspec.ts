@@ -65,6 +65,10 @@ export function buildSewerSpecification(input: SewerSpecInput): SpecItem[] {
   }
 
   for (const crossing of input.crossings ?? []) {
+    // Переход без известной ширины дороги в спецификацию не попадает: позиция
+    // «футляр, 0 м» или с придуманной длиной хуже её отсутствия — она выглядит
+    // посчитанной. Сам переход при этом остаётся стоп-фактором выпуска.
+    if (crossing.casingLengthM == null) continue
     push({
       name: 'Футляр стальной на переходе',
       spec: crossing.roadId,

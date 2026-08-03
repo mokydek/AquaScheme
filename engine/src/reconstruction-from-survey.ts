@@ -67,6 +67,14 @@ export interface ReconstructionSurveyOptions {
    * догадку за норму.
    */
   requiredClearanceM?: number
+  /**
+   * Ширина проезжей части, м, для длины футляра на переходе под дорогой.
+   *
+   * Умолчания нет по той же причине, что и у просвета: в топосъёмке ширины
+   * дороги нет, и принятое «по опыту» значение попало бы в проект как
+   * посчитанное. Без неё переход выявляется, но длина футляра не заполняется.
+   */
+  roadWidthM?: number
 }
 
 export interface ReconstructionFromSurvey {
@@ -248,10 +256,11 @@ export function buildReconstructionFromSurvey(
   // ось с коммуникациями, а дороги — отдельная роль слоя. Переход под дорогой
   // требует футляра, и без карточки он в проект просто не попадал.
   //
-  // Длина футляра здесь не подставляется. Она считается по ширине дороги, а
-  // чертёж ширины не несёт: подставилось бы принятое по умолчанию значение, то
-  // есть догадка в проектном документе. Требование футляра к тому же из ТЗ, а
-  // не из норматива, и в реестре оно не подтверждено.
+  // Длина футляра считается по ширине дороги. Ширины в чертеже нет, поэтому
+  // она приходит от инженера через `roadWidthM`; без неё длина не заполняется
+  // вовсе — подставленное умолчание было бы догадкой в проектном документе.
+  // Требование футляра к тому же из ТЗ, а не из норматива, и в реестре оно не
+  // подтверждено.
   const roadCrossings: CrossingRecord[] = chain.length >= 2
     ? findRoadCrossings(
       chain.map((chamber) => ({ x: chamber.x, y: chamber.y })),
@@ -259,11 +268,13 @@ export function buildReconstructionFromSurvey(
         id: line.layer ?? `дорога-${index + 1}`,
         points: line.points,
       })),
+      { roadWidthM: options.roadWidthM ?? null },
     ).map((crossing, index) => ({
       id: `Д-${index + 1}`,
       stationM: Math.round(crossing.stationM * 100) / 100,
       kind: 'автомобильная дорога',
-      source: `пересечение оси с дорогой «${crossing.roadId}» по чертежу`,
+      source: `пересечение оси с дорогой «${crossing.roadId}» по чертежу`
+        + (crossing.casingLengthM ? `; футляр ${crossing.casingLengthM.value} м — ${crossing.casingLengthM.note}` : ''),
       designInvertElevationM: invertAt(crossing.stationM) ?? undefined,
     }))
     : []
@@ -287,7 +298,9 @@ export function buildReconstructionFromSurvey(
     blockers.push(
       `Переходов под автомобильными дорогами: ${roadCrossings.length} `
       + `(пикеты ${roadCrossings.map((crossing) => crossing.stationM.toFixed(0)).join(', ')} м). `
-      + 'Каждый требует футляра; длина футляра считается по ширине дороги, которой в чертеже нет.',
+      + (options.roadWidthM != null && options.roadWidthM > 0
+        ? 'Каждый требует футляра; длина футляра посчитана по заданной ширине дороги.'
+        : 'Каждый требует футляра; длина футляра не посчитана: не задана ширина дороги.'),
     )
   }
 

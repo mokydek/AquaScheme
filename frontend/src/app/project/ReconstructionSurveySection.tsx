@@ -29,6 +29,7 @@ export function ReconstructionSurveySection({
   const { t } = useTranslation()
   const [diameterMm, setDiameterMm] = useState('')
   const [clearanceM, setClearanceM] = useState('')
+  const [roadWidthM, setRoadWidthM] = useState('')
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
   // Разобранный чертёж держится отдельно, чтобы просвет можно было уточнить
   // без повторной загрузки файла: разбор дороже пересборки в несколько раз.
@@ -47,6 +48,8 @@ export function ReconstructionSurveySection({
   const diameterReady = Number.isFinite(diameter) && diameter > 0
   const clearance = Number(clearanceM)
   const clearanceReady = clearanceM.trim() !== '' && Number.isFinite(clearance) && clearance > 0
+  const roadWidth = Number(roadWidthM)
+  const roadWidthReady = roadWidthM.trim() !== '' && Number.isFinite(roadWidth) && roadWidth > 0
 
   const rebuild = async (
     data: DxfNetworkData,
@@ -59,6 +62,9 @@ export function ReconstructionSurveySection({
       roleOverrides: overrides,
       // Без величины из ТУ отбор не выполняется: подставлять её нельзя.
       ...(clearanceReady ? { requiredClearanceM: clearance } : {}),
+      // Ширина проезжей части: без неё переход под дорогой выявляется, но
+      // длина футляра не заполняется — умолчание было бы догадкой в проекте.
+      ...(roadWidthReady ? { roadWidthM: roadWidth } : {}),
     }))
   }
 
@@ -256,6 +262,28 @@ export function ReconstructionSurveySection({
         />
       </div>
       <p className="hint">{t('project.reconstruction.clearanceHint')}</p>
+
+      <div className="section-actions">
+        <label htmlFor={`reconstruction-${projectId}-road-width`}>
+          Ширина проезжей части, м
+        </label>
+        <input
+          id={`reconstruction-${projectId}-road-width`}
+          name={`reconstruction-${projectId}-road-width`}
+          type="number"
+          min="0"
+          step="0.5"
+          inputMode="decimal"
+          value={roadWidthM}
+          onChange={(event) => setRoadWidthM(event.target.value)}
+          onBlur={() => { if (parsed) void rebuild(parsed) }}
+        />
+      </div>
+      <p className="hint">
+        Нужна для длины футляра на переходе под дорогой: ширина плюс запас 5 м с каждой стороны.
+        В топосъёмке ширины нет, поэтому без неё переход выявляется, но длина футляра не заполняется
+        и позиция в спецификацию не попадает.
+      </p>
 
       <div className="section-actions">
         <input

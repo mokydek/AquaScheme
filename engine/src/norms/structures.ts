@@ -23,18 +23,26 @@ export interface RoadCrossing {
   stationM: number
   x: number
   y: number
-  /** Recommended casing length, m: road width + allowance each side. */
-  casingLengthM: Justified<number>
+  /**
+   * Длина футляра, м: ширина дороги плюс запас с каждой стороны. `null`, когда
+   * ширина неизвестна.
+   *
+   * Умолчания у ширины нет намеренно. Прежде принималось 20 м, и число
+   * попадало в результат неотличимым от посчитанного — а в проектном документе
+   * это догадка, выданная за расчёт. Ширина либо есть у линии дороги в
+   * чертеже, либо её задаёт инженер, либо длины футляра не будет.
+   */
+  casingLengthM: Justified<number> | null
 }
 
 export interface CrossingOptions {
   /** Casing continues this far beyond each road edge, m. */
   allowanceM?: number
-  /** Assumed road width when the road line carries none, m. */
-  defaultRoadWidthM?: number
+  /** Ширина дороги от проекта, м, когда её нет у самой линии дороги. */
+  roadWidthM?: number | null
 }
 
-const CROSSING_DEFAULTS: Required<CrossingOptions> = { allowanceM: 5, defaultRoadWidthM: 20 }
+const CROSSING_DEFAULTS = { allowanceM: 5 }
 
 function segmentIntersection(
   a1: { x: number; y: number }, a2: { x: number; y: number },
@@ -62,7 +70,7 @@ export function findRoadCrossings(
   roads: Polyline[],
   options: CrossingOptions = {},
 ): RoadCrossing[] {
-  const opt = { ...CROSSING_DEFAULTS, ...options }
+  const opt = { ...CROSSING_DEFAULTS, roadWidthM: null as number | null, ...options }
   const crossings: RoadCrossing[] = []
   let chain = 0
   for (let i = 1; i < route.length; i++) {
@@ -73,13 +81,18 @@ export function findRoadCrossings(
       for (let j = 1; j < road.points.length; j++) {
         const hit = segmentIntersection(a1, a2, road.points[j - 1], road.points[j])
         if (!hit) continue
-        const width = road.widthM ?? opt.defaultRoadWidthM
+        const width = road.widthM ?? opt.roadWidthM
         crossings.push({
           roadId: road.id,
           stationM: chain + hit.t * segLen,
           x: hit.x,
           y: hit.y,
-          casingLengthM: justified(width + 2 * opt.allowanceM, ['crossing.casing']),
+          casingLengthM: width != null && width > 0
+            ? justified(width + 2 * opt.allowanceM, ['crossing.casing'], 'normative',
+              road.widthM != null
+                ? `ширина дороги ${road.widthM} м из чертежа, запас ${opt.allowanceM} м с каждой стороны`
+                : `ширина дороги ${width} м задана проектом, запас ${opt.allowanceM} м с каждой стороны`)
+            : null,
         })
       }
     }

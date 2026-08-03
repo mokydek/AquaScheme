@@ -4,18 +4,40 @@ import { assessLiftStationNeed, findRoadCrossings, protectiveGrilles } from './s
 describe('findRoadCrossings', () => {
   const route = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }]
 
+  const roads = [
+    { id: 'дорога А', points: [{ x: 50, y: -10 }, { x: 50, y: 10 }], widthM: 30 },
+    { id: 'дорога Б', points: [{ x: 90, y: 50 }, { x: 110, y: 50 }] },
+  ]
+
   it('finds crossings with chainage and justified casing length', () => {
-    const crossings = findRoadCrossings(route, [
-      { id: 'дорога А', points: [{ x: 50, y: -10 }, { x: 50, y: 10 }], widthM: 30 },
-      { id: 'дорога Б', points: [{ x: 90, y: 50 }, { x: 110, y: 50 }] },
-    ])
+    const crossings = findRoadCrossings(route, roads)
     expect(crossings).toHaveLength(2)
     expect(crossings[0].roadId).toBe('дорога А')
     expect(crossings[0].stationM).toBe(50)
-    expect(crossings[0].casingLengthM.value).toBe(40) // 30 + 2×5
-    expect(crossings[0].casingLengthM.refs).toContain('crossing.casing')
+    expect(crossings[0].casingLengthM?.value).toBe(40) // 30 + 2×5
+    expect(crossings[0].casingLengthM?.refs).toContain('crossing.casing')
+    expect(crossings[0].casingLengthM?.note).toMatch(/из чертежа/)
     expect(crossings[1].stationM).toBe(150) // 100 along leg 1 + 50 up leg 2
-    expect(crossings[1].casingLengthM.value).toBe(30) // default 20 + 2×5
+  })
+
+  it('без ширины дороги длина футляра не выдумывается', () => {
+    // Прежде подставлялось 20 м, и число попадало в результат неотличимым от
+    // посчитанного. В проектном документе это догадка, выданная за расчёт.
+    const crossings = findRoadCrossings(route, roads)
+    expect(crossings[1].casingLengthM).toBeNull()
+  })
+
+  it('ширина от проекта применяется только там, где её нет у линии дороги', () => {
+    const crossings = findRoadCrossings(route, roads, { roadWidthM: 12 })
+    expect(crossings[0].casingLengthM?.value).toBe(40) // ширина из чертежа важнее
+    expect(crossings[1].casingLengthM?.value).toBe(22) // 12 + 2×5
+    expect(crossings[1].casingLengthM?.note).toMatch(/задана проектом/)
+  })
+
+  it('нулевая и отрицательная ширина длину футляра не дают', () => {
+    for (const roadWidthM of [0, -3]) {
+      expect(findRoadCrossings(route, roads, { roadWidthM })[1].casingLengthM).toBeNull()
+    }
   })
 
   it('ignores roads that do not cross the route', () => {
