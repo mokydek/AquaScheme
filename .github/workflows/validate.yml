@@ -35,6 +35,12 @@ jobs:
       - name: Type-check application and engine
         run: npm run typecheck
 
+      # Возможность не считается сделанной, пока к ней нет пути с экрана.
+      # Храповик держал уровень только когда его запускали руками — то есть
+      # не держал. Рост числа недостижимых возможностей роняет сборку.
+      - name: Audit capability reachability
+        run: npm run audit:reachability
+
       - name: Build production frontend
         run: npm run build
 

@@ -4,7 +4,7 @@ import multer from 'multer'
 import { selectProvider } from './providers.js'
 import { createCorsPolicy } from './cors-policy.js'
 import { createConversionGuard } from './conversion-guard.js'
-import { sniffFormat } from './drawing-format.js'
+import { looksLike, sniffFormat } from './drawing-format.js'
 
 /**
  * Drawing conversion microservice, bidirectional since requirements update 3
@@ -145,6 +145,20 @@ app.post('/convert', guardConversion, upload.single('file'), async (req, res) =>
       return
     }
     const output = await provider.convert(req.file.buffer, from, to, version)
+    // Результат проверяется, а не принимается на слово. Провайдер может
+    // вернуть 200 и не тот формат — например HTML страницы ошибки или
+    // исходный файл нетронутым. Тогда разбор упадёт уже в движке, где причину
+    // не видно, а по этой проверке видно сразу и здесь.
+    if (!looksLike(output, to)) {
+      res.removeHeader('Content-Disposition')
+      res.type('json')
+      res.status(502).json({
+        error: `результат не похож на ${to}`,
+        code: 'CONVERTER_WRONG_FORMAT',
+        provider: provider.name,
+      })
+      return
+    }
     res.setHeader('X-Converter-Provider', provider.name)
     res.setHeader('X-Converter-Version', process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? 'local')
     res.send(output)
