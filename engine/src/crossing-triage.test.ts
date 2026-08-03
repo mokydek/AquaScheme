@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { classifyDxfConstraints, type DxfNetworkData } from './dxfread'
 import type { CrossingRecord } from './working-drawings'
-import { triageCrossings, type DepthBand } from './crossing-triage'
+import { deriveDepthBandsFromSurvey, triageCrossings, type DepthBand } from './crossing-triage'
 
 /** Коллектор на глубине ~4 м: земля 686, лоток 682, DN450. */
 const GROUND = 686
@@ -23,6 +24,66 @@ const base = {
   groundElevationAtM: () => GROUND,
   designDiameterMm: 450,
 }
+
+/** Съёмка подписывает сеть парой отметок: сверху крышка, снизу труба. */
+function survey(marks: Array<[string, number, number, string]>): DxfNetworkData {
+  return {
+    ok: true, points: [], segments: [],
+    layers: [...new Set(marks.map(([layer]) => layer))].map((name) => ({ name, segments: 0, points: 0 })),
+    textEntities: marks.map(([layer, x, y, text]) => ({ layer, x, y, text })),
+  }
+}
+
+describe('диапазоны глубин из съёмки', () => {
+  it('берёт глубину как разность пары, без отметок земли', () => {
+    const data = survey([
+      ['NAD_MТЕПЛОТР', -232, 8117, '684.99'], ['NAD_MТЕПЛОТР', -232, 8117.5, '683.36'],
+      ['NAD_MТЕПЛОТР', -227, 8127, '684.78'], ['NAD_MТЕПЛОТР', -227, 8127.4, '682.21'],
+    ])
+    const result = deriveDepthBandsFromSurvey(classifyDxfConstraints(data))
+    expect(result.samples['теплосеть']).toBe(2)
+    expect(result.bands['теплосеть'].minM).toBeCloseTo(1.63, 2)
+    expect(result.bands['теплосеть'].maxM).toBeCloseTo(2.57, 2)
+    expect(result.bands['теплосеть'].source).toContain('измерено на площадке')
+  })
+
+  it('одиночную подпись пропускает: крышку от трубы по одному числу не отличить', () => {
+    const data = survey([
+      ['NAD_MВОДОПРО', -207, 8109, '684.50'],
+      ['NAD_MВОДОПРО', -85, 8073, '685.76'], ['NAD_MВОДОПРО', -85, 8073.4, '683.00'],
+      ['NAD_MВОДОПРО', 14, 7875, '688.16'], ['NAD_MВОДОПРО', 14, 7875.3, '685.79'],
+    ])
+    const result = deriveDepthBandsFromSurvey(classifyDxfConstraints(data))
+    expect(result.samples['водопровод']).toBe(2)
+  })
+
+  it('при нехватке замеров диапазон не выдумывается', () => {
+    const data = survey([
+      ['NAD_MГАЗОПРО', 0, 0, '686.00'], ['NAD_MГАЗОПРО', 0, 0.4, '683.00'],
+    ])
+    const result = deriveDepthBandsFromSurvey(classifyDxfConstraints(data), { minSamples: 3 })
+    expect(result.bands['газопровод']).toBeUndefined()
+    expect(result.insufficient).toContain('газопровод')
+    expect(result.reason).toMatch(/замеров не хватило/i)
+    // Пары нашлись, просто их мало — это не то же, что «отметок нет».
+    expect(result.reason).not.toContain('не найдено')
+  })
+
+  it('две подписи одной отметки не считаются залеганием', () => {
+    const data = survey([
+      ['NAD_MЛЭП', 0, 0, '686.00'], ['NAD_MЛЭП', 0, 0.3, '686.00'],
+      ['NAD_MЛЭП', 50, 0, '686.00'], ['NAD_MЛЭП', 50, 0.3, '685.10'],
+    ])
+    const result = deriveDepthBandsFromSurvey(classifyDxfConstraints(data), { minSamples: 1 })
+    expect(result.samples['кабель электроснабжения']).toBe(1)
+  })
+
+  it('без парных отметок сообщает, что диапазоны не выводятся', () => {
+    const result = deriveDepthBandsFromSurvey(classifyDxfConstraints(survey([])))
+    expect(result.bands).toEqual({})
+    expect(result.reason).toContain('не выводятся')
+  })
+})
 
 describe('отбор пересечений на вскрытие', () => {
   it('мелкая сеть над глубоким коллектором вскрытия не требует', () => {

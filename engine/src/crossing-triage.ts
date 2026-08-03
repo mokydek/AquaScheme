@@ -1,3 +1,4 @@
+import type { DxfConstraintData } from './dxfread'
 import type { CrossingRecord } from './working-drawings'
 
 /**
@@ -70,6 +71,121 @@ export interface CrossingTriage {
 }
 
 const round = (value: number) => Number(value.toFixed(3))
+
+const ELEVATION_LABEL = /^\d{2,4}[.,]\d{1,3}$/
+/** Подписи одной точки: крышка и труба стоят рядом. */
+const PAIR_RADIUS_M = 2.5
+
+/** Вид сети по имени слоя — те же корни, что и в классификаторе. */
+function utilityKind(layer: string): string | null {
+  const name = layer.toLocaleLowerCase('ru-RU')
+  if (/канализ/.test(name)) return 'канализация'
+  if (/водопро/.test(name)) return 'водопровод'
+  if (/теплотр|теплос/.test(name)) return 'теплосеть'
+  if (/газопро|газоснаб/.test(name)) return 'газопровод'
+  if (/лин_свя|связи/.test(name)) return 'кабель связи'
+  if (/лэп|электро/.test(name)) return 'кабель электроснабжения'
+  if (/дренаж/.test(name)) return 'дренаж'
+  return null
+}
+
+export interface DerivedDepthBands {
+  bands: Record<string, DepthBand>
+  /** Сколько пар нашлось по каждому виду. */
+  samples: Record<string, number>
+  /** Виды, для которых замеров не хватило. */
+  insufficient: string[]
+  reason: string
+}
+
+/**
+ * Выводит диапазоны глубин из самой съёмки.
+ *
+ * Геодезист подписывает пересекаемую сеть парой отметок в одной точке: сверху
+ * крышка или поверхность, снизу труба. Разность пары — фактическая глубина
+ * залегания, измеренная на этой площадке этим же исполнителем. Это снимает
+ * нужду и в таблице «по опыту», и в отметках земли: диапазон строится из
+ * измерений, а не из допущения.
+ *
+ * Одиночные подписи пропускаются: по одному числу нельзя сказать, крышка это
+ * или труба.
+ */
+export function deriveDepthBandsFromSurvey(
+  constraints: DxfConstraintData,
+  options: { minSamples?: number } = {},
+): DerivedDepthBands {
+  const minSamples = options.minSamples ?? 2
+  const depthsByKind = new Map<string, number[]>()
+
+  const byLayer = new Map<string, Array<{ x: number; y: number; v: number }>>()
+  for (const entity of constraints.textEntities) {
+    const raw = String(entity.text ?? '').trim()
+    if (!ELEVATION_LABEL.test(raw)) continue
+    const layer = entity.layer ?? ''
+    if (utilityKind(layer) === null) continue
+    if (!Number.isFinite(entity.x) || !Number.isFinite(entity.y)) continue
+    const list = byLayer.get(layer) ?? []
+    list.push({ x: entity.x, y: entity.y, v: Number(raw.replace(',', '.')) })
+    byLayer.set(layer, list)
+  }
+
+  for (const [layer, marks] of byLayer) {
+    const kind = utilityKind(layer)
+    if (kind === null) continue
+    const used = new Set<number>()
+    for (let i = 0; i < marks.length; i++) {
+      if (used.has(i)) continue
+      const group = [marks[i]]
+      used.add(i)
+      for (let j = i + 1; j < marks.length; j++) {
+        if (used.has(j)) continue
+        if (Math.hypot(marks[j].x - marks[i].x, marks[j].y - marks[i].y) <= PAIR_RADIUS_M) {
+          group.push(marks[j])
+          used.add(j)
+        }
+      }
+      if (group.length < 2) continue
+      const depth = Math.max(...group.map((m) => m.v)) - Math.min(...group.map((m) => m.v))
+      // Ноль означает две подписи одной и той же отметки, а не залегание.
+      if (depth <= 0.05 || depth > 12) continue
+      const list = depthsByKind.get(kind) ?? []
+      list.push(round(depth))
+      depthsByKind.set(kind, list)
+    }
+  }
+
+  const bands: Record<string, DepthBand> = {}
+  const samples: Record<string, number> = {}
+  const insufficient: string[] = []
+  for (const [kind, depths] of depthsByKind) {
+    samples[kind] = depths.length
+    if (depths.length < minSamples) {
+      insufficient.push(kind)
+      continue
+    }
+    const sorted = [...depths].sort((a, b) => a - b)
+    bands[kind] = {
+      minM: sorted[0],
+      maxM: sorted[sorted.length - 1],
+      source: `измерено на площадке, ${sorted.length} замеров по парам отметок`,
+    }
+  }
+
+  const kinds = Object.keys(bands)
+  return {
+    bands,
+    samples,
+    insufficient,
+    // Различаем «пар нет вовсе» и «пары есть, но их мало»: во втором случае
+    // замеры на площадке велись, и сообщать о пустоте было бы неверно.
+    reason: kinds.length === 0 && insufficient.length === 0
+      ? 'Парных отметок на слоях коммуникаций не найдено: диапазоны глубин из съёмки не выводятся.'
+      : kinds.length === 0
+        ? `Замеров не хватило ни по одному виду сетей: ${insufficient.join(', ')}.`
+        : `Диапазоны выведены из съёмки для ${kinds.length} видов сетей`
+          + (insufficient.length > 0 ? `; замеров не хватило: ${insufficient.join(', ')}.` : '.'),
+  }
+}
 
 /** Делит пересечения по необходимости вскрытия. */
 export function triageCrossings(input: CrossingTriageInput): CrossingTriage {
