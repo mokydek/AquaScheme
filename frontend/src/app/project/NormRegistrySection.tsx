@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { NORM_REGISTRY, isCompleteConfirmation, unverifiedClauses } from '@aquascheme/engine'
-import type { NormClauseConfirmation } from '@aquascheme/engine'
+import {
+  NORM_REGISTRY,
+  createNormLock,
+  isCompleteConfirmation,
+  unverifiedClauses,
+  verifyNormLock,
+} from '@aquascheme/engine'
+import type { NormClauseConfirmation, NormLock } from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
 import { Panel } from './Panel'
@@ -30,9 +36,22 @@ export function NormRegistrySection({
   onSaved: () => Promise<void>
 }) {
   const { t } = useTranslation()
-  const stored = ((dataset?.content ?? {}) as {
+  const content = (dataset?.content ?? {}) as {
     clauseConfirmations?: NormClauseConfirmation[]
-  }).clauseConfirmations ?? []
+    normLock?: NormLock
+  }
+  const stored = content.clauseConfirmations ?? []
+
+  /**
+   * Замок нормативной базы: слепок редакций и статусов на день расчёта.
+   *
+   * Норматив может смениться, а у правила появиться подтверждённый пункт вместо
+   * «неизвестно» — и расчёт полугодовой давности молча перестаёт отвечать тому,
+   * на что ссылается пояснительная записка. Замок ничего не блокирует: он
+   * показывает, что изменилось с той даты, а решение о пересчёте принимает
+   * инженер.
+   */
+  const drift = content.normLock ? verifyNormLock(content.normLock) : null
 
   const [confirmations, setConfirmations] = useState<Record<string, NormClauseConfirmation>>({})
   const [busy, setBusy] = useState(false)
@@ -57,7 +76,15 @@ export function NormRegistrySection({
     })
   }
 
-  const save = async () => {
+  /**
+   * @param relock переснять замок нормативной базы.
+   *
+   * По умолчанию замок сохраняется как есть: если пересоздавать его при каждом
+   * сохранении, расхождение обнулялось бы само собой и никогда не показалось
+   * бы. Переснять его — осознанное действие инженера после того, как он
+   * расхождение увидел.
+   */
+  const save = async (relock = false) => {
     setBusy(true)
     setNotice(null)
     try {
@@ -65,6 +92,9 @@ export function NormRegistrySection({
         ...((dataset?.content ?? {}) as Record<string, unknown>),
         // Незаполненные черновики в проект не пишутся.
         clauseConfirmations: list.filter((item) => isCompleteConfirmation(item)),
+        normLock: relock || !content.normLock
+          ? createNormLock(new Date().toISOString())
+          : content.normLock,
       })
       setNotice('saved')
       await onSaved()
@@ -86,6 +116,38 @@ export function NormRegistrySection({
             total: NORM_REGISTRY.length,
           })}
       </p>
+
+      {drift && drift.drift.length > 0 && (
+        <div className="parse-report" style={{ marginTop: 12 }}>
+          <p className={`stat-line${drift.designAffectingCount > 0 ? ' warn' : ''}`}>{drift.reason}</p>
+          <p className="hint">
+            База зафиксирована {new Date(drift.lockedAtIso).toLocaleDateString('ru-RU')}. Замок ничего
+            не блокирует: пересчитывать ли проект, решает инженер.
+          </p>
+          <ul>
+            {drift.drift.slice(0, 12).map((item) => (
+              <li key={`${item.kind}-${item.subject}`} className={item.affectsDesign ? 'warn' : undefined}>
+                {item.message}
+              </li>
+            ))}
+          </ul>
+          <div className="section-actions">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={() => void save(true)}
+            >
+              Зафиксировать базу заново
+            </button>
+          </div>
+        </div>
+      )}
+      {drift && drift.drift.length === 0 && (
+        <p className="stat-line ok">
+          Нормативная база не менялась с {new Date(drift.lockedAtIso).toLocaleDateString('ru-RU')}.
+        </p>
+      )}
 
       {registryUnverified.length > 0 && (
         <details open={unverified.length > 0} style={{ marginTop: 12 }}>
