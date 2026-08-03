@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
@@ -19,8 +19,8 @@ import { fileURLToPath } from 'node:url'
  * значений, вертикальная планировка — всё с тестами и без единого места
  * применения.
  *
- * Скрипт считает экспортируемые функции движка, на которые нет ни одной ссылки
- * извне их собственного модуля, и сравнивает с записанным уровнем. Уровень
+ * Скрипт считает экспортируемые функции движка, до которых нет пути от точки
+ * входа приложения вниз по вызовам, и сравнивает с записанным уровнем. Уровень
  * может только снижаться: рост — ошибка сборки. Это храповик, а не запрет —
  * новая функция допустима, если к ней сразу есть путь.
  */
@@ -82,7 +82,7 @@ const contents = new Map([...engineFiles, ...frontendFiles].map((path) => [path,
  * телу, и вызовы засчитываются не тому, кто их делает.
  */
 const bodies = new Map()
-for (const path of engineFiles) {
+for (const path of [...engineFiles, ...frontendFiles]) {
   const source = contents.get(path)
   const marks = [...source.matchAll(DECLARATION)]
   for (let index = 0; index < marks.length; index++) {
@@ -95,11 +95,33 @@ for (const path of engineFiles) {
   }
 }
 
-/** Имена, на которые ссылается интерфейс: с них начинается достижимость. */
+/**
+ * Затравка: то, что выполняется при запуске приложения.
+ *
+ * Раньше затравкой служило любое упоминание во `frontend/src`. Этого мало:
+ * мёртвая функция интерфейса засчитывалась за путь. `generateManholeSheetsDxf`
+ * не вызывает никто, а через неё достижимыми выглядели два построителя листов
+ * DXF — то есть показатель утверждал, что инженер может выпустить ведомость
+ * материалов колодца, чего на самом деле нельзя.
+ *
+ * Теперь достижимость считается от точек входа вниз по вызовам, а дальше общий
+ * спуск по телам интерфейса и движка. Правило из CLAUDE.md звучит как «путь с
+ * экрана» — метрика должна проверять именно это, а не «упомянут где-нибудь».
+ *
+ * Точек входа три вида: `main.tsx`, `router.tsx` (страницы он называет по
+ * имени: `.then((m) => ({ Component: m.LandingPage }))`) и рабочие потоки.
+ * Воркер запускается по URL модуля, и по именам функций до него не дойти —
+ * без него весь подбор диаметров EPANET выглядел бы недостижимым, хотя его
+ * вызывает экран гидравлики.
+ */
+const isEntry = (path) => path.endsWith(`${sep}main.tsx`)
+  || path.endsWith(`${sep}router.tsx`)
+  || /\.worker\.tsx?$/.test(path)
 const reachable = new Set()
 for (const path of frontendFiles) {
+  if (!isEntry(path)) continue
   const source = contents.get(path)
-  for (const name of declaredIn.keys()) {
+  for (const name of bodies.keys()) {
     if (new RegExp(`\\b${name}\\b`).test(source)) reachable.add(name)
   }
 }
@@ -117,7 +139,7 @@ for (let changed = true; changed;) {
   for (const name of [...reachable]) {
     const body = bodies.get(name)
     if (!body) continue
-    for (const candidate of declaredIn.keys()) {
+    for (const candidate of bodies.keys()) {
       if (reachable.has(candidate) || candidate === name) continue
       if (new RegExp(`\\b${candidate}\\b`).test(body)) { reachable.add(candidate); changed = true }
     }
