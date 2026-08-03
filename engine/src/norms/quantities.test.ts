@@ -65,6 +65,28 @@ describe('ведомость объёмов работ', () => {
     expect(gap(bill, 'без подобранной конструкции')?.missing).toMatch(/1 колодц/)
   })
 
+  it('перепадный колодец — позиция сметы, слив в обычном колодце — нет', () => {
+    // Слив конструкции не добавляет: колодец уже посчитан в своей строке.
+    const bill = buildQuantityBill({
+      ...base,
+      dropWells: [
+        { nodeId: 'К-1', chainageM: 35, dropM: 2.12, diameterMm: 500,
+          kind: { value: 'перепадный колодец', refs: ['sewer.drop.wells'], basis: 'normative' } },
+        { nodeId: 'К-2', chainageM: 147, dropM: 0.48, diameterMm: 500,
+          kind: { value: 'слив в смотровом колодце', refs: ['sewer.drop.wells'], basis: 'normative' } },
+      ],
+    })
+    expect(row(bill, 'перепадного колодца')?.quantity).toBe(1)
+    expect(row(bill, 'перепадного колодца')?.derivedFrom).toMatch(/пикеты 35 м/)
+    expect(row(bill, 'высота перепадов')?.quantity).toBe(2.12)
+  })
+
+  it('без перепадов строк о них не появляется', () => {
+    const bill = buildQuantityBill(base)
+    expect(row(bill, 'перепадного колодца')).toBeUndefined()
+    expect(row(bill, 'высота перепадов')).toBeUndefined()
+  })
+
   it('земляные работы не считаются, пока их величины не заданы', () => {
     // Норматива на ширину траншеи в реестре нет. Подставленное «обычное»
     // значение дало бы объём, неотличимый от расчётного, прямо в смете.

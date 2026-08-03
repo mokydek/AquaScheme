@@ -1,6 +1,7 @@
 import type { GravityProfile } from './gravity'
 import type { SewerSchedule } from './gravity'
 import type { SelectedManholeConstruction } from '../manhole-catalog'
+import type { DropWell } from './drop-wells'
 
 /**
  * Ведомость объёмов работ.
@@ -56,6 +57,12 @@ export interface QuantityBillInput {
   sideSlopeRatio?: number
   /** Толщина песчаного основания под трубой, м. */
   beddingThicknessM?: number
+  /**
+   * Перепады на трассе (`planDropWells`). Перепадный колодец — отдельная
+   * позиция сметы, а слив в смотровом колодце конструкции не добавляет и в
+   * объёмы не идёт: колодец уже посчитан в своей строке.
+   */
+  dropWells?: DropWell[]
 }
 
 const round2 = (value: number) => Math.round(value * 100) / 100
@@ -117,6 +124,25 @@ export function buildQuantityBill(input: QuantityBillInput): QuantityBill {
       unit: 'шт',
       quantity: manholes.length,
       derivedFrom: 'ведомость колодцев проекта',
+    })
+  }
+
+  // 2а. Перепады. Считаются только те, что требуют отдельной конструкции.
+  const dropWells = input.dropWells ?? []
+  const structures = dropWells.filter((well) => well.kind.value === 'перепадный колодец')
+  if (structures.length > 0) {
+    rows.push({
+      name: 'Устройство перепадного колодца',
+      unit: 'шт',
+      quantity: structures.length,
+      derivedFrom: `перепады профиля свыше допустимых сливом (п. 7.5.1): пикеты `
+        + `${structures.map((well) => well.chainageM.toFixed(0)).join(', ')} м`,
+    })
+    rows.push({
+      name: 'Суммарная высота перепадов в перепадных колодцах',
+      unit: 'м',
+      quantity: round2(structures.reduce((sum, well) => sum + well.dropM, 0)),
+      derivedFrom: 'высота ступени лотка сверх падения по уклону участка',
     })
   }
 

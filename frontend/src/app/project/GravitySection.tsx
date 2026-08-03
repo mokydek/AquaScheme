@@ -17,6 +17,7 @@ import {
   auditProjectProvenance,
   provenanceLabel,
   summarizeRouteCoverage,
+  planDropWells,
   planGravityBasins,
   unverifiedClauses,
   workingDrawingSpecificationItemCount,
@@ -650,6 +651,18 @@ export function GravitySection({
   ])
   const finalOutputAllowed = workingDrawingSet.summary.finalExportAllowed
 
+  // Перепады читаются из уже решённого профиля: решатель прижимает лоток к
+  // минимальному заглублению, и там, где земля падает быстрее трубы, остаётся
+  // ступень. Раньше её никто не называл перепадом — в ведомость она не
+  // попадала, конструкцию под неё не подбирали.
+  const dropWells = useMemo(
+    () => (result?.profile
+      ? planDropWells(result.profile,
+        new Map(result.pipes.map((pipe) => [pipe.id, { diameterMm: pipe.diameterMm, slope: pipe.slope }])))
+      : null),
+    [result],
+  )
+
   const projectAlbumInput = () => {
     if (!result?.profile || !schedule) throw new Error('Не рассчитаны профиль и ведомость.')
     return {
@@ -693,6 +706,7 @@ export function GravitySection({
         profile: result.profile,
         schedule,
         constructions: manholeSelection.selected,
+        dropWells: dropWells?.wells ?? [],
         ...quantitySettings,
       }))
       const blob = new Blob([bytes], { type: XLSX_TYPE })
@@ -1252,11 +1266,41 @@ export function GravitySection({
             </button>
           </div>
 
+          {dropWells && (
+            <div>
+              <h4>Перепады на трассе (п. 7.5.1)</h4>
+              <p className={dropWells.structureCount > 0 ? 'notice' : 'stat-line'}>{dropWells.reason}</p>
+              {dropWells.wells.length > 0 && (
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Узел</th><th className="num">Пикетаж, м</th><th className="num">Перепад, м</th>
+                        <th className="num">Ø, мм</th><th>Решение</th><th>Обоснование</th>
+                      </tr>
+                    </thead>
+                    <tbody>{dropWells.wells.map((well) => (
+                      <tr key={well.nodeId} className={well.kind.value === 'перепадный колодец' ? 'row-warn' : undefined}>
+                        <td>{well.nodeId}</td>
+                        <td className="num">{well.chainageM.toFixed(1)}</td>
+                        <td className="num">{well.dropM.toFixed(2)}</td>
+                        <td className="num">{well.diameterMm || '—'}</td>
+                        <td>{well.kind.value}</td>
+                        <td>{well.kind.note}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {result.profile && schedule && (
             <QuantityBillView
               profile={result.profile}
               schedule={schedule}
               constructions={manholeSelection.selected}
+              dropWells={dropWells?.wells ?? []}
               settings={quantitySettings}
               exporting={quantityExporting}
               fieldPrefix={`quantity-${projectId}`}

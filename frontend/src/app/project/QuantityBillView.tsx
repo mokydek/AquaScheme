@@ -1,5 +1,5 @@
 import { buildQuantityBill } from '@aquascheme/engine'
-import type { GravityProfile, SelectedManholeConstruction, SewerSchedule } from '@aquascheme/engine'
+import type { DropWell, GravityProfile, SelectedManholeConstruction, SewerSchedule } from '@aquascheme/engine'
 
 /**
  * Ведомость объёмов работ.
@@ -20,6 +20,7 @@ export function QuantityBillView({
   profile,
   schedule,
   constructions,
+  dropWells,
   settings,
   onSettingsChange,
   onExport,
@@ -29,13 +30,14 @@ export function QuantityBillView({
   profile: GravityProfile
   schedule: SewerSchedule
   constructions: SelectedManholeConstruction[]
+  dropWells: DropWell[]
   settings: QuantityBillSettings
   onSettingsChange: (next: QuantityBillSettings) => void
   onExport: () => void
   exporting?: boolean
   fieldPrefix: string
 }) {
-  const bill = buildQuantityBill({ profile, schedule, constructions, ...settings })
+  const bill = buildQuantityBill({ profile, schedule, constructions, dropWells, ...settings })
   const numberField = (
     key: keyof QuantityBillSettings,
     label: string,
