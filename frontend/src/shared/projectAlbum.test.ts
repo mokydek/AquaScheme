@@ -181,6 +181,47 @@ describe('project working-drawing album', () => {
     expect(serialized).toContain('Точек съёмки меньше трёх')
   })
 
+  it('разводит подписи листа и ничего не теряет', () => {
+    // Тесная сцена: колодцы в 12 м друг от друга и густая подпись съёмки.
+    // Раньше подписи ставились вслепую — обозначение колодца ложилось на
+    // отметку съёмки, пикет на подпись участка.
+    const dense = drawingSet()
+    const cadTextEntities = Array.from({ length: 60 }, (_, index) => ({
+      x: 40 + index * 9, y: 30 + (index % 5) * 6, text: (686 + index / 100).toFixed(2), layer: 'РЕЛЬЕФ',
+    }))
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: dense, surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: { corridorRings: [], cadTextEntities },
+    }) as { content: unknown[] }
+    // JSON экранирует кавычки, а разметку удобнее читать в исходном виде.
+    const serialized = JSON.stringify(doc.content).replaceAll('\\"', '"')
+
+    const planSvg = /(<svg[^>]*?data-horizontal-scale-denominator[\s\S]*?<\/svg>)/.exec(serialized)?.[1] ?? ''
+    const boxes = [...planSvg.matchAll(
+      /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" width="([\d.]+)" height="13" fill="#fff" stroke="#555"/g,
+    )].map((m) => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: 13 }))
+
+    // Ни одна подпись не должна пропасть: у каждого показанного колодца есть
+    // обозначение, иначе колодец на листе неопознан. У участков — свой признак:
+    // без подписи нет ни диаметра, ни длины.
+    expect(boxes.length).toBe((planSvg.match(/data-plan-node=/g) ?? []).length)
+    expect(boxes.length).toBeGreaterThan(1)
+    expect((planSvg.match(/data-plan-pipe-label=/g) ?? []).length)
+      .toBe((planSvg.match(/data-plan-pipe=/g) ?? []).length)
+
+    // Прямоугольники подписей колодцев на одном листе не должны пересекаться.
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]
+        const b = boxes[j]
+        const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        expect(overlap).toBe(false)
+      }
+    }
+  })
+
   it('assigns tagged crossings to only their owning profile', () => {
     const legacy = { id: 'LEGACY', stationM: 10, kind: 'utility' }
     expect(crossingBelongsToProfile(legacy, undefined, ['MAIN'])).toBe(true)

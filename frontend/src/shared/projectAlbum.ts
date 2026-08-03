@@ -242,6 +242,50 @@ function contourSvg(relief: ContourResult, project: SvgProjector, bounds: Bounds
   return parts.join('')
 }
 
+interface LabelBox { x: number; y: number; w: number; h: number }
+
+/**
+ * Учёт занятых мест на листе.
+ *
+ * Подписи размещались вслепую: у труб было разведение по расстоянию, у колодцев
+ * — жёсткое чередование сторон, у пикетов ничего. На реальном листе Станкевича
+ * это давало наложения — обозначение колодца поверх отметки съёмки, пикет
+ * поверх подписи участка. Читать такой чертёж нельзя.
+ *
+ * Подписи исходной подосновы резервируются первыми: это данные съёмки, и
+ * закрывать их своими надписями нельзя.
+ */
+function labelPlacer() {
+  /** Наши подписи: перекрывать друг друга им нельзя. */
+  const own: LabelBox[] = []
+  /** Подписи подосновы: перекрывать нежелательно, но допустимо. */
+  const source: LabelBox[] = []
+  const overlaps = (box: LabelBox, list: LabelBox[]) => list.some((other) =>
+    box.x < other.x + other.w && other.x < box.x + box.w
+    && box.y < other.y + other.h && other.y < box.y + box.h)
+  return {
+    reserveSource(box: LabelBox) { source.push(box) },
+    /**
+     * Ставит подпись в первое место, не задевающее ничего; если такого нет —
+     * в первое, не задевающее наши подписи.
+     *
+     * Два уровня, потому что обозначение участка и колодца — содержание листа,
+     * а отметки подосновы — контекст под ним. Ронять подпись участка ради
+     * отметки съёмки нельзя: чертёж без диаметра и длины участка дефектен, а
+     * подписи идут на белой подложке и остаются читаемыми поверх.
+     */
+    place(candidates: LabelBox[]): LabelBox | null {
+      for (const box of candidates) {
+        if (!overlaps(box, own) && !overlaps(box, source)) { own.push(box); return box }
+      }
+      for (const box of candidates) {
+        if (!overlaps(box, own)) { own.push(box); return box }
+      }
+      return null
+    },
+  }
+}
+
 function planSvg(
   input: ProjectAlbumInput,
   sheet: WorkingDrawingSheet,
@@ -339,30 +383,85 @@ function planSvg(
     const width = pipe.active ? 3.2 : 1.6
     return `<polyline data-plan-pipe="${xmlText(pipe.pipeId)}" points="${points}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linejoin="round"/>`
   }).join('')).join('')
-  const occupiedLabels: Array<{ x: number; y: number }> = []
-  const pipeLabels = scene.pipes.map((pipe, index) => {
-    const projected = project(pipe.labelPoint)
-    if (occupiedLabels.some((label) => Math.hypot(label.x - projected.x, label.y - projected.y) < 68)) return ''
-    occupiedLabels.push(projected)
-    const yOffset = index % 2 === 0 ? -8 : 13
-    return `<g data-plan-pipe-label="${xmlText(pipe.pipeId)}" transform="translate(${projected.x.toFixed(1)} ${(projected.y + yOffset).toFixed(1)}) rotate(${-pipe.labelAngleDeg.toFixed(2)})"><rect x="-3" y="-9" width="${Math.max(44, pipe.label.length * 4.6).toFixed(1)}" height="13" fill="#fff" fill-opacity="0.9" stroke="#1746b5" stroke-width="0.5"/><text x="1" y="0" font-size="7.5" fill="#1746b5">${xmlText(pipe.label)}</text></g>`
-  }).join('')
-  const nodeMarks = scene.nodes.map((node, index) => {
+  const placer = labelPlacer()
+  // Подписи съёмки и обозначения блоков занимают место первыми: это исходные
+  // данные, и закрывать их своими надписями нельзя.
+  for (const entity of (input.constraints?.cadTextEntities ?? [])) {
+    if (!Number.isFinite(entity.x) || !Number.isFinite(entity.y)) continue
+    if (entity.x < window.minX || entity.x > window.maxX) continue
+    if (entity.y < window.minY || entity.y > window.maxY) continue
+    const projected = project(entity)
+    placer.reserveSource({
+      x: projected.x, y: projected.y - 7,
+      w: Math.max(18, String(entity.text ?? '').length * 3.6), h: 9,
+    })
+  }
+
+  const nodeMarks = scene.nodes.map((node) => {
     const projected = project(node)
     const label = xmlText(node.label)
     const labelWidth = Math.max(28, node.label.length * 5.2)
-    const dx = index % 2 === 0 ? 8 : -labelWidth - 8
     const symbol = node.kind === 'source'
       ? `<rect x="${(projected.x - 4).toFixed(1)}" y="${(projected.y - 4).toFixed(1)}" width="8" height="8" fill="#fff" stroke="#1746b5" stroke-width="2"/>`
       : `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="4" fill="#fff" stroke="#1746b5" stroke-width="2"/>`
-    return `<g data-plan-node="${xmlText(node.id)}">${symbol}<path d="M${projected.x.toFixed(1)} ${projected.y.toFixed(1)}L${(projected.x + dx).toFixed(1)} ${(projected.y - 11).toFixed(1)}" stroke="#333" stroke-width="0.7"/><rect x="${(projected.x + dx).toFixed(1)}" y="${(projected.y - 22).toFixed(1)}" width="${labelWidth.toFixed(1)}" height="13" fill="#fff" stroke="#555" stroke-width="0.6"/><text x="${(projected.x + dx + 3).toFixed(1)}" y="${(projected.y - 13).toFixed(1)}" font-size="7.5">${label}</text></g>`
+    // Восемь мест вокруг колодца: справа-сверху, слева-сверху, справа-снизу и
+    // так далее. Обозначение колодца обязано остаться на листе, поэтому если
+    // свободного места нет, подпись ставится в первое предложенное — лучше
+    // наложение, чем неопознанный колодец.
+    const candidates = [
+      { dx: 8, dy: -22 }, { dx: -labelWidth - 8, dy: -22 },
+      { dx: 8, dy: 10 }, { dx: -labelWidth - 8, dy: 10 },
+      { dx: 8, dy: -36 }, { dx: -labelWidth - 8, dy: -36 },
+      { dx: 8, dy: 24 }, { dx: -labelWidth - 8, dy: 24 },
+    ].map((offset) => ({
+      x: projected.x + offset.dx, y: projected.y + offset.dy, w: labelWidth, h: 13,
+    }))
+    // Колодец обязан быть опознан, поэтому при полной тесноте подпись всё
+    // равно ставится в первое предложенное место.
+    const box = placer.place(candidates) ?? candidates[0]
+    const leaderY = box.y + (box.y < projected.y ? 13 : 0)
+    return `<g data-plan-node="${xmlText(node.id)}">${symbol}<path d="M${projected.x.toFixed(1)} ${projected.y.toFixed(1)}L${(box.x + labelWidth / 2).toFixed(1)} ${leaderY.toFixed(1)}" stroke="#333" stroke-width="0.7"/><rect x="${box.x.toFixed(1)}" y="${box.y.toFixed(1)}" width="${labelWidth.toFixed(1)}" height="13" fill="#fff" stroke="#555" stroke-width="0.6"/><text x="${(box.x + 3).toFixed(1)}" y="${(box.y + 9).toFixed(1)}" font-size="7.5">${label}</text></g>`
   }).join('')
+  const pipeLabels = scene.pipes.map((pipe) => {
+    const projected = project(pipe.labelPoint)
+    const w = Math.max(44, pipe.label.length * 4.6)
+    // Подпись повёрнута вдоль трубы, поэтому занимает габарит повёрнутого
+    // прямоугольника, а не квадрат по большей стороне: у вертикального участка
+    // это полоса 13 × 44, и квадрат 44 × 44 отнимал бы у обозначения колодца
+    // всё место вокруг.
+    const radians = pipe.labelAngleDeg * Math.PI / 180
+    const cos = Math.abs(Math.cos(radians))
+    const sin = Math.abs(Math.sin(radians))
+    const boxW = w * cos + 13 * sin
+    const boxH = w * sin + 13 * cos
+    // Подпись участка несёт диаметр, уклон и длину — без неё лист дефектен,
+    // поэтому при полной тесноте она ставится поверх подосновы, на белой
+    // подложке.
+    const candidates = [-8, 13, -24, 29, -40, 45].map((dy) => ({
+      x: projected.x - boxW / 2, y: projected.y + dy - boxH / 2, w: boxW, h: boxH,
+    }))
+    const box = placer.place(candidates) ?? candidates[0]
+    const dy = box.y + boxH / 2 - projected.y
+    return `<g data-plan-pipe-label="${xmlText(pipe.pipeId)}" transform="translate(${projected.x.toFixed(1)} ${(projected.y + dy).toFixed(1)}) rotate(${-pipe.labelAngleDeg.toFixed(2)})"><rect x="-3" y="-9" width="${w.toFixed(1)}" height="13" fill="#fff" fill-opacity="0.9" stroke="#1746b5" stroke-width="0.5"/><text x="1" y="0" font-size="7.5" fill="#1746b5">${xmlText(pipe.label)}</text></g>`
+  }).join('')
+
   const stationMarks = scene.stations.map((station) => {
     const projected = project(station)
     const matchLine = station.boundary
       ? `<line x1="${projected.x.toFixed(1)}" y1="55" x2="${projected.x.toFixed(1)}" y2="425" stroke="#d33" stroke-width="0.8" stroke-dasharray="5 4"/>`
       : ''
-    return `${matchLine}<g data-plan-station="${station.chainageM.toFixed(2)}"><line x1="${projected.x.toFixed(1)}" y1="${(projected.y - 6).toFixed(1)}" x2="${projected.x.toFixed(1)}" y2="${(projected.y + 6).toFixed(1)}" stroke="#111" stroke-width="0.8"/><circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="2.2" fill="#fff" stroke="#1746b5"/><text x="${(projected.x + 4).toFixed(1)}" y="${(projected.y - 7).toFixed(1)}" font-size="7.5" font-weight="700">${xmlText(station.label)}</text></g>`
+    const mark = `${matchLine}<g data-plan-station="${station.chainageM.toFixed(2)}"><line x1="${projected.x.toFixed(1)}" y1="${(projected.y - 6).toFixed(1)}" x2="${projected.x.toFixed(1)}" y2="${(projected.y + 6).toFixed(1)}" stroke="#111" stroke-width="0.8"/><circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="2.2" fill="#fff" stroke="#1746b5"/>`
+    // Штрих пикета остаётся всегда, подпись — только если для неё есть место:
+    // пикетаж читается и по соседним подписям, а мешанина не читается вовсе.
+    const width = Math.max(24, station.label.length * 4.6)
+    const box = placer.place([
+      { x: projected.x + 4, y: projected.y - 15, w: width, h: 10 },
+      { x: projected.x - width - 4, y: projected.y - 15, w: width, h: 10 },
+      { x: projected.x + 4, y: projected.y + 6, w: width, h: 10 },
+      { x: projected.x - width - 4, y: projected.y + 6, w: width, h: 10 },
+    ])
+    if (box === null) return `${mark}</g>`
+    return `${mark}<text x="${box.x.toFixed(1)}" y="${(box.y + 8).toFixed(1)}" font-size="7.5" font-weight="700">${xmlText(station.label)}</text></g>`
   }).join('')
   const missingContext = scene.hasPlanContext ? '' : `<g data-plan-context-missing="true"><rect x="${(canvasWidth / 2 - 170).toFixed(1)}" y="27" width="340" height="30" fill="#fff4dc" stroke="#c07800" stroke-width="1.2"/><text x="${(canvasWidth / 2).toFixed(1)}" y="40" text-anchor="middle" font-size="9" font-weight="700" fill="#8a4c00">НЕПОЛНЫЙ ПЛАН: топографическая/CAD-подоснова отсутствует</text><text x="${(canvasWidth / 2).toFixed(1)}" y="51" text-anchor="middle" font-size="7" fill="#8a4c00">Показана расчётная сеть; финальный выпуск должен оставаться заблокированным</text></g>`
   const overview = sourcePath
