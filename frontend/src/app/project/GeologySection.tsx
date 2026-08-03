@@ -11,7 +11,9 @@ import {
   parseGeologyReportSummary,
   summarizeGeology,
 } from '@aquascheme/engine'
-import type { Aggressiveness, Borehole, GeologyIssue, GeologyReportSummary, TextItem } from '@aquascheme/engine'
+import type {
+  Aggressiveness, Borehole, GeologyIssue, GeologyReportSummary, SurveyPoint, TextItem,
+} from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
 import { replaceGeology } from '../../shared/geology'
@@ -51,11 +53,14 @@ export function GeologySection({
   projectId,
   dataset,
   boreholes,
+  surveyPoints,
   onChanged,
 }: {
   projectId: string
   dataset: DatasetRow | undefined
   boreholes: Borehole[]
+  /** Границы площадки для отбраковки врезок на геологическом чертеже. */
+  surveyPoints: SurveyPoint[]
   onChanged: () => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -65,7 +70,17 @@ export function GeologySection({
 
   const [busy, setBusy] = useState(false)
   const [issues, setIssues] = useState<GeologyIssue[]>([])
-  const [notice, setNotice] = useState<'imported' | 'empty' | 'saved' | 'error' | 'migrationNeeded' | 'scan' | 'pdfError' | 'prose' | null>(null)
+  const [notice, setNotice] = useState<'imported' | 'empty' | 'saved' | 'error' | 'migrationNeeded' | 'scan' | 'pdfError' | 'prose' | 'drawingNoBoreholes' | 'drawingNoMatch' | null>(null)
+  const [drawingReport, setDrawingReport] = useState<{
+    found: number
+    matched: number
+    unlocated: string[]
+    unmatched: string[]
+    ambiguous: number
+    outsideBounds: number
+    reason: string
+    fileName: string
+  } | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [pdfTable, setPdfTable] = useState<{ grid: string[][]; columnCount: number } | null>(null)
   const [pdfReport, setPdfReport] = useState<GeologyReportSummary | null>(null)
@@ -138,6 +153,76 @@ export function GeologySection({
       const geoSummary = summarizeGeology({ boreholes: parsed.boreholes })
       if (geoSummary.minWaterDepthM !== null) setGroundwater(String(geoSummary.minWaterDepthM))
       if (geoSummary.maxAggressiveness) setCorrosivity(geoSummary.maxAggressiveness)
+      setNotice('imported')
+      await onChanged()
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else failNotice(error)
+    } finally {
+      setBusy(false)
+      event.target.value = ''
+    }
+  }
+
+  /**
+   * Координаты скважин с геологического чертежа.
+   *
+   * В реальном комплекте план расположения выработок приходит отдельным DWG, и
+   * координаты есть только там: отчёт и лабораторный журнал дают слои, но не
+   * привязку. Без координат продольный профиль геологию построить не может.
+   *
+   * Скважины отсюда не создаются, а только дополняются координатами. Скважина
+   * без слоёв прошла бы шлюз выпуска, а рисовать по ней было бы нечего — это
+   * обход проверки, а не данные.
+   */
+  const onGeologyDrawing = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setBusy(true)
+    setNotice(null)
+    setUploadMessage(null)
+    setDrawingReport(null)
+    try {
+      if (boreholes.length === 0) {
+        setNotice('drawingNoBoreholes')
+        return
+      }
+      const routed = await routeUpload(file, ['dxf'])
+      const [{ parseDxfNetwork }, { boreholesFromDrawing, mergeBoreholePositions }] = await Promise.all([
+        import('@aquascheme/engine/dxfread'),
+        import('@aquascheme/engine'),
+      ])
+      // Границы площадки берутся из топосъёмки: план выработок обычно несёт
+      // врезку с теми же подписями, и без границ каждая метка встречается
+      // дважды — модуль честно отбрасывает такие как неоднозначные, и
+      // координат не получает никто.
+      const bounds = surveyPoints.length >= 2
+        ? {
+          minX: Math.min(...surveyPoints.map((p) => p.x)),
+          maxX: Math.max(...surveyPoints.map((p) => p.x)),
+          minY: Math.min(...surveyPoints.map((p) => p.y)),
+          maxY: Math.max(...surveyPoints.map((p) => p.y)),
+        }
+        : undefined
+      const extraction = boreholesFromDrawing(parseDxfNetwork(routed.text ?? ''), { bounds })
+      const merged = mergeBoreholePositions(boreholes, extraction.boreholes)
+      const matched = boreholes.length - merged.unlocated.length
+      setDrawingReport({
+        found: extraction.boreholes.length,
+        matched,
+        unlocated: merged.unlocated,
+        unmatched: merged.unmatched,
+        ambiguous: extraction.ambiguous.length,
+        outsideBounds: extraction.outsideBounds,
+        reason: extraction.reason,
+        fileName: file.name,
+      })
+      if (matched === 0) {
+        setNotice('drawingNoMatch')
+        return
+      }
+      await replaceGeology(projectId, merged.boreholes)
       setNotice('imported')
       await onChanged()
     } catch (error) {
@@ -273,6 +358,23 @@ export function GeologySection({
         />
       </div>
       <div className="section-actions">
+        <label htmlFor={fieldId('drawing-file')} className="stat-line" style={{ marginTop: 0 }}>
+          {t('project.geology.drawing.label')}
+        </label>
+        <input
+          id={fieldId('drawing-file')}
+          name={fieldName('drawingFile')}
+          className="file-input"
+          type="file"
+          accept=".dxf,.dwg"
+          aria-label={`${t('project.geology.title')}: DXF/DWG`}
+          disabled={busy}
+          onChange={(e) => void onGeologyDrawing(e)}
+        />
+      </div>
+      <p className="hint">{t('project.geology.drawing.hint')}</p>
+
+      <div className="section-actions">
         <label htmlFor={fieldId('pdf-file')} className="stat-line" style={{ marginTop: 0 }}>{t('project.geology.pdf.label')}</label>
         <input
           id={fieldId('pdf-file')}
@@ -293,6 +395,36 @@ export function GeologySection({
       {notice === 'pdfError' && <p className="notice error">{t('project.geology.pdf.error')}</p>}
       {notice === 'prose' && <p className="notice warn">{t('project.geology.pdf.prose')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
+      {notice === 'drawingNoBoreholes' && <p className="notice error">{t('project.geology.drawing.noBoreholes')}</p>}
+      {notice === 'drawingNoMatch' && <p className="notice error">{t('project.geology.drawing.noMatch')}</p>}
+
+      {drawingReport && (
+        <div className="parse-report">
+          <p className="stat-line">{drawingReport.fileName}</p>
+          <p className="stat-line">
+            {t('project.geology.drawing.result', {
+              found: drawingReport.found,
+              matched: drawingReport.matched,
+            })}
+          </p>
+          {drawingReport.unlocated.length > 0 && (
+            <p className="stat-line warn">
+              {t('project.geology.drawing.unlocated', { list: drawingReport.unlocated.join(', ') })}
+            </p>
+          )}
+          {drawingReport.unmatched.length > 0 && (
+            <p className="stat-line warn">
+              {t('project.geology.drawing.unmatched', { list: drawingReport.unmatched.join(', ') })}
+            </p>
+          )}
+          {drawingReport.ambiguous > 0 && (
+            <p className="stat-line warn">
+              {t('project.geology.drawing.ambiguous', { count: drawingReport.ambiguous })}
+            </p>
+          )}
+          <p className="hint">{drawingReport.reason}</p>
+        </div>
+      )}
 
       {content?.reportIge && content.reportIge.length > 0 && (
         <div style={{ marginTop: 16 }}>

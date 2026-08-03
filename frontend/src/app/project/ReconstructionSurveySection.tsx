@@ -121,6 +121,10 @@ export function ReconstructionSurveySection({
         .filter(([, role]) => role === 'unknown')
         .map(([name]) => name)
       await saveDataset(projectId, 'route_constraints', {
+        // Геопривязка живёт здесь же: набор рабочих чертежей читает её из
+        // route_constraints, и без неё все плановые листы блокировались, хотя
+        // координатная сетка чертежа подписана и разобрана.
+        georeference: result.georeference,
         corridorRings: source.corridorRings.map(ring),
         guideLines: source.guideAxis,
         redLines: source.redLines,

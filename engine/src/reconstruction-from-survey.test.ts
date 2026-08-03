@@ -70,8 +70,28 @@ describe('reconstruction assembled from a survey', () => {
     const result = buildReconstructionFromSurvey(streetSurvey(), { designDiameterMm: 450 })
     expect(result.grid.detected).toBe(true)
     expect(result.grid.pitchX).toBe(50)
-    expect(result.georeference?.kind).toBe('survey_grid')
+    expect(result.georeference.kind).toBe('survey_grid')
     expect(result.blockers.join(' ')).not.toContain('Начало координат')
+  })
+
+  it('привязка отдаётся в том виде, какой принимает набор чертежей', () => {
+    // Не `local_anchor`: у него без якоря перевод в градусы берёт запасной
+    // (Астана), и объект из другого города встал бы на карту не на своё место.
+    const result = buildReconstructionFromSurvey(streetSurvey(), { designDiameterMm: 450 })
+    expect(result.georeference).toEqual({
+      kind: 'survey_grid',
+      pitchM: 50,
+      source: expect.any(String),
+    })
+  })
+
+  it('неподписанная сетка привязкой не считается', () => {
+    const data = streetSurvey()
+    // Те же штрихи сетки, но без подписей координат.
+    data.textEntities = (data.textEntities ?? []).filter((e) => e.layer !== 'РЕЛЬЕФ')
+    const result = buildReconstructionFromSurvey(data, { designDiameterMm: 450 })
+    expect(result.georeference.kind).toBe('unreferenced')
+    expect(result.blockers.some((b) => b.includes('начало координат'))).toBe(true)
   })
 
   it('falls back to the подраздел when the bore is not a transcribed position', () => {

@@ -45,6 +45,17 @@ export type RouteGeoreference =
     source: string
   }
   | { kind: 'local_anchor'; anchor?: { lon: number; lat: number }; source: string }
+  /**
+   * Координатная сетка самого чертежа: подписанные линии доказывают метрику,
+   * масштаб, отсутствие разворота и дают начало координат.
+   *
+   * Отдельный вид, а не `local_anchor`, потому что датум из сетки не следует.
+   * У `local_anchor` без якоря перевод в градусы молча берёт запасной якорь
+   * (Астана), и объект в Алматы оказался бы на карте за тысячу километров от
+   * своего места. Чертежи с такой привязкой выпускать можно — они несут
+   * сетку, — а подложку OSM под них подкладывать нельзя.
+   */
+  | { kind: 'survey_grid'; pitchM?: number; source: string }
   | { kind: 'unreferenced'; source: string }
 
 export interface RouteConstraintInput {

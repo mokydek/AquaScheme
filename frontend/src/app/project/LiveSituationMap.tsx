@@ -25,15 +25,20 @@ function projectionFor(georeference: RouteGeoreference | undefined): {
       },
     }
   }
-  if (georeference?.kind === 'local_anchor') {
+  // Якорь обязателен: без него localToLonLat берёт запасной (Астана), и объект
+  // из другого города оказался бы на карте за сотни километров от своего места.
+  if (georeference?.kind === 'local_anchor' && georeference.anchor) {
+    const { anchor } = georeference
     return {
       geographic: true,
       point: (point) => {
-        const [longitude, latitude] = localToLonLat(point.x, point.y, georeference.anchor)
+        const [longitude, latitude] = localToLonLat(point.x, point.y, anchor)
         return [latitude, longitude]
       },
     }
   }
+  // Координатная сетка чертежа доказывает метрику и разворот, но не датум:
+  // на подложку такое накладывать нельзя, показываем локальную плоскость.
   return { geographic: false, point: (point) => [point.y, point.x] }
 }
 
@@ -323,9 +328,13 @@ export function LiveSituationMap({
           : ''}
         Плановая ось строится по структурированным слоям DWG, а инженерные отметки берутся из топосъёмки. Синий цвет — самотёк до ЛНС, оранжевый — отдельная напорная система после ЛНС.
       </p>
-      {!constraints?.georeference || constraints.georeference.kind === 'unreferenced' ? (
-        <p className="notice error">DWG не геопривязан: показана локальная координатная плоскость без OSM. Задайте proj4 либо контрольные точки, чтобы наложение на реальную карту было достоверным.</p>
-      ) : null}
+      {constraints?.georeference?.kind === 'survey_grid' ? (
+        <p className="notice">Координаты подтверждены координатной сеткой чертежа: масштаб, разворот и начало координат известны, поэтому планы и профили выпускать можно. Датум из сетки не следует, и подложка OSM не подкладывается — иначе объект встал бы не на своё место. Задайте proj4 либо контрольные точки, если нужна карта.</p>
+      ) : !constraints?.georeference
+        || constraints.georeference.kind === 'unreferenced'
+        || (constraints.georeference.kind === 'local_anchor' && !constraints.georeference.anchor) ? (
+          <p className="notice error">DWG не геопривязан: показана локальная координатная плоскость без OSM. Задайте proj4 либо контрольные точки, чтобы наложение на реальную карту было достоверным.</p>
+        ) : null}
     </div>
   )
 }

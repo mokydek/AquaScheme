@@ -786,6 +786,16 @@ export const en = {
         subsidenceII: 'Type II',
         heaving: 'Frost heaving soils',
         swelling: 'Swelling soils',
+        drawing: {
+          label: 'Borehole location plan, DXF/DWG',
+          hint: 'Borehole coordinates come from the drawing: logs and laboratory registers do not carry them, and without coordinates the geology cannot be laid along the route. Boreholes are not created here — only given coordinates — so load the table or the report with the layers first',
+          noBoreholes: 'No boreholes loaded yet. The drawing only supplies coordinates; layers come from an XLSX table or a report — load those first',
+          noMatch: 'None of the labels on the drawing matched the project boreholes. Check that this is the plan of the same site and that the borehole designations agree',
+          result: 'Labels on the drawing: {{found}}; boreholes that received coordinates: {{matched}}',
+          unlocated: 'Left without coordinates: {{list}}',
+          unmatched: 'The drawing carries labels absent from the log: {{list}}',
+          ambiguous: 'Labels met more than once: {{count}} — no coordinates assigned from them',
+        },
         pdf: {
           label: 'Survey PDF report',
           scan: 'PDF without a text layer (a scan). Automatic table extraction is not available yet: upload a digital PDF with text, an XLSX table or enter the data manually. Scan recognition arrives in a separate phase',

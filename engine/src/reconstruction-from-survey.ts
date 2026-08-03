@@ -13,6 +13,7 @@ import { picketLabelExact } from './norms/sheetset'
 import type { GravityProfile, SewerSchedule } from './norms/gravity'
 import type { SurveyPoint } from './types'
 import type { TracedNetwork } from './trace'
+import type { RouteGeoreference } from './constrained-route'
 import type { CrossingRecord } from './working-drawings'
 
 /**
@@ -62,7 +63,8 @@ export interface ReconstructionFromSurvey {
   constraints: DxfConstraintData
   grid: SurveyGridFinding
   existing: ExistingUtilityNetwork
-  georeference: { kind: string; source: string } | null
+  /** Геопривязка в том виде, в каком её принимает набор рабочих чертежей. */
+  georeference: RouteGeoreference
   /** Chainage of every chamber along the run, m. */
   chainageM: number[]
   totalLengthM: number
@@ -245,12 +247,12 @@ export function buildReconstructionFromSurvey(
     constraints,
     grid,
     existing,
-    georeference: grid.detected
-      ? {
-        kind: grid.offsetSource === 'grid_labels' ? 'survey_grid' : 'survey_grid_unreferenced',
-        source: grid.reason,
-      }
-      : null,
+    // Привязкой считается только подписанная сетка: без подписей известны
+    // масштаб и разворот, но не начало координат, и выдавать это за
+    // геопривязку нельзя.
+    georeference: grid.detected && grid.offsetSource === 'grid_labels'
+      ? { kind: 'survey_grid', pitchM: grid.pitchX ?? undefined, source: grid.reason }
+      : { kind: 'unreferenced', source: grid.reason },
     chainageM,
     totalLengthM,
     depthBands,
