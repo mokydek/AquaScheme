@@ -29,3 +29,37 @@ describe('computeConsumption', () => {
     expect(c.drainageDailyM3).toBe(0)
   })
 })
+
+describe('расход стока по коэффициенту неравномерности', () => {
+  const buildings = Array.from({ length: 40 }, (_, index) => ({
+    id: `B-${index + 1}`, floors: 5, residents: 60,
+  }))
+
+  it('считается рядом с основным, не подменяя его', () => {
+    const result = computeConsumption(buildings)
+    // Основной расход остаётся тем же, что и у водопотребления.
+    expect(result.drainageFlowLps).toBe(result.water.designFlowLps)
+    // И рядом появляется величина по таблице 5.13.
+    expect(result.drainageMeanFlowLps).toBeGreaterThan(0)
+    expect(result.kGenMax).toBeGreaterThan(1)
+    expect(result.drainageFlowByKGenLps).toBeCloseTo(
+      result.drainageMeanFlowLps * result.kGenMax, 1,
+    )
+  })
+
+  it('коэффициент падает с ростом среднего расхода', () => {
+    const small = computeConsumption(buildings.slice(0, 4))
+    const large = computeConsumption([
+      ...buildings,
+      ...Array.from({ length: 400 }, (_, index) => ({ id: `C-${index}`, floors: 9, residents: 120 })),
+    ])
+    expect(large.drainageMeanFlowLps).toBeGreaterThan(small.drainageMeanFlowLps)
+    expect(large.kGenMax).toBeLessThan(small.kGenMax)
+  })
+
+  it('на пустом списке ничего не выдумывается', () => {
+    const result = computeConsumption([])
+    expect(result.drainageMeanFlowLps).toBe(0)
+    expect(result.drainageFlowByKGenLps).toBe(0)
+  })
+})

@@ -1,5 +1,3 @@
-import type { Justified } from '../normregistry'
-import { justified } from '../normregistry'
 import {
   maxFilling,
   maxVelocityMps,
@@ -445,10 +443,6 @@ export function solveGravityNetwork(input: {
   return { kind: 'gravity', systemType: input.system, pipes, outletFlowLps, profile }
 }
 
-/** The design filling cap used as a headline justified value for the UI. */
-export function designFillingCap(system: 'sewer' | 'storm'): Justified<number> {
-  return justified(maxFilling(system).value, ['sewer.filling.max'])
-}
 
 export interface ProfileStation {
   nodeId: string

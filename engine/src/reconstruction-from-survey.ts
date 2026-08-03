@@ -15,6 +15,7 @@ import {
 import { extractExistingUtilities, type ExistingUtilityNetwork } from './existing-utilities'
 import { detectSurveyGrid, type SurveyGridFinding } from './surveygrid'
 import { picketLabelExact } from './norms/sheetset'
+import { manholeSpacingM } from './norms/sewer'
 import type { GravityProfile, SewerSchedule } from './norms/gravity'
 import type { SurveyPoint } from './types'
 import type { TracedNetwork } from './trace'
@@ -217,6 +218,23 @@ export function buildReconstructionFromSurvey(
       { ownChamberStationsM: chainageM, designInvertAtM: invertAt },
     )
     : []
+  // Шаг колодцев по норме против фактического: реконструкция идёт по
+  // существующим колодцам, и если они стоят реже, чем допускает п. 7.4.1 для
+  // проектного диаметра, между ними придётся добавлять новые. Молча принять
+  // существующий шаг нельзя — по проектной трубе он может уже не проходить.
+  const allowedSpacingM = manholeSpacingM(options.designDiameterMm).value
+  const tooFarApart = pipes
+    .map((pipe, index) => ({ pipe, index }))
+    .filter(({ pipe }) => pipe.lengthM > allowedSpacingM + 1e-6)
+  if (tooFarApart.length > 0) {
+    blockers.push(
+      `Шаг колодцев больше допустимого ${allowedSpacingM} м для DN${options.designDiameterMm} `
+      + `(п. 7.4.1) на ${tooFarApart.length} участках: `
+      + `${tooFarApart.slice(0, 5).map(({ pipe }) => `${pipe.id} — ${pipe.lengthM.toFixed(1)} м`).join(', ')}`
+      + `${tooFarApart.length > 5 ? ' и далее' : ''}. Требуются промежуточные колодцы.`,
+    )
+  }
+
   // Диапазоны глубин выводятся из парных отметок съёмки — вход инженера не нужен.
   const depthBands = deriveDepthBandsFromSurvey(constraints)
 

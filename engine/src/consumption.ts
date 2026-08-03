@@ -1,6 +1,7 @@
 import { computeNetworkDemand } from './demand'
 import type { DemandBuildingInput, NetworkDemand } from './demand'
 import { NORMATIVE_DEFAULTS } from './norms'
+import { kGenMax } from './norms/sewer'
 import type { NormativeParams } from './norms'
 
 /**
@@ -22,6 +23,21 @@ export interface Consumption {
   drainageDailyM3: number
   /** Design wastewater flow, L/s (= domestic design flow, no fire, no irrigation). */
   drainageFlowLps: number
+  /** Средний секундный расход сточных вод, л/с. */
+  drainageMeanFlowLps: number
+  /** Общий коэффициент неравномерности при этом среднем расходе, таблица 5.13. */
+  kGenMax: number
+  /**
+   * Тот же расход, но через общий коэффициент неравномерности сточных вод, а не
+   * через коэффициенты водопотребления.
+   *
+   * Величины разные по смыслу: водопотребление пикуется суточным и часовым
+   * коэффициентами, сток — одним общим по среднему секундному расходу. Расчёт
+   * по-прежнему ведётся по `drainageFlowLps` (запись реестра
+   * `drainage.equalsWater`); это значение считается рядом, чтобы расхождение
+   * было названо, а не выбрано молча.
+   */
+  drainageFlowByKGenLps: number
 }
 
 export function computeConsumption(
@@ -29,11 +45,17 @@ export function computeConsumption(
   params: NormativeParams = NORMATIVE_DEFAULTS,
 ): Consumption {
   const water = computeNetworkDemand(buildings, params)
+  // Средний секундный расход: суточный объём, разнесённый на сутки.
+  const meanFlowLps = (water.avgDailyM3 * 1000) / 86400
+  const kGen = kGenMax(meanFlowLps)
   return {
     water,
     // Wastewater = domestic demand without irrigation. Fire flow is a water
     // supply reserve, not a discharge, so it is excluded here.
     drainageDailyM3: water.maxDailyM3,
     drainageFlowLps: water.designFlowLps,
+    drainageMeanFlowLps: Math.round(meanFlowLps * 100) / 100,
+    kGenMax: kGen.value,
+    drainageFlowByKGenLps: Math.round(meanFlowLps * kGen.value * 100) / 100,
   }
 }

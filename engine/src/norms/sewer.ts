@@ -233,7 +233,3 @@ export function minSewerInvertDepthM(diameterMm: number, freezingDepthM: number)
   )
 }
 
-/** @deprecated Use minSewerInvertDepthM; the returned value is depth to invert. */
-export function minSewerDepthM(diameterMm: number, freezingDepthM: number): Justified<number> {
-  return minSewerInvertDepthM(diameterMm, freezingDepthM)
-}

@@ -8,7 +8,6 @@ import {
   minGravityDiameterMm,
   minSlopeForDiameter,
   minSewerCrownCoverM,
-  minSewerDepthM,
   minSewerInvertDepthFromFrostM,
   minSewerInvertDepthM,
   minVelocityMps,
@@ -122,10 +121,6 @@ describe('СН РК 4.01-03-2013* verified lookups', () => {
     expect(deepFrost.governingConstraint).toBe('frost')
   })
 
-  it('keeps minSewerDepthM as a depth-to-invert compatibility alias', () => {
-    expect(minSewerDepthM(200, 0.8).value).toBe(minSewerInvertDepthM(200, 0.8).value)
-    expect(minSewerDepthM(200, 0.8).value).toBe(0.9)
-  })
 
   it('rejects non-physical burial inputs instead of producing a profile', () => {
     expect(() => minSewerInvertDepthM(0, 1.8)).toThrow(RangeError)
