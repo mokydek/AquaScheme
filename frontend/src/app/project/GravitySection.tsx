@@ -13,6 +13,8 @@ import {
   ringFromGeoJsonGeometry,
   selectManholeConstructions,
   solveGravityNetwork,
+  assessGravityFeasibility,
+  planGravityBasins,
   unverifiedClauses,
   workingDrawingSpecificationItemCount,
 } from '@aquascheme/engine'
@@ -419,6 +421,33 @@ export function GravitySection({
     const audit = (routeAuditDataset?.content ?? null) as { unresolved?: { layers?: number } } | null
     return audit?.unresolved?.layers ?? constraints?.unresolvedLayers?.length ?? 0
   }, [constraints, routeAuditDataset])
+  /**
+   * Обеспечен ли самотёк по трассе и как она делится на бассейны.
+   *
+   * По отдельности каждый участок норме отвечает, поэтому без этой проверки
+   * профиль выпускался при любой глубине. Предел глубины берётся из каталога
+   * конструкций колодцев проекта: глубже самой глубокой позиции колодец не из
+   * чего собрать. Без каталога разбивка не считается — своего предела мы не
+   * вводим.
+   */
+  const gravityPlan = useMemo(() => {
+    const profile = result?.profile
+    if (!profile || profile.stations.length < 2) return null
+    const design = new Map((result?.pipes ?? []).map((pipe) => [
+      pipe.id,
+      { diameterMm: pipe.diameterMm, slope: pipe.slope },
+    ]))
+    const feasibility = assessGravityFeasibility(profile, design)
+    const catalogMaxDepthM = manholeCatalog.reduce((deepest, entry) => Math.max(deepest, entry.maxDepthM), 0)
+    const basins = catalogMaxDepthM > 0 && !feasibility.feasible
+      ? planGravityBasins(profile, design, {
+        maxDepthM: catalogMaxDepthM,
+        freezingDepthM: freezingDepth.valueM ?? 0,
+      })
+      : null
+    return { feasibility, basins, catalogMaxDepthM }
+  }, [result, manholeCatalog, freezingDepth])
+
   const workingDrawingSet = useMemo(() => {
     // Сверки, выполненные инженером по бумажному документу, — такое же
     // подтверждение, как транскрипция из PDF, и снимают пункт для этого проекта.
@@ -463,6 +492,7 @@ export function GravitySection({
       catalogFingerprint: { activeCatalogId, catalogDiameters: currentCatalogDiameters },
       hydraulicsReady: Boolean(result?.profile) && (result?.pipes.every((pipe) => pipe.issues.length === 0) ?? false),
       stormRunoff: stormRunoffStatus,
+      gravityFeasibility: gravityPlan?.feasibility ?? null,
       freezingDepth: {
         valueM: freezingDepth.valueM,
         status: freezingDepth.verified ? 'verified' : freezingDepth.available ? 'unverified' : 'missing',
@@ -506,6 +536,7 @@ export function GravitySection({
     freezingDepth,
     geologyCoverage,
     geologyDataset,
+    gravityPlan,
     manholeCatalog,
     manholeSelection,
     network,
@@ -833,6 +864,58 @@ export function GravitySection({
           ))}
         </div>
       </div>
+      {gravityPlan && (
+        <div className="drawing-audit" style={{ marginBottom: 12 }}>
+          <div>
+            <h5>Самотёк по трассе</h5>
+            <p className={`stat-line${gravityPlan.feasibility.feasible ? ' ok' : ' warn'}`}>
+              {gravityPlan.feasibility.reason}
+            </p>
+            {!gravityPlan.feasibility.feasible && gravityPlan.basins && (
+              <>
+                <p className="stat-line">{gravityPlan.basins.reason}</p>
+                <p className="hint">
+                  Предел глубины {gravityPlan.catalogMaxDepthM} м взят из каталога конструкций
+                  колодцев проекта: глубже самой глубокой позиции колодец не из чего собрать.
+                  Гидравлика напорных участков здесь не считается.
+                </p>
+                <div className="table-wrap" style={{ maxHeight: 260 }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Бассейн</th>
+                        <th scope="col" className="num">От, м</th>
+                        <th scope="col" className="num">До, м</th>
+                        <th scope="col" className="num">Длина, м</th>
+                        <th scope="col" className="num">Глубина, м</th>
+                        <th scope="col">Конец</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gravityPlan.basins.basins.map((basin) => (
+                        <tr key={basin.index}>
+                          <td className="num">{basin.index}</td>
+                          <td className="num">{basin.fromChainageM.toFixed(0)}</td>
+                          <td className="num">{basin.toChainageM.toFixed(0)}</td>
+                          <td className="num">{basin.lengthM.toFixed(0)}</td>
+                          <td className="num">{basin.maxDepthM.toFixed(2)}</td>
+                          <td>{basin.liftAtEnd ? 'перекачка' : 'выпуск'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {!gravityPlan.feasibility.feasible && !gravityPlan.basins && (
+              <p className="stat-line warn">
+                Разбивка на бассейны не рассчитана: не загружен каталог конструкций колодцев,
+                а предел глубины из него и берётся.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
       {systemType === 'storm' && stormRunoffStatus && (
         <div className="drawing-audit" style={{ marginBottom: 12 }}>
           <div>

@@ -308,6 +308,14 @@ export interface WorkingDrawingInput {
   normsFingerprint?: unknown
   /** Full spatial-constraint fingerprint; same-count geometry edits must invalidate sheets. */
   constraintsFingerprint?: unknown
+  /**
+   * Обеспечен ли самотёк по трассе (`assessGravityFeasibility`).
+   *
+   * Отдельный вход, потому что по отдельности каждый участок норме отвечает:
+   * неосуществима трасса целиком, и без этой проверки профиль любой глубины
+   * выпускался как исправный.
+   */
+  gravityFeasibility?: { feasible: boolean; shortfallM: number; maxDepthM: number } | null
   deliverableRequirements?: WorkingDrawingDeliverableRequirements | null
   protectiveGridDesign?: ProtectiveGridDesign | null
   manholeCatalogReady?: boolean
@@ -1160,6 +1168,18 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       'FREEZING_DEPTH_UNVERIFIED',
       'Расчётная глубина промерзания отсутствует либо не подтверждена источником; окончательный продольный профиль выпускать нельзя.',
       'freezing_depth',
+    ))
+    // Неосуществимый самотёк раньше проходил молча: по отдельности каждый
+    // участок норме отвечает, и профиль выпускался при любой глубине. На
+    // трассе Талдыколя это давало лоток на 59 м — выпускать такой профиль
+    // нельзя, пока трасса не разбита на бассейны или не изменены отметки.
+    if (input.gravityFeasibility && !input.gravityFeasibility.feasible) blockers.push(issue(
+      'GRAVITY_RUN_INFEASIBLE',
+      `Самотёк по трассе не обеспечен: падения местности не хватает на `
+      + `${input.gravityFeasibility.shortfallM} м, наибольшая глубина `
+      + `${input.gravityFeasibility.maxDepthM} м. Требуется разбивка на самотёчные бассейны `
+      + 'с перекачкой, перепадные колодцы или изменение проектных отметок.',
+      'hydraulics',
     ))
     blockers.push(...crossingIssues(input))
     if (!input.normsVerified) warnings.push(issue('NORMS_REQUIRE_REVIEW', 'Не все применённые нормативные правила подтверждены инженером.', 'norms'))

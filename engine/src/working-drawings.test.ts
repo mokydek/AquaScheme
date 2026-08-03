@@ -739,3 +739,36 @@ describe('buildWorkingDrawingSet', () => {
     expect(constraintsChanged.inputHash).not.toBe(before.inputHash)
   })
 })
+
+describe('неосуществимый самотёк блокирует профиль', () => {
+  // Раньше профиль выпускался при любой глубине: по отдельности каждый участок
+  // норме отвечает, а неосуществима трасса целиком.
+  it('стоп-фактор появляется и называет нехватку', () => {
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      gravityFeasibility: { feasible: false, shortfallM: 56.72, maxDepthM: 59.02 },
+    })
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    const codes = profileSheet.blockers.map((item) => item.code)
+    expect(codes).toContain('GRAVITY_RUN_INFEASIBLE')
+    const message = profileSheet.blockers.find((item) => item.code === 'GRAVITY_RUN_INFEASIBLE')!.message
+    expect(message).toContain('56.72')
+    expect(message).toContain('59.02')
+    expect(message).toContain('бассейны')
+  })
+
+  it('обеспеченный самотёк ничего не добавляет', () => {
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      gravityFeasibility: { feasible: true, shortfallM: -4.2, maxDepthM: 3.1 },
+    })
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    expect(profileSheet.blockers.map((item) => item.code)).not.toContain('GRAVITY_RUN_INFEASIBLE')
+  })
+
+  it('без оценки поведение прежнее: профиль не блокируется этим кодом', () => {
+    const set = buildWorkingDrawingSet(readyInput())
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    expect(profileSheet.blockers.map((item) => item.code)).not.toContain('GRAVITY_RUN_INFEASIBLE')
+  })
+})
