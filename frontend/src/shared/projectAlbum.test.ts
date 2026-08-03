@@ -222,6 +222,46 @@ describe('project working-drawing album', () => {
     }
   })
 
+  it('разводит выноски пересечений профиля по ярусам', () => {
+    // Двадцать пересечений подряд: обе строки выноски писались на постоянной
+    // высоте, и на плотном участке подписи сливались в нечитаемую полосу.
+    const crossings = Array.from({ length: 20 }, (_, index) => ({
+      id: `X-${index + 1}`, stationM: 40 + index * 12, kind: 'водопровод',
+      owner: 'Владелец', size: 'DN100', source: 'ТУ',
+      existingElevationM: 98.4, designInvertElevationM: 96.1,
+      clearanceM: 1.8, requiredClearanceM: 1, method: 'открытый способ', approved: true,
+    }))
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: { corridorRings: [], crossings },
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content).replaceAll('\\"', '"')
+    const profileSvg = /(<svg[^>]*?data-vertical-scale-denominator[\s\S]*?<\/svg>)/.exec(serialized)?.[1] ?? ''
+
+    // Ни одна выноска не потеряна: без обозначения линию не связать с карточкой.
+    for (const crossing of crossings) {
+      expect(profileSvg).toContain(`${crossing.id} · водопровод`)
+    }
+
+    // Подложки выносок на профиле не должны пересекаться.
+    const boxes = [...profileSvg.matchAll(
+      /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" width="([\d.]+)" height="21" fill="#fff"/g,
+    )].map((m) => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: 21 }))
+    expect(boxes).toHaveLength(crossings.length)
+    // Ярусы действительно используются, а не всё лежит на одной высоте.
+    expect(new Set(boxes.map((box) => box.y)).size).toBeGreaterThan(1)
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]
+        const b = boxes[j]
+        const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        expect(overlap).toBe(false)
+      }
+    }
+  })
+
   it('assigns tagged crossings to only their owning profile', () => {
     const legacy = { id: 'LEGACY', stationM: 10, kind: 'utility' }
     expect(crossingBelongsToProfile(legacy, undefined, ['MAIN'])).toBe(true)

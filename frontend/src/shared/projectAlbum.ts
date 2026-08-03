@@ -692,12 +692,32 @@ function profileSvg(
     const centerX = x((previous.chainageM + station.chainageM) / 2)
     return `<text x="${centerX}" y="442" text-anchor="middle" font-size="7">${slopePermille.toFixed(2)}‰ / ${lengthM.toFixed(2)} м</text><text x="${centerX}" y="467" text-anchor="middle" font-size="7">${lengthM.toFixed(2)}</text>`
   }).join('')
+  // Выноски пересечений разводятся по ярусам.
+  //
+  // Обе строки писались на постоянной высоте, поэтому на плотном участке
+  // соседние выноски накладывались: на профиле Станкевича 36 пересечений
+  // сливались в нечитаемую полосу. Ярусы — обычный приём профиля: подпись
+  // отъезжает вверх по своей же выносной линии.
+  const crossingPlacer = labelPlacer()
   const crossings = activeCrossings
     .map((crossing) => {
       const crossingX = x(crossing.stationM)
       const designY = Number.isFinite(crossing.designInvertElevationM) ? y(crossing.designInvertElevationM!) : 315
       const existingY = Number.isFinite(crossing.existingElevationM) ? y(crossing.existingElevationM!) : 65
-      return `<line x1="${crossingX}" y1="45" x2="${crossingX}" y2="335" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 4"/><circle cx="${crossingX}" cy="${designY}" r="4" fill="#fff" stroke="#9b2c8c"/><path d="M${crossingX - 5} ${existingY} L${crossingX + 5} ${existingY}" stroke="#9b2c8c" stroke-width="2"/><text x="${crossingX + 5}" y="55" font-size="7" fill="#7c226f">${xmlText(crossing.id)} · ${xmlText(crossing.kind)}</text><text x="${crossingX + 5}" y="66" font-size="7" fill="#7c226f">просвет ${Number.isFinite(crossing.clearanceM) ? crossing.clearanceM!.toFixed(2) + ' м' : 'нет данных'}</text>`
+      const title = `${crossing.id} · ${crossing.kind}`
+      const clearance = `просвет ${Number.isFinite(crossing.clearanceM) ? crossing.clearanceM!.toFixed(2) + ' м' : 'нет данных'}`
+      const width = Math.max(title.length, clearance.length) * 3.5 + 6
+      const lanes = [48, 72, 96, 120, 144, 168]
+      const candidates = lanes.map((top) => ({ x: crossingX + 5, y: top, w: width, h: 22 }))
+      const box = crossingPlacer.place(candidates) ?? candidates[0]
+      return `<line x1="${crossingX}" y1="45" x2="${crossingX}" y2="335" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 4"/>`
+        + `<circle cx="${crossingX}" cy="${designY}" r="4" fill="#fff" stroke="#9b2c8c"/>`
+        + `<path d="M${crossingX - 5} ${existingY} L${crossingX + 5} ${existingY}" stroke="#9b2c8c" stroke-width="2"/>`
+        // Белая подложка под ярусом: выносные линии соседних пересечений
+        // проходят сквозь подпись и без неё её не прочесть.
+        + `<rect x="${(box.x - 2).toFixed(1)}" y="${(box.y - 1).toFixed(1)}" width="${width.toFixed(1)}" height="21" fill="#fff" fill-opacity="0.88"/>`
+        + `<text x="${box.x.toFixed(1)}" y="${(box.y + 7).toFixed(1)}" font-size="7" fill="#7c226f">${xmlText(title)}</text>`
+        + `<text x="${box.x.toFixed(1)}" y="${(box.y + 18).toFixed(1)}" font-size="7" fill="#7c226f">${xmlText(clearance)}</text>`
     }).join('')
   const geology = activeBoreholes.flatMap(({ borehole, projection }) => {
     const chainageM = projection.chainageM
