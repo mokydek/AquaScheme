@@ -4,6 +4,7 @@ import {
   deduplicateImportSegments,
   parseDxfNetwork,
   parseTopographyDxf,
+  simplifyDrawingUnderlay,
 } from './dxfread'
 
 const FIXTURE = [
@@ -482,6 +483,60 @@ describe('deduplicateImportSegments', () => {
   })
 })
 
+describe('simplifyDrawingUnderlay', () => {
+  it('убирает вершины, неразличимые на чертеже, и оставляет форму', () => {
+    // Прямая с миллиметровым дрожанием, каким CAD хранит оцифрованную линию.
+    const noisy = Array.from({ length: 50 }, (_, i) => ({
+      x: i, y: (i % 2 === 0 ? 0.004 : -0.004) + 1e-9 * i,
+    }))
+    const [result] = simplifyDrawingUnderlay([{ layer: 'CTX', points: noisy }])
+    expect(result.points).toHaveLength(2)
+    expect(result.points[0]).toEqual({ x: 0, y: 0.004 })
+    expect(result.points[1]).toEqual({ x: 49, y: -0.004 })
+  })
+
+  it('излом крупнее допуска сохраняется', () => {
+    const bend = [{ x: 0, y: 0 }, { x: 10, y: 0.5 }, { x: 20, y: 0 }]
+    const [result] = simplifyDrawingUnderlay([{ layer: 'CTX', points: bend }])
+    expect(result.points).toHaveLength(3)
+  })
+
+  it('координаты округляются до миллиметра', () => {
+    const [result] = simplifyDrawingUnderlay([{
+      layer: 'CTX',
+      points: [{ x: -232.41823975000001, y: 8117.000499999999 }, { x: 100.7654321, y: 0 }],
+    }])
+    expect(result.points[0]).toEqual({ x: -232.418, y: 8117 })
+    expect(result.points[1]).toEqual({ x: 100.765, y: 0 })
+  })
+
+  it('отметка вершины сохраняется, когда она есть', () => {
+    const [result] = simplifyDrawingUnderlay([{
+      layer: 'CTX',
+      points: [{ x: 0, y: 0, z: 345.5534 }, { x: 50, y: 0, z: 346.1119 }],
+    }])
+    expect(result.points[0].z).toBe(345.553)
+    expect(result.points[1].z).toBe(346.112)
+  })
+
+  it('слой и стиль линии не теряются', () => {
+    const [result] = simplifyDrawingUnderlay([{
+      layer: 'SIT_LВОДОПРО',
+      lineType: 'DASHED',
+      colorNumber: 5,
+      points: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+    }])
+    expect(result.layer).toBe('SIT_LВОДОПРО')
+    expect(result.lineType).toBe('DASHED')
+    expect(result.colorNumber).toBe(5)
+  })
+
+  it('допуск можно задать явно', () => {
+    const bend = [{ x: 0, y: 0 }, { x: 10, y: 0.5 }, { x: 20, y: 0 }]
+    expect(simplifyDrawingUnderlay([{ layer: 'CTX', points: bend }], 1)[0].points).toHaveLength(2)
+  })
+})
+
 describe('classifyDxfConstraints', () => {
   it('does not mistake planning and utility layers for designed pipes', () => {
     const data = classifyDxfConstraints({
@@ -618,6 +673,33 @@ describe('classifyDxfConstraints', () => {
     }, { TOPO: 'terrain' })
     expect(data.contextLines).toHaveLength(1)
     expect(data.terrainLines).toHaveLength(1)
+  })
+
+  it('опознаёт сети и красные линии по именам реальной топоосновы', () => {
+    // Все названия взяты со съёмки Талдыколя, включая описку в «лииний».
+    const names = [
+      'Люк_сетей_водоснабжения',
+      'Колодцы_системы_водоотведения',
+      '_центрального_водоснабжен',
+      'Рабочий_слой_крассных_лииний',
+      'Понизительные_и_распределительные_подстанции',
+    ]
+    const data = classifyDxfConstraints({
+      ok: true,
+      points: [],
+      layers: names.map((name) => ({ name, segments: 1, points: 0 })),
+      segments: names.map((name, index) => ({
+        layer: name,
+        points: [{ x: 0, y: index }, { x: 10, y: index }],
+      })),
+    })
+    expect(data.roles['Люк_сетей_водоснабжения']).toBe('utility')
+    expect(data.roles['Колодцы_системы_водоотведения']).toBe('utility')
+    expect(data.roles['_центрального_водоснабжен']).toBe('utility')
+    expect(data.roles['Рабочий_слой_крассных_лииний']).toBe('redLine')
+    expect(data.roles['Понизительные_и_распределительные_подстанции']).toBe('structure')
+    expect(data.utilityLines).toHaveLength(3)
+    expect(data.redLines).toHaveLength(1)
   })
 
   it('не записывает в рельеф слой только за то, что у него есть отметки', () => {

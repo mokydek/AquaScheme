@@ -201,6 +201,40 @@ function simplifyPolyline(points: ImportPoint[], toleranceM: number): ImportPoin
   return [...left.slice(0, -1), ...right]
 }
 
+/**
+ * Допуск прореживания подосновы, м.
+ *
+ * Подоснова — это графика для листа, а не измерение: отметки съёмки, колодцы и
+ * пересечения хранятся отдельно и не трогаются. При масштабе плана 1:500 два
+ * сантиметра на местности — это 0,04 мм на бумаге, пятая часть толщины линии,
+ * то есть заведомо невидимо. Дальнейшее огрубление почти ничего не экономит
+ * (на Талдыколе 0,02 м дают 3,2 МБ, 0,1 м — 2,5 МБ), поэтому брать грубее
+ * незачем.
+ */
+export const UNDERLAY_TOLERANCE_M = 0.02
+
+/**
+ * Готовит векторную подоснову к сохранению: округляет координаты до миллиметра
+ * и убирает вершины, неразличимые на чертеже.
+ *
+ * Без этого одна съёмка занимает в проекте десятки мегабайт: на Талдыколе
+ * 14 525 линий несут 471 976 вершин и 23,7 МБ JSON, потому что CAD хранит
+ * координаты с плавающей точностью, а окружности разворачивает в сотни
+ * отрезков. После прореживания — 65 113 вершин и 3,2 МБ.
+ */
+export function simplifyDrawingUnderlay<T extends { points: ImportPoint[] }>(
+  segments: T[],
+  toleranceM: number = UNDERLAY_TOLERANCE_M,
+): T[] {
+  const round = (value: number) => Math.round(value * 1000) / 1000
+  return segments.map((segment) => {
+    const rounded = segment.points.map((point) => (point.z === undefined
+      ? { x: round(point.x), y: round(point.y) }
+      : { x: round(point.x), y: round(point.y), z: round(point.z) }))
+    return { ...segment, points: simplifyPolyline(rounded, toleranceM) }
+  })
+}
+
 const COORDINATE_KEY_DECIMALS = 6
 
 function coordinateKey(value: number): string {
@@ -314,7 +348,11 @@ export function classifyDxfConstraints(
     if (roleOverrides[layer]) return roleOverrides[layer] as DxfLayerRole
     if (/ось.*коридор|направляющ.*ос|guide.*axis|corridor.*axis/.test(name)) return 'guideAxis'
     if (/коридор.*инженер|инженер.*коридор/.test(name)) return 'corridor'
-    if (/красн.*лин|крассн.*лин/.test(name)) return 'redLine'
+    // Удвоенные буквы — не придирка: на реальной топооснове Талдыколя слой
+    // назван «Рабочий_слой_крассных_лииний». Красная линия — жёсткое
+    // ограничение трассы, и оставлять её неопознанной из-за описки опаснее,
+    // чем допустить растянутый корень.
+    if (/крас+н.*ли+н/.test(name)) return 'redLine'
     if (/железн.*дорог|ж\/д|rail/.test(name)) return 'railway'
     if (/проезж|тротуар|дорог|улиц|road/.test(name)) return 'road'
     // «Канал» alone is ambiguous: a master-plan DXF spells cable, gas and heat
@@ -327,7 +365,7 @@ export function classifyDxfConstraints(
     if (/рельеф|горизонтал|отметк|grade|elevation|survey|точк.*высот/.test(name)) return 'terrain'
     if (/охран.*зон|санитар.*зон|защит.*зон|protection/.test(name)) return 'protectionZone'
     if (/разреш.*пересеч|окн.*пересеч|approved.*cross|crossing.*window/.test(name)) return 'approvedCrossing'
-    if (/павильон|камер|эстакад|опор|structure/.test(name)) return 'structure'
+    if (/павильон|камер|эстакад|опор|подстанц|structure/.test(name)) return 'structure'
     if (/здани|сооруж|строени|контур.*объект|building/.test(name)) return 'building'
     if (/запрет|недопуст|forbidden/.test(name)) return 'forbiddenZone'
     if (/участ|землеотвод|границ.*зем|parcel/.test(name)) return 'parcel'
@@ -335,7 +373,11 @@ export function classifyDxfConstraints(
     // 10-character layer names of older CAD systems, where «водопровод»
     // arrives as «SIT_LВОДОПРО» and «линии связи» as «SIT_LЛИН_СВЯ». Matching
     // the full word would leave every crossing utility unclassified.
-    if (/трубопровод|водопро|канализ|ливнев|дренаж|кабел|газоснаб|газопро|теплосет|теплотр|электро|связи|лин_свя|лэп/
+    // «Водоснабжение» и «водоотведение» — те же сети под современными
+    // названиями: на топооснове Талдыколя они пишутся полностью
+    // («Люк_сетей_водоснабжения», «Колодцы_системы_водоотведения»), и без этих
+    // корней действующие сети оставались неопознанными.
+    if (/трубопровод|водопро|водоснаб|канализ|водоотвед|ливнев|дренаж|кабел|газоснаб|газопро|теплосет|теплотр|электро|связи|лин_свя|лэп/
       .test(name)) return 'utility'
     if (/проект.*(трас|осев|коллектор)|(^|[_ -])к2([_ -]|$)/.test(name)) return 'candidateRoute'
     // Раньше здесь стоял отлов: «в слое есть точки с конечным Z — значит

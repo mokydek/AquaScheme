@@ -100,6 +100,12 @@ export function ReconstructionSurveySection({
    * dataset and the chamber chain becomes the engineering network, so the rest
    * of the pipeline works on it. Topography is saved first because that call
    * marks the route stale; the network then lands with its own status.
+   *
+   * Вместе с ними сохраняется и route_constraints. Без него лист плана
+   * оставался без подосновы и печатался со штампом «НЕПОЛНЫЙ ПЛАН», а карточки
+   * пересечений — вся работа по нивелировке — до альбома вообще не доходили.
+   * Координаты уже в системе чертежа, что и топосъёмка с сетью, поэтому
+   * переноса нет.
    */
   const save = async () => {
     if (!result || result.network.nodes.length < 2) return
@@ -107,6 +113,39 @@ export function ReconstructionSurveySection({
     setNotice(null)
     setSaveError(null)
     try {
+      const { buildDxfCadContext } = await import('../../shared/dxfContext')
+      const source = result.constraints
+      const identity = (point: { x: number; y: number }) => ({ x: point.x, y: point.y })
+      const ring = (points: Array<{ x: number; y: number }>) => points.map(identity)
+      const unresolvedLayers = Object.entries(source.roles)
+        .filter(([, role]) => role === 'unknown')
+        .map(([name]) => name)
+      await saveDataset(projectId, 'route_constraints', {
+        corridorRings: source.corridorRings.map(ring),
+        guideLines: source.guideAxis,
+        redLines: source.redLines,
+        utilityLines: source.utilityLines,
+        roadLines: [...source.roadLines, ...source.railwayLines],
+        waterLines: source.hydrography,
+        hardObstacleRings: source.buildingFootprints.map(ring),
+        forbiddenRings: source.forbiddenZoneRings.map(ring),
+        parcelRings: source.parcelRings.map(ring),
+        protectionZoneRings: source.protectionZoneRings.map(ring),
+        approvedCrossingRings: source.approvedCrossingRings.map(ring),
+        surveyPoints: result.surveyPoints,
+        crossings: result.crossings,
+        unresolvedLayers,
+        ...buildDxfCadContext(source, identity),
+        completeness: unresolvedLayers.length > 0
+          ? 'blocked-unresolved-layers'
+          : 'reviewed-dxf-classification',
+      }, {
+        roles: source.roles,
+        origin: 'reconstruction-from-survey',
+        crossingTriage: result.crossingTriage?.summary ?? null,
+        depthBands: result.depthBands.reason,
+      }, fileName)
+
       if (result.surveyPoints.length > 0) {
         const zs = result.surveyPoints.map((point) => point.z)
         await saveDataset(
