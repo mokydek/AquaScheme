@@ -591,6 +591,7 @@ export function ImportSection({
           <DxfLayerRoleTable
             idPrefix="import"
             layers={parsed.data.layers}
+            segments={parsed.data.segments}
             roles={Object.fromEntries(parsed.data.layers.map((layer) => [
               layer.name,
               layerRoles[layer.name] ?? parsed.constraints.roles[layer.name] ?? 'unknown',

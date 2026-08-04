@@ -36,6 +36,7 @@ const { QuantityBillView } = await import('./QuantityBillView')
 const { GeologySectionView } = await import('./GeologySectionView')
 const { BlockStructuresTable } = await import('./BlockStructuresTable')
 const { LinetypeRolesTable } = await import('./LinetypeRolesTable')
+const { DxfLayerRoleTable } = await import('./DxfLayerRoleTable')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
 
@@ -199,5 +200,69 @@ describe('признаки из чертежа на экране', () => {
     expect(markup).toContain('KANALIZ_NAP')
     expect(markup).toContain('СВОЙ_ТИП')
     expect(markup).not.toContain('Continuous')
+  })
+})
+
+describe('набросок слоя в таблице ролей', () => {
+  const layers = [
+    { name: 'СЕТЬ', segments: 1, points: 0 },
+    { name: 'ДОМ', segments: 4, points: 0 },
+    { name: 'ПОДПИСИ', segments: 0, points: 12 },
+  ]
+  const segments = [
+    { layer: 'СЕТЬ', points: [{ x: 0, y: 0 }, { x: 1000, y: 800 }] },
+    { layer: 'ДОМ', points: [{ x: 10, y: 10 }, { x: 20, y: 10 }, { x: 20, y: 20 }] },
+  ]
+  const props = { idPrefix: 't', layers, roles: {}, onChange: () => {} }
+
+  it('без линий чертежа графы наброска нет вовсе', () => {
+    // Пустая рамка в каждой строке читалась бы как «слой пуст».
+    const markup = html(createElement(DxfLayerRoleTable, props as never))
+    expect(markup).not.toContain('project.dxfLayers.thSketch')
+    expect(markup).not.toContain('<svg')
+  })
+
+  it('слой без линий говорит об этом, а не рисует пустую рамку', () => {
+    const markup = html(createElement(DxfLayerRoleTable, { ...props, segments } as never))
+    expect(markup).toContain('project.dxfLayers.thSketch')
+    expect(markup).toContain('project.dxfLayers.sketchNoLines')
+  })
+
+  it('кадр общий: дом остаётся мелким рядом с сетью через всю площадку', () => {
+    // Это и есть смысл наброска. При кадре по габариту слоя дом и сеть
+    // выглядели бы одинаково — оба во всю картинку.
+    const markup = html(createElement(DxfLayerRoleTable, { ...props, segments } as never))
+    const widths = [...markup.matchAll(/<rect[^>]*?width="([\d.]+)"/g)].map((m) => Number(m[1]))
+    expect(Math.max(...widths)).toBeGreaterThan(50)
+    expect(Math.min(...widths)).toBeLessThan(10)
+  })
+
+  it('слой, ставший в общем кадре точкой, показан ещё и вблизи', () => {
+    // Иначе о форме мелкого слоя набросок не говорит ничего, а форма — это
+    // половина ответа на вопрос «что это за слой».
+    const markup = html(createElement(DxfLayerRoleTable, { ...props, segments } as never))
+    const rows = markup.split('<tr>')
+    const house = rows.find((row) => row.includes('ДОМ'))!
+    const network = rows.find((row) => row.includes('СЕТЬ'))!
+    expect(house).toContain('project.dxfLayers.sketchClose')
+    expect(house).toContain('project.dxfLayers.sketchCloseNote')
+    // Крупный слой второго наброска не получает: он и так читается.
+    expect(network).not.toContain('project.dxfLayers.sketchClose')
+  })
+
+  it('названия ролей и заголовки идут через словарь', () => {
+    // Храповик считает литералы в разметке, а названия ролей лежат в массиве —
+    // мимо него. Проверка держит их в словаре. Имена слоёв при этом остаются
+    // как есть: это данные чертежа, а не текст интерфейса.
+    const markup = html(createElement(DxfLayerRoleTable, { ...props, segments } as never))
+    const interfaceText = [
+      ...markup.matchAll(/<option[^>]*>([^<]*)</g),
+      ...markup.matchAll(/<th[^>]*>([^<]*)</g),
+      ...markup.matchAll(/class="hint"[^>]*>([^<]*)</g),
+    ].map((match) => match[1])
+    expect(interfaceText.length).toBeGreaterThan(20)
+    expect(interfaceText.filter((text) => /[А-Яа-я]/.test(text))).toEqual([])
+    expect(markup).toContain('project.dxfLayers.roleUtility')
+    expect(markup).toContain('project.dxfLayers.roleIgnore')
   })
 })

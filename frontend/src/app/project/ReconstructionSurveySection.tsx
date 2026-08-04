@@ -368,6 +368,7 @@ export function ReconstructionSurveySection({
             <DxfLayerRoleTable
               idPrefix={`reconstruction-${projectId}`}
               layers={parsed.layers}
+              segments={parsed.segments}
               roles={result.constraints.roles}
               onChange={(layer, role) => void onLayerRole(layer, role)}
               disabled={busy}

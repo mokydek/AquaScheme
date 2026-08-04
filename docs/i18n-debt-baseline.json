@@ -1,6 +1,6 @@
 {
   "_comment": "Текст интерфейса мимо словарей. Может только снижаться; обновляется через npm run audit:i18n -- --write-baseline. Приложение заявляет три языка, и зашитая по-русски строка двум из них показывается неверно.",
-  "total": 204,
+  "total": 198,
   "files": [
     {
       "file": "frontend/src/app/project/SituationSchemeSection.tsx",
@@ -37,10 +37,6 @@
     {
       "file": "frontend/src/app/project/PipeCalculationsView.tsx",
       "count": 9
-    },
-    {
-      "file": "frontend/src/app/project/DxfLayerRoleTable.tsx",
-      "count": 6
     },
     {
       "file": "frontend/src/app/project/BasisSection.tsx",
