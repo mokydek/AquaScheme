@@ -156,7 +156,7 @@ export function ExportSection({
         x: source!.x,
         y: source!.y,
         groundElevation: source!.groundElevation ?? 0,
-        availableHead: source!.availableHead ?? 45,
+        availableHead: source!.availableHead ?? 0,
       },
       buildings: buildings.map((b) => ({
         id: b.id,

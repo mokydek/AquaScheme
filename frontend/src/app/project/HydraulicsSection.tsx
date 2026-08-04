@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
+import { assessSourceHead } from '@aquascheme/engine'
 import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
@@ -39,7 +40,12 @@ export function HydraulicsSection({
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'done' | 'blocked' | 'error' | null>(null)
 
-  const canRun = pipes.length > 0 && buildings.length > 0 && source !== null
+  // Напор на источнике — исходное данное проекта, а не умолчание расчёта.
+  // Прежде подставлялось 45 м, и весь подбор диаметров В1 стоял на выдуманной
+  // величине, о которой пользователь не знал.
+  const declaredHeadM = source?.availableHead
+  const headDeclared = declaredHeadM != null && Number.isFinite(declaredHeadM) && declaredHeadM > 0
+  const canRun = pipes.length > 0 && buildings.length > 0 && source !== null && headDeclared
 
   const run = async () => {
     if (!canRun || busy || !source) return
@@ -49,7 +55,7 @@ export function HydraulicsSection({
       ...NORMATIVE_DEFAULTS,
       ...((normsDataset?.content ?? {}) as Partial<NormativeParams>),
     }
-    const availableHeadM = source.availableHead ?? 45
+    const availableHeadM = declaredHeadM as number
     try {
       const catalog = await loadActiveCatalogSizes(activeCatalogId)
       const result: SizingResult = await runSizingInWorker({
@@ -79,6 +85,10 @@ export function HydraulicsSection({
   const buildingNodes = summary?.nodes.filter((n) => n.buildingId) ?? []
   const vValues = mains.map((p) => p.velocityMs)
   const pValues = buildingNodes.map((n) => n.pressureM)
+  // Расчёт отвечал «сошлось» или «не сошлось», но не говорил, сколько напора
+  // нужно: без этого не подобрать насос водозабора и не назначить высоту
+  // водонапорной башни.
+  const headAssessment = summary ? assessSourceHead(summary) : null
 
   return (
     <Panel
@@ -86,6 +96,30 @@ export function HydraulicsSection({
       status={summary ? 'filled' : 'empty'}
     >
       <p className="hint">{t('project.hydraulics.hint')}</p>
+      {!headDeclared && (
+        <p className="notice error">
+          Не задан свободный напор на источнике. Расчёт не выполняется: прежде здесь подставлялось 45 м,
+          и весь подбор диаметров стоял на выдуманной величине. Задайте напор в разделе «Источник».
+        </p>
+      )}
+      {headAssessment && (
+        <div>
+          <p className={headAssessment.deficitM > 0 ? 'notice error' : 'stat-line ok'}>{headAssessment.reason}</p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <tbody>
+                <tr><th>Уровень источника в расчёте</th><td className="num">{headAssessment.sourceHeadM} м</td></tr>
+                <tr><th>Требуемый уровень источника</th><td className="num">{headAssessment.requiredSourceHeadM} м</td></tr>
+                <tr className={headAssessment.reserveM < 0 ? 'row-warn' : undefined}>
+                  <th>Наименьший запас свободного напора</th>
+                  <td className="num">{headAssessment.reserveM} м</td>
+                </tr>
+                <tr><th>Определяющий узел</th><td>{headAssessment.governingNodeId ?? '—'}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
       <div className="section-actions">
         <button
           type="button"

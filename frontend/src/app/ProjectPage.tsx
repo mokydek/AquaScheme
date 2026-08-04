@@ -388,7 +388,9 @@ export function ProjectPage() {
           residents: b.residents ?? 0,
           specificDemandLpd: b.specific_demand_lpd ?? undefined,
         })),
-        source: { x: source.x, y: source.y, availableHead: source.availableHead ?? 45 },
+        // Напор источника не подставляется: 45 м были выдуманной величиной, на
+        // которой стоял весь подбор диаметров.
+        source: { x: source.x, y: source.y, availableHead: source.availableHead as number },
         surveyPoints,
         norms,
         geology,

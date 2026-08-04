@@ -304,6 +304,16 @@ export async function runFullPipeline(params: FullPipelineParams): Promise<FullP
   // Chezy-Manning gravity workflow and must never be sent to EPANET merely
   // because a React closure still contains an older project type.
   if (!isPressurePipelineSystem(params.systemType)) return { ok: false, reason: 'wrongSystem' }
+  // Напор источника — исходное данное, а не умолчание расчёта. Прежде вызовы
+  // подставляли 45 м, и весь подбор диаметров стоял на выдуманной величине.
+  // Проверка идёт до трассировки: отказываться надо прежде, чем сеть записана.
+  if (!Number.isFinite(params.source.availableHead) || !(params.source.availableHead > 0)) {
+    return {
+      ok: false,
+      reason: 'error',
+      detail: 'Не задан свободный напор на источнике: подбор диаметров без него не выполняется.',
+    }
+  }
   try {
     const network = traceNetwork(
       params.buildings.map((b) => ({ id: b.id, x: b.x, y: b.y })),

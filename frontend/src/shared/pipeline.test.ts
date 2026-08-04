@@ -43,6 +43,17 @@ describe('runFullPipeline', () => {
     expect(result.detail).toContain('0012_engineering_route.sql')
   })
 
+  it('без заданного напора источника расчёт не выполняется', async () => {
+    // Прежде подставлялось 45 м, и подбор диаметров стоял на выдуманной
+    // величине, о которой пользователь не знал.
+    for (const availableHead of [0, Number.NaN, undefined as unknown as number]) {
+      const result = await runFullPipeline({ ...params, source: { ...params.source, availableHead } })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.detail).toMatch(/свободный напор на источнике/)
+    }
+  })
+
   it('самотёчный проект в EPANET не отправляется', async () => {
     const result = await runFullPipeline({ ...params, systemType: 'sewer' })
     expect(result).toEqual({ ok: false, reason: 'wrongSystem' })
