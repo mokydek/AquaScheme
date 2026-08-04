@@ -68,6 +68,8 @@ import { ReadinessView } from './ReadinessView'
 import { ProvenanceAuditView } from './ProvenanceAuditView'
 import { GeologySectionView } from './GeologySectionView'
 import { QuantityBillView } from './QuantityBillView'
+import { MasterPlanView } from './MasterPlanView'
+import type { MasterPlanContent } from './MasterPlanView'
 import type { QuantityBillSettings } from './QuantityBillView'
 import type { TitleBlockSignatory } from '../../shared/titleBlock'
 import { freezingDepthStatus } from '../../shared/geologyStatus'
@@ -144,6 +146,7 @@ export function GravitySection({
   routeAuditDataset,
   manholeCatalogDataset,
   titleBlockDataset,
+  masterPlanDataset,
   boreholes,
   parcels,
   activeCatalogId,
@@ -167,6 +170,7 @@ export function GravitySection({
   routeAuditDataset?: DatasetRow
   manholeCatalogDataset?: DatasetRow
   titleBlockDataset?: DatasetRow
+  masterPlanDataset?: DatasetRow
   boreholes?: Borehole[]
   /** Project parcels; kind 'right_of_way' rings form the corridor to check. */
   parcels?: ParcelRow[]
@@ -200,6 +204,11 @@ export function GravitySection({
   const [quantitySettings, setQuantitySettings] = useState<QuantityBillSettings>(savedQuantitySettings)
   const [quantityExporting, setQuantityExporting] = useState(false)
   useEffect(() => { setQuantitySettings(savedQuantitySettings) }, [drainageDataset])
+  // Диаметры генплана: держатся в состоянии, чтобы ввод не ждал ответа базы.
+  const savedMasterPlan = (masterPlanDataset?.content ?? {}) as MasterPlanContent
+  const [masterPlan, setMasterPlan] = useState<MasterPlanContent>(savedMasterPlan)
+  const [masterPlanError, setMasterPlanError] = useState<string | null>(null)
+  useEffect(() => { setMasterPlan(savedMasterPlan) }, [masterPlanDataset])
 
   useEffect(() => {
     let active = true
@@ -1302,6 +1311,35 @@ export function GravitySection({
               onExport={() => void exportQuantityBill()}
             />
           )}
+
+          {/*
+            Сверка со схемой генплана. Расчёт честно подбирает диаметр по
+            расходу, и там, где он расходится со схемой, расхождение до сих пор
+            всплывало только на экспертизе: сравнить два десятка участков с
+            бумажной схемой инженер может, но именно этого и не делает.
+          */}
+          <MasterPlanView
+            pipes={result.pipes.map((pipe) => ({
+              id: pipe.id,
+              diameterMm: pipe.diameterMm,
+              flowLps: pipe.flowLps,
+            }))}
+            content={masterPlan}
+            fieldPrefix={`master-plan-${projectId}`}
+            error={masterPlanError}
+            onChange={(next) => {
+              setMasterPlan(next)
+              setMasterPlanError(null)
+              // Без разбора ошибки введённый диаметр молча пропал бы при
+              // следующей загрузке: на базе без миграции 0018 ограничение kind
+              // отклоняет запись, а этого обещания никто не ждёт.
+              void saveDataset(projectId, 'master_plan', next, {
+                segments: (next.segments ?? []).length,
+              }).catch((cause: unknown) => {
+                setMasterPlanError(cause instanceof Error ? cause.message : String(cause))
+              })
+            }}
+          />
 
           {systemType === 'storm' && result.profile && (
             <StormInletsView

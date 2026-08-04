@@ -37,6 +37,7 @@ const { GeologySectionView } = await import('./GeologySectionView')
 const { BlockStructuresTable } = await import('./BlockStructuresTable')
 const { LinetypeRolesTable } = await import('./LinetypeRolesTable')
 const { DxfLayerRoleTable } = await import('./DxfLayerRoleTable')
+const { MasterPlanView } = await import('./MasterPlanView')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
 
@@ -264,5 +265,48 @@ describe('набросок слоя в таблице ролей', () => {
     expect(interfaceText.filter((text) => /[А-Яа-я]/.test(text))).toEqual([])
     expect(markup).toContain('project.dxfLayers.roleUtility')
     expect(markup).toContain('project.dxfLayers.roleIgnore')
+  })
+})
+
+describe('сверка со схемой генплана на экране', () => {
+  const pipes = [
+    { id: 'У-1', diameterMm: 300, flowLps: 20 },
+    { id: 'У-2', diameterMm: 400, flowLps: 40 },
+  ]
+  const render = (content: unknown) => html(createElement(MasterPlanView, {
+    pipes, content, onChange: () => {}, fieldPrefix: 'mp',
+  } as never))
+
+  it('без введённых диаметров генплана расхождений не заявляет', () => {
+    // Пустой ввод — это «не сверялись», а не «совпадает».
+    const markup = render({})
+    expect(markup).toContain('project.masterPlan.titleEmpty')
+    expect(markup).not.toContain('project.masterPlan.summaryAgrees')
+    expect(markup).not.toContain('project.masterPlan.summaryDiffers')
+  })
+
+  it('участок без строки генплана расхождением не считается', () => {
+    // Иначе половина сети попала бы в отклонения только потому, что схема о
+    // ней молчит, и настоящие расхождения утонули бы в этом списке.
+    const markup = render({ segments: [{ id: 'У-1', planDiameterMm: 300 }] })
+    const rows = markup.split('<tr>')
+    expect(rows.find((row) => row.includes('У-2'))).toContain('project.masterPlan.verdict.noPlanRow')
+    expect(markup).toContain('project.masterPlan.summaryAgrees')
+  })
+
+  it('расхождение показывается с разницей в шагах ряда', () => {
+    const markup = render({ segments: [{ id: 'У-2', planDiameterMm: 300 }] })
+    const row = markup.split('<tr>').find((item) => item.includes('У-2'))!
+    expect(row).toContain('project.masterPlan.verdict.stepDiffers')
+    expect(row).toContain('project.masterPlan.stepDelta')
+    expect(markup).toContain('project.masterPlan.summaryDiffers')
+  })
+
+  it('участок схемы, которого в проекте нет, назван отдельно', () => {
+    // Такая строка остаётся от удалённой трубы: в таблицу ввода она не
+    // попадает, и без отдельной строки исчезла бы молча.
+    const markup = render({ segments: [{ id: 'У-9', planDiameterMm: 500 }] })
+    expect(markup).toContain('project.masterPlan.missing')
+    expect(markup).toContain('У-9')
   })
 })
