@@ -1,3 +1,4 @@
+import { compareDesignations } from '../units'
 import type { TracedNetwork } from '../trace'
 import type { GravityNetworkResult, GravityProfile, ProfileStation } from './gravity'
 import { minSewerInvertDepthM } from './sewer'
@@ -115,7 +116,7 @@ export function computeGravityBranchProfiles(input: {
     adjacency.get(pipe.toNode)!.push({ to: pipe.fromNode, pipeId: pipe.id })
   }
   for (const edges of adjacency.values()) {
-    edges.sort((a, b) => a.pipeId.localeCompare(b.pipeId) || a.to.localeCompare(b.to))
+    edges.sort((a, b) => compareDesignations(a.pipeId, b.pipeId) || compareDesignations(a.to, b.to))
   }
 
   // Mirror computeGravityProfile's outlet-rooted tree and invert calculation.
@@ -143,7 +144,7 @@ export function computeGravityBranchProfiles(input: {
     if (!children.has(parent)) children.set(parent, [])
     children.get(parent)!.push(child)
   }
-  for (const nodes of children.values()) nodes.sort((a, b) => a.localeCompare(b))
+  for (const nodes of children.values()) nodes.sort(compareDesignations)
 
   const diameterAt = (nodeId: string): number => {
     let diameterMm = 0
@@ -154,7 +155,7 @@ export function computeGravityBranchProfiles(input: {
   }
   const order = [...distanceFromOutlet.keys()].sort((a, b) =>
     (distanceFromOutlet.get(b) ?? 0) - (distanceFromOutlet.get(a) ?? 0)
-      || a.localeCompare(b),
+      || compareDesignations(a, b),
   )
   const invertByNode = new Map<string, number>()
   for (const nodeId of order) {
@@ -184,7 +185,7 @@ export function computeGravityBranchProfiles(input: {
     .filter((nodeId) => (children.get(nodeId)?.length ?? 0) === 0)
     .sort((a, b) =>
       (distanceFromOutlet.get(b) ?? 0) - (distanceFromOutlet.get(a) ?? 0)
-        || a.localeCompare(b),
+        || compareDesignations(a, b),
     )
 
   for (const leafId of leaves) {

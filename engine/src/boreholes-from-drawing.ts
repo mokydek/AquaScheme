@@ -1,3 +1,4 @@
+import { compareDesignations } from './units'
 import type { DxfNetworkData } from './dxfread'
 import type { Borehole } from './geology'
 
@@ -98,7 +99,7 @@ export function boreholesFromDrawing(
 
   const boreholes: DrawingBorehole[] = []
   const ambiguous: BoreholeExtraction['ambiguous'] = []
-  for (const [label, items] of [...byLabel].sort((a, b) => a[0].localeCompare(b[0], 'ru'))) {
+  for (const [label, items] of [...byLabel].sort((a, b) => compareDesignations(a[0], b[0]))) {
     // Одна и та же метка в двух местах на одном листе почти всегда означает,
     // что одна из них во врезке. Какая — решает инженер, а не эвристика.
     const distinct = items.filter((item, index) => items.findIndex((other) =>

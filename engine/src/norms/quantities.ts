@@ -1,3 +1,4 @@
+import { compareDesignations } from '../units'
 import type { GravityProfile } from './gravity'
 import type { SewerSchedule } from './gravity'
 import type { SelectedManholeConstruction } from '../manhole-catalog'
@@ -112,7 +113,7 @@ export function buildQuantityBill(input: QuantityBillInput): QuantityBill {
     byType.set(construction.typeCode, (byType.get(construction.typeCode) ?? 0) + 1)
   }
   if (byType.size > 0) {
-    for (const [typeCode, count] of [...byType].sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [typeCode, count] of [...byType].sort((a, b) => compareDesignations(a[0], b[0]))) {
       rows.push({
         name: `Устройство колодца типа ${typeCode}`,
         unit: 'шт',
