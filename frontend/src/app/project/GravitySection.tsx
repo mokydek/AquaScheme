@@ -65,6 +65,7 @@ import { Panel } from './Panel'
 import { AlbumSheetSet } from './AlbumSheetSet'
 import { SchemeBuilder } from './SchemeBuilder'
 import { StormInletsView } from './StormInletsView'
+import { ReadinessView } from './ReadinessView'
 import { QuantityBillView } from './QuantityBillView'
 import type { QuantityBillSettings } from './QuantityBillView'
 import type { TitleBlockSignatory } from '../../shared/titleBlock'
@@ -998,6 +999,14 @@ export function GravitySection({
   return (
     <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.gravity.hint')}</p>
+
+      {/*
+        Готовность проекта первым делом: до этого состояние выпуска было
+        видно только внутри альбома, а одна причина держит десяток листов.
+      */}
+      <h4>Готовность к выпуску</h4>
+      <ReadinessView drawingSet={workingDrawingSet} />
+
       <div className="drawing-audit" style={{ marginBottom: 12 }}>
         <div>
           <h5>Глубина промерзания для профиля</h5>
