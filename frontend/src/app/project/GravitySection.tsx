@@ -66,6 +66,7 @@ import { AlbumSheetSet } from './AlbumSheetSet'
 import { SchemeBuilder } from './SchemeBuilder'
 import { StormInletsView } from './StormInletsView'
 import { ReadinessView } from './ReadinessView'
+import { GeologySectionView } from './GeologySectionView'
 import { QuantityBillView } from './QuantityBillView'
 import type { QuantityBillSettings } from './QuantityBillView'
 import type { TitleBlockSignatory } from '../../shared/titleBlock'
@@ -1274,6 +1275,20 @@ export function GravitySection({
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportBundle')}
             </button>
           </div>
+
+          {/*
+            Геологический разрез: на профиле стояли колонки отдельных скважин,
+            а между ними было пусто. Ось профиля берётся из того же набора
+            рабочих чертежей, что и сами листы.
+          */}
+          {result.profile && workingDrawingSet.mainPath.length >= 2 && (
+            <GeologySectionView
+              boreholes={boreholes ?? []}
+              path={workingDrawingSet.mainPath}
+              maxOffsetM={geologyCoverage.maxOffsetM}
+              routeLengthM={result.profile.totalLengthM}
+            />
+          )}
 
           {dropWells && (
             <div>
