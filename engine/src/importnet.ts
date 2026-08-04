@@ -1,3 +1,4 @@
+import { maxOf, minOf } from './units'
 import type { SurveyPoint } from './types'
 import { interpolateElevation } from './trace'
 import type { NetworkNode, NetworkPipe, TracedNetwork } from './trace'
@@ -504,7 +505,11 @@ export function parseGeoJsonNetwork(text: string): ParsedGeoNetwork {
   const xs = all.map((p) => p.x)
   const ys = all.map((p) => p.y)
   const inLonLatRange = all.every((p) => Math.abs(p.x) <= 180 && Math.abs(p.y) <= 90)
-  const spanSmall = Math.max(...xs) - Math.min(...xs) < 5 && Math.max(...ys) - Math.min(...ys) < 5
+  // Габарит считается по массиву, а не раскрытием аргументов: `all` — это все
+  // вершины импортируемой геометрии, и на большом чертеже раскрытие роняет стек.
+  const spanX = (maxOf(xs) ?? 0) - (minOf(xs) ?? 0)
+  const spanY = (maxOf(ys) ?? 0) - (minOf(ys) ?? 0)
+  const spanSmall = spanX < 5 && spanY < 5
   const treatedAsLonLat = inLonLatRange && spanSmall
 
   const convert = (p: ImportPoint): ImportPoint => {

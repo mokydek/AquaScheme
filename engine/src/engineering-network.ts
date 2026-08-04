@@ -1,3 +1,4 @@
+import { minOf } from './units'
 import { traceConstrainedNetwork } from './constrained-route'
 import type {
   ConstrainedRouteOptions,
@@ -64,9 +65,12 @@ export function assessRouteSurveyCoverage(
       }
     }
   }
+  // Ближайшая отметка ищется по массиву: точек съёмки бывают десятки тысяч, и
+  // раскрытие аргументов здесь роняло бы стек на каждой пробе.
   const distances = samples.map((sample) => surveyPoints.length === 0
     ? Number.POSITIVE_INFINITY
-    : Math.min(...surveyPoints.map((point) => Math.hypot(point.x - sample.x, point.y - sample.y))))
+    : minOf(surveyPoints.map((point) => Math.hypot(point.x - sample.x, point.y - sample.y)))
+      ?? Number.POSITIVE_INFINITY)
     .sort((a, b) => a - b)
   const quantile = (ratio: number) => distances.length
     ? distances[Math.min(distances.length - 1, Math.floor((distances.length - 1) * ratio))]

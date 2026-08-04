@@ -1,3 +1,4 @@
+import { maxOf, minOf } from './units'
 import type { SurveyPoint } from './types'
 import { interpolateElevation } from './trace'
 import type { NetworkNode, NetworkPipe, TracedNetwork } from './trace'
@@ -364,10 +365,11 @@ export function traceConstrainedNetwork(
   if (rings.length === 0) return empty('Нет замкнутого инженерного коридора: окончательная трасса не строится.')
 
   const all = rings.flat()
-  const minX = Math.min(...all.map((point) => point.x)) - opt.gridSizeM
-  const minY = Math.min(...all.map((point) => point.y)) - opt.gridSizeM
-  const maxX = Math.max(...all.map((point) => point.x)) + opt.gridSizeM
-  const maxY = Math.max(...all.map((point) => point.y)) + opt.gridSizeM
+  // Габарит сетки — по массиву вершин коридора, а не раскрытием аргументов.
+  const minX = (minOf(all.map((point) => point.x)) ?? 0) - opt.gridSizeM
+  const minY = (minOf(all.map((point) => point.y)) ?? 0) - opt.gridSizeM
+  const maxX = (maxOf(all.map((point) => point.x)) ?? 0) + opt.gridSizeM
+  const maxY = (maxOf(all.map((point) => point.y)) ?? 0) + opt.gridSizeM
   const cols = Math.ceil((maxX - minX) / opt.gridSizeM) + 1
   const rows = Math.ceil((maxY - minY) / opt.gridSizeM) + 1
   if (cols * rows > opt.maxGridCells) return empty(`Сетка ${cols}×${rows} превышает безопасный предел.`)

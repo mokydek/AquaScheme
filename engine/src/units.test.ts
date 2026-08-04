@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareDesignations } from './units'
+import { compareDesignations, maxOf, minOf } from './units'
 import {
   cubicMetersPerDayToLitersPerSecond,
   cubicMetersPerHourToLitersPerSecond,
@@ -44,5 +44,38 @@ describe('сравнение обозначений с номерами', () => 
     const shuffled = [...many].sort((a, b) => a.localeCompare(b))
     expect(shuffled).not.toEqual(many)
     expect([...shuffled].sort(compareDesignations)).toEqual(many)
+  })
+})
+
+describe('наименьшее и наибольшее без раскрытия аргументов', () => {
+  it('совпадают с Math.min и Math.max на обычных данных', () => {
+    const values = [3, -1, 7.5, 0, 7.4999]
+    expect(minOf(values)).toBe(Math.min(...values))
+    expect(maxOf(values)).toBe(Math.max(...values))
+  })
+
+  it('выдерживают массив, на котором раскрытие аргументов ненадёжно', () => {
+    // Предел раскрытия зависит от размера стека: в браузере он меньше, чем в
+    // рабочем потоке Node, поэтому утверждать конкретное число здесь нельзя —
+    // проверяется только то, что счёт по массиву от размера не зависит.
+    const many = Array.from({ length: 300_000 }, (_, index) => index)
+    expect(maxOf(many)).toBe(299_999)
+    expect(minOf(many)).toBe(0)
+  })
+
+  it('пустой массив даёт null, а не бесконечность', () => {
+    // Бесконечность, попав в габарит или отметку, выглядит как значение.
+    expect(minOf([])).toBeNull()
+    expect(maxOf([])).toBeNull()
+    expect(Math.min()).toBe(Number.POSITIVE_INFINITY)
+  })
+
+  it('нечисловые значения пропускаются, а не отравляют результат', () => {
+    // Math.max с NaN в массиве возвращает NaN: одна испорченная отметка
+    // обнуляет весь габарит, и дальше по расчёту идёт пустое число.
+    const dirty = [1, Number.NaN, 5, Number.POSITIVE_INFINITY, 2]
+    expect(Number.isNaN(Math.max(...dirty))).toBe(true)
+    expect(minOf(dirty)).toBe(1)
+    expect(maxOf(dirty)).toBe(5)
   })
 })
