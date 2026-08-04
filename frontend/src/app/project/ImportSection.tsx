@@ -17,6 +17,7 @@ import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
 import { buildDxfCadContext } from '../../shared/dxfContext'
 import { DxfLayerRoleTable, DXF_ROLE_OPTIONS } from './DxfLayerRoleTable'
 import { BlockStructuresTable } from './BlockStructuresTable'
+import { LinetypeRolesTable } from './LinetypeRolesTable'
 
 type Parsed =
   | { kind: 'dxf'; data: DxfNetworkData; constraints: DxfConstraintData }
@@ -573,6 +574,19 @@ export function ImportSection({
             и по слою они не опознаются вовсе.
           */}
           <BlockStructuresTable blocks={parsed.data.blockEntities ?? []} />
+
+          {/*
+            Роль по типу линии для слоёв без роли: на реальной топооснове слой
+            «0» несёт напорную канализацию и водопровод, и вместе со слоем
+            выбрасывалась настоящая сеть.
+          */}
+          <LinetypeRolesTable
+            segments={parsed.data.segments}
+            roles={Object.fromEntries(parsed.data.layers.map((layer) => [
+              layer.name,
+              layerRoles[layer.name] ?? parsed.constraints.roles[layer.name] ?? 'unknown',
+            ]))}
+          />
 
           <DxfLayerRoleTable
             idPrefix="import"

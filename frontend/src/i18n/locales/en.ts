@@ -681,6 +681,17 @@ export const en = {
         thKind: 'Provenance',
         thSource: 'Backed by',
       },
+      linetypeRoles: {
+        title: 'Role from the line type',
+        thRole: 'Role',
+        thSegments: 'Segments',
+        thLineTypes: 'Line types',
+        nonEngineering: 'Explicitly non-engineering',
+        unknownSummary: 'Line types with no known convention: {{count}}',
+        unknownHint: 'Standard AutoCAD line types are excluded: they are drawn on anything and require no decision. Layers that already carry a role are untouched — the layer name is a direct statement by the surveyor and an indirect signal does not override it.',
+        thLineType: 'Line type',
+        thLayers: 'Layers',
+      },
       pressureMain: {
         hint: 'Head is computed with Darcy-Weisbach and the Swamee-Jain friction factor. The required head is the sum of the static lift, friction losses and local losses: the lift alone does not size the pump.',
         staticHead: 'Static lift',
