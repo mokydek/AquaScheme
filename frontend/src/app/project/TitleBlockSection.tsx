@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { DatasetRow } from '../../shared/datasets'
 import { saveDataset } from '../../shared/datasets'
 import { titleBlockContentFrom } from './titleBlockContent'
@@ -30,6 +31,7 @@ export function TitleBlockSection({
   dataset?: DatasetRow
   onSaved: () => Promise<void>
 }) {
+  const { t } = useTranslation()
   const saved = (dataset?.content ?? {}) as TitleBlockContent
   const [organisation, setOrganisation] = useState(saved.organisation ?? '')
   const [names, setNames] = useState<Record<string, string>>({})
@@ -63,16 +65,12 @@ export function TitleBlockSection({
   }
 
   return (
-    <Panel title="Основная надпись: организация и подписанты" status={organisation.trim() && filled > 0 ? 'filled' : 'empty'}>
-      <p className="hint">
-        Графы 9–13 формы 3 по ГОСТ Р 21.101-2020. Ничего не подставляется по умолчанию: пустая графа честнее
-        выдуманной фамилии. Подписи приложение не воспроизводит — печатаются только фамилия и дата, подпись ставит
-        человек.
-      </p>
+    <Panel title={t('project.titleBlock.title')} status={organisation.trim() && filled > 0 ? 'filled' : 'empty'}>
+      <p className="hint">{t('project.titleBlock.hint')}</p>
 
       <div className="form-grid">
         <label className="field" htmlFor={`title-block-${projectId}-organisation`}>
-          <span className="field-label">Графа 9: организация</span>
+          <span className="field-label">{t('project.titleBlock.organisation')}</span>
           <input
             id={`title-block-${projectId}-organisation`}
             name={`title-block-${projectId}-organisation`}
@@ -88,7 +86,11 @@ export function TitleBlockSection({
 
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr><th>Графа 10: характер работы</th><th>Графа 11: фамилия</th><th>Графа 13: дата</th></tr></thead>
+          <thead><tr>
+            <th>{t('project.titleBlock.thRole')}</th>
+            <th>{t('project.titleBlock.thName')}</th>
+            <th>{t('project.titleBlock.thDate')}</th>
+          </tr></thead>
           <tbody>{ROLES.map((role) => (
             <tr key={role}>
               <td>{role}</td>
@@ -98,7 +100,7 @@ export function TitleBlockSection({
                   name={`title-block-${projectId}-name-${role}`}
                   className="input"
                   type="text"
-                  aria-label={`Фамилия, ${role}`}
+                  aria-label={t('project.titleBlock.nameLabel', { role })}
                   value={names[role] ?? ''}
                   disabled={busy}
                   onChange={(event) => setNames((prev) => ({ ...prev, [role]: event.target.value }))}
@@ -111,7 +113,7 @@ export function TitleBlockSection({
                   name={`title-block-${projectId}-date-${role}`}
                   className="input"
                   type="text"
-                  aria-label={`Дата, ${role}`}
+                  aria-label={t('project.titleBlock.dateLabel', { role })}
                   placeholder="ММ.ГГ"
                   value={dates[role] ?? ''}
                   disabled={busy}
@@ -125,11 +127,11 @@ export function TitleBlockSection({
       </div>
 
       <p className="stat-line">
-        Заполнено ролей: {filled} из {ROLES.length}
-        {organisation.trim() === '' ? '; организация не задана — графа 9 останется пустой' : ''}
+        {t('project.titleBlock.filled', { filled, total: ROLES.length })}
+        {organisation.trim() === '' ? t('project.titleBlock.noOrganisation') : ''}
       </p>
       {error && <p className="notice error">{error}</p>}
-      <p className="hint">Если Supabase сообщает об ограничении kind, примените миграцию backend/migrations/0017_title_block.sql.</p>
+      <p className="hint">{t('project.titleBlock.migrationHint')}</p>
     </Panel>
   )
 }

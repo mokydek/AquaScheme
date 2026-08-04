@@ -1005,7 +1005,7 @@ export function GravitySection({
         Готовность проекта первым делом: до этого состояние выпуска было
         видно только внутри альбома, а одна причина держит десяток листов.
       */}
-      <h4>Готовность к выпуску</h4>
+      <h4>{t('project.readiness.title')}</h4>
       <ReadinessView drawingSet={workingDrawingSet} />
 
       <div className="drawing-audit" style={{ marginBottom: 12 }}>

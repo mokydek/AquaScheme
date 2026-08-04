@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { summarizeReadiness } from '@aquascheme/engine'
 import type { WorkingDrawingSet } from '@aquascheme/engine'
 
@@ -12,6 +13,7 @@ import type { WorkingDrawingSet } from '@aquascheme/engine'
  * иначе экран готовности разошёлся бы со шлюзом.
  */
 export function ReadinessView({ drawingSet }: { drawingSet: WorkingDrawingSet }) {
+  const { t } = useTranslation()
   const readiness = summarizeReadiness(drawingSet)
   const { byStatus } = readiness
 
@@ -19,8 +21,14 @@ export function ReadinessView({ drawingSet }: { drawingSet: WorkingDrawingSet })
     <div>
       <p className={readiness.blockingIssueCount > 0 ? 'notice error' : 'notice info'}>{readiness.reason}</p>
       <p className="stat-line">
-        Листов {readiness.sheetCount}: к выпуску {byStatus.VERIFIED} ({readiness.verifiedPercent}%),
-        рассчитано {byStatus.CALCULATED}, предварительно {byStatus.PRELIMINARY}, заблокировано {byStatus.BLOCKED}
+        {t('project.readiness.summary', {
+          total: readiness.sheetCount,
+          verified: byStatus.VERIFIED,
+          percent: readiness.verifiedPercent,
+          calculated: byStatus.CALCULATED,
+          preliminary: byStatus.PRELIMINARY,
+          blocked: byStatus.BLOCKED,
+        })}
       </p>
 
       {readiness.issues.length > 0 && (
@@ -28,7 +36,10 @@ export function ReadinessView({ drawingSet }: { drawingSet: WorkingDrawingSet })
           <table className="data-table">
             <thead>
               <tr>
-                <th>Причина</th><th className="num">Листов</th><th>Где снимается</th><th>Код</th>
+                <th>{t('project.readiness.thReason')}</th>
+                <th className="num">{t('project.readiness.thSheets')}</th>
+                <th>{t('project.readiness.thSection')}</th>
+                <th>{t('project.readiness.thCode')}</th>
               </tr>
             </thead>
             <tbody>{readiness.issues.map((issue) => (

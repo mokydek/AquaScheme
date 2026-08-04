@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { structuresFromBlocks } from '@aquascheme/engine'
 import type { DxfBlockEntity } from '@aquascheme/engine/dxfread'
 
@@ -14,6 +15,7 @@ import type { DxfBlockEntity } from '@aquascheme/engine/dxfread'
  * местным обозначением.
  */
 export function BlockStructuresTable({ blocks }: { blocks: DxfBlockEntity[] }) {
+  const { t } = useTranslation()
   if (blocks.length === 0) return null
   const result = structuresFromBlocks(blocks)
   const byKind = new Map<string, number>()
@@ -23,13 +25,17 @@ export function BlockStructuresTable({ blocks }: { blocks: DxfBlockEntity[] }) {
 
   return (
     <div style={{ marginTop: 12 }}>
-      <h5>Сооружения по именам блоков</h5>
+      <h5>{t('project.blockStructures.title')}</h5>
       <p className={result.structures.length > 0 ? 'stat-line' : 'hint'}>{result.reason}</p>
 
       {byKind.size > 0 && (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Вид сооружения</th><th className="num">Вставок</th><th>Имена блоков</th></tr></thead>
+            <thead><tr>
+              <th>{t('project.blockStructures.thKind')}</th>
+              <th className="num">{t('project.blockStructures.thCount')}</th>
+              <th>{t('project.blockStructures.thNames')}</th>
+            </tr></thead>
             <tbody>{[...byKind].map(([kind, count]) => (
               <tr key={kind}>
                 <td>{kind}</td>
@@ -46,15 +52,16 @@ export function BlockStructuresTable({ blocks }: { blocks: DxfBlockEntity[] }) {
       {result.unrecognized.length > 0 && (
         <details style={{ marginTop: 8 }}>
           <summary className="field-label">
-            Имена блоков без вида: {result.unrecognized.length}
+            {t('project.blockStructures.unknownSummary', { count: result.unrecognized.length })}
           </summary>
-          <p className="hint">
-            Соглашение об именах у каждой организации своё. Эти вставки не отброшены и не угаданы — среди них
-            может быть сооружение с местным обозначением.
-          </p>
+          <p className="hint">{t('project.blockStructures.unknownHint')}</p>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Имя блока</th><th className="num">Вставок</th><th>Слой</th></tr></thead>
+              <thead><tr>
+                <th>{t('project.blockStructures.thBlockName')}</th>
+                <th className="num">{t('project.blockStructures.thCount')}</th>
+                <th>{t('project.blockStructures.thLayer')}</th>
+              </tr></thead>
               <tbody>{result.unrecognized.slice(0, 40).map((item) => (
                 <tr key={item.blockName}>
                   <td className="mono">{item.blockName}</td>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { buildQuantityBill } from '@aquascheme/engine'
 import type { DropWell, GravityProfile, SelectedManholeConstruction, SewerSchedule } from '@aquascheme/engine'
 
@@ -37,6 +38,7 @@ export function QuantityBillView({
   exporting?: boolean
   fieldPrefix: string
 }) {
+  const { t } = useTranslation()
   const bill = buildQuantityBill({ profile, schedule, constructions, dropWells, ...settings })
   const numberField = (
     key: keyof QuantityBillSettings,
@@ -67,15 +69,11 @@ export function QuantityBillView({
 
   return (
     <div>
-      <p className="hint">
-        Длины по диаметрам и колодцы по типам выводятся из расчёта. Земляные работы зависят от ширины траншеи и
-        заложения откоса: норматива на них в реестре проекта нет, поэтому величины задаёт инженер, а по умолчанию
-        не принимаются — иначе объём попал бы в смету неотличимым от расчётного.
-      </p>
+      <p className="hint">{t('project.quantityBill.hint')}</p>
       <div className="form-grid">
-        {numberField('trenchAllowanceM', 'Зазор от трубы до стенки траншеи, м', 0.05)}
-        {numberField('sideSlopeRatio', 'Заложение откоса m (0 — вертикальные стенки)', 0.05)}
-        {numberField('beddingThicknessM', 'Толщина песчаного основания, м', 0.05)}
+        {numberField('trenchAllowanceM', t('project.quantityBill.trenchAllowance'), 0.05)}
+        {numberField('sideSlopeRatio', t('project.quantityBill.sideSlope'), 0.05)}
+        {numberField('beddingThicknessM', t('project.quantityBill.bedding'), 0.05)}
       </div>
 
       <div className="section-actions">
@@ -86,16 +84,25 @@ export function QuantityBillView({
           aria-busy={exporting}
           onClick={onExport}
         >
-          Ведомость объёмов XLSX
+          {t('project.quantityBill.exportXlsx')}
         </button>
       </div>
 
-      <p className="stat-line">Трасса {bill.totalLengthM} м · строк посчитано {bill.rows.length} · не посчитано {bill.gaps.length}</p>
+      <p className="stat-line">
+        {t('project.quantityBill.summary', {
+          length: bill.totalLengthM, rows: bill.rows.length, gaps: bill.gaps.length,
+        })}
+      </p>
 
       {bill.rows.length > 0 && (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Наименование</th><th>Ед.</th><th className="num">Кол-во</th><th>Из чего получено</th></tr></thead>
+            <thead><tr>
+              <th>{t('project.quantityBill.thName')}</th>
+              <th>{t('project.quantityBill.thUnit')}</th>
+              <th className="num">{t('project.quantityBill.thQuantity')}</th>
+              <th>{t('project.quantityBill.thDerivedFrom')}</th>
+            </tr></thead>
             <tbody>{bill.rows.map((row) => (
               <tr key={row.name}>
                 <td>{row.name}</td>
@@ -111,7 +118,10 @@ export function QuantityBillView({
       {bill.gaps.length > 0 && (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Не посчитано</th><th>Чего не хватает</th></tr></thead>
+            <thead><tr>
+              <th>{t('project.quantityBill.thGapName')}</th>
+              <th>{t('project.quantityBill.thGapMissing')}</th>
+            </tr></thead>
             <tbody>{bill.gaps.map((item) => (
               <tr key={item.name} className="row-warn">
                 <td>{item.name}</td>
