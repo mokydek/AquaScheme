@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { buildGeologySection, projectBoreholesOntoPath } from '@aquascheme/engine'
 import type { Borehole } from '@aquascheme/engine'
 
@@ -20,20 +21,21 @@ export function GeologySectionView({
   maxOffsetM?: number
   routeLengthM: number
 }) {
+  const { t } = useTranslation()
   const projection = projectBoreholesOntoPath(boreholes, path, maxOffsetM)
   const section = buildGeologySection(projection.projected, routeLengthM)
   const codes = [...new Set(section.stations.flatMap((s) => s.layers.map((l) => l.igeCode)))]
 
   return (
     <div>
-      <h4>Геологический разрез вдоль трассы</h4>
+      <h4>{t('project.geologySection.title')}</h4>
       <p className="stat-line">{projection.reason}</p>
       <p className={section.coveragePercent > 0 ? 'stat-line' : 'notice'}>{section.reason}</p>
 
       {section.gaps.length > 0 && (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Промежуток</th><th>Почему разрез не построен</th></tr></thead>
+            <thead><tr><th>{t('project.geologySection.thGapRange')}</th><th>{t('project.geologySection.thGapReason')}</th></tr></thead>
             <tbody>{section.gaps.map((gap) => (
               <tr key={`${gap.fromChainageM}-${gap.toChainageM}`} className="row-warn">
                 <td className="mono">ПК{(gap.fromChainageM / 100).toFixed(2)} — ПК{(gap.toChainageM / 100).toFixed(2)}</td>
@@ -49,9 +51,12 @@ export function GeologySectionView({
           <table className="data-table">
             <thead>
               <tr>
-                <th className="num">Пикетаж, м</th><th className="num">Поверхность, м</th>
-                {codes.map((code) => <th key={code} className="num">Подошва {code}, м</th>)}
-                <th>Источник</th>
+                <th className="num">{t('project.geologySection.thChainage')}</th>
+                <th className="num">{t('project.geologySection.thSurface')}</th>
+                {codes.map((code) => (
+                  <th key={code} className="num">{t('project.geologySection.thBottom', { code })}</th>
+                ))}
+                <th>{t('project.geologySection.thSource')}</th>
               </tr>
             </thead>
             <tbody>{section.stations.map((station) => (
@@ -62,7 +67,7 @@ export function GeologySectionView({
                   const layer = station.layers.find((item) => item.igeCode === code)
                   return <td key={code} className="num">{layer ? layer.bottomElevationM.toFixed(2) : '—'}</td>
                 })}
-                <td>{station.measured ? 'скважина' : 'интерполяция'}</td>
+                <td>{t(station.measured ? 'project.geologySection.measured' : 'project.geologySection.interpolated')}</td>
               </tr>
             ))}</tbody>
           </table>

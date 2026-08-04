@@ -1,6 +1,6 @@
 {
   "_comment": "Текст интерфейса мимо словарей. Может только снижаться; обновляется через npm run audit:i18n -- --write-baseline. Приложение заявляет три языка, и зашитая по-русски строка двум из них показывается неверно.",
-  "total": 269,
+  "total": 237,
   "files": [
     {
       "file": "frontend/src/app/project/SituationSchemeSection.tsx",
@@ -16,10 +16,6 @@
     },
     {
       "file": "frontend/src/app/project/AlbumSheetSet.tsx",
-      "count": 17
-    },
-    {
-      "file": "frontend/src/app/project/PumpCatalogSection.tsx",
       "count": 17
     },
     {
@@ -43,10 +39,6 @@
       "count": 9
     },
     {
-      "file": "frontend/src/app/project/StormInletsView.tsx",
-      "count": 9
-    },
-    {
       "file": "frontend/src/app/project/BlockStructuresTable.tsx",
       "count": 8
     },
@@ -60,10 +52,6 @@
     },
     {
       "file": "frontend/src/app/project/DxfLayerRoleTable.tsx",
-      "count": 6
-    },
-    {
-      "file": "frontend/src/app/project/GeologySectionView.tsx",
       "count": 6
     },
     {

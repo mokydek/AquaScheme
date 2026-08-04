@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { planStormInlets } from '@aquascheme/engine'
 import type { GravityProfile } from '@aquascheme/engine'
 
@@ -21,18 +22,15 @@ export function StormInletsView({
   disabled?: boolean
   fieldId: string
 }) {
+  const { t } = useTranslation()
   const plan = planStormInlets(profile, streetWidthM)
 
   return (
     <div>
-      <p className="hint">
-        Шаг дождеприёмников по п. 7.6.6 зависит от продольного уклона лотка, а при ширине улицы более 30 м
-        ограничен 60 м независимо от уклона. Уклон берётся по земле между узлами профиля — лоток идёт по
-        поверхности, а не по трубе. Число приёмников округляется вверх: шаг предельный, превышать его нельзя.
-      </p>
+      <p className="hint">{t('project.stormInlets.hint')}</p>
       <div className="form-grid">
         <label className="field" htmlFor={fieldId}>
-          <span className="field-label">Ширина улицы, м</span>
+          <span className="field-label">{t('project.stormInlets.streetWidth')}</span>
           <input
             id={fieldId}
             name={fieldId}
@@ -56,16 +54,20 @@ export function StormInletsView({
       ) : (
         <div>
           <p className="stat-line">
-            Дождеприёмников: {plan.totalInlets} на {plan.runs.length} участках профиля.
+            {t('project.stormInlets.summary', { total: plan.totalInlets, runs: plan.runs.length })}
           </p>
           {plan.notes.map((note) => <p className="stat-line warn" key={note}>{note}</p>)}
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Участок</th><th className="num">Длина, м</th><th className="num">Уклон лотка</th>
-                  <th className="num">Шаг по п. 7.6.6, м</th><th className="num">Приёмников</th>
-                  <th className="num">Фактический шаг, м</th><th>Пикетаж, м</th>
+                  <th>{t('project.stormInlets.thSegment')}</th>
+                  <th className="num">{t('project.stormInlets.thLength')}</th>
+                  <th className="num">{t('project.stormInlets.thSlope')}</th>
+                  <th className="num">{t('project.stormInlets.thSpacing')}</th>
+                  <th className="num">{t('project.stormInlets.thCount')}</th>
+                  <th className="num">{t('project.stormInlets.thActual')}</th>
+                  <th>{t('project.stormInlets.thChainages')}</th>
                 </tr>
               </thead>
               <tbody>{plan.runs.map((run) => (

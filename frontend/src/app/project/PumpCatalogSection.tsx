@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
 import { PUMP_CATALOG_EXAMPLE, PUMP_CATALOG_HEADERS, parsePumpCatalogRows } from '@aquascheme/engine'
 import type { EffluentKind, PumpCatalogueItem, ReliabilityCategory } from '@aquascheme/engine'
@@ -41,6 +42,7 @@ export function PumpCatalogSection({
   dataset?: DatasetRow
   onSaved: () => Promise<void>
 }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const content = (dataset?.content ?? {}) as PumpCatalogContent
@@ -103,22 +105,17 @@ export function PumpCatalogSection({
   }
 
   return (
-    <Panel title="Каталог насосов и условия резервирования ЛНС" status={entries.length > 0 && content.category ? 'filled' : 'empty'}>
-      <p className="hint">
-        Марки насосов в расчёт не встроены: подача, напор и мощность зависят от завода, и подставленный по умолчанию
-        агрегат попал бы в спецификацию как подтверждённый. Каталог задаёт проект, каждая строка несёт источник.
-        Категория надёжности и характер стоков — исходные данные ЛНС; по ним таблица 8.2 определяет число резервных
-        агрегатов, поэтому по умолчанию они не выбираются.
-      </p>
+    <Panel title={t('project.pumpCatalog.title')} status={entries.length > 0 && content.category ? 'filled' : 'empty'}>
+      <p className="hint">{t('project.pumpCatalog.hint')}</p>
       <div className="section-actions">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>Скачать шаблон</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>{t('project.pumpCatalog.template')}</button>
         <input
           id={`pump-catalog-${projectId}-file`}
           name={`pump-catalog-${projectId}-file`}
           className="file-input"
           type="file"
           accept=".xlsx,.xls,.csv"
-          aria-label="Каталог насосов: XLSX/CSV"
+          aria-label={t('project.pumpCatalog.fileLabel')}
           disabled={busy}
           onChange={(event) => void onFile(event)}
         />
@@ -126,7 +123,7 @@ export function PumpCatalogSection({
 
       <div className="form-grid">
         <label className="field" htmlFor={`pump-category-${projectId}`}>
-          <span className="field-label">Категория надёжности ЛНС</span>
+          <span className="field-label">{t('project.pumpCatalog.category')}</span>
           <select
             id={`pump-category-${projectId}`}
             name={`pump-category-${projectId}`}
@@ -135,12 +132,12 @@ export function PumpCatalogSection({
             disabled={busy}
             onChange={(event) => void choose({ category: (event.target.value || undefined) as ReliabilityCategory | undefined })}
           >
-            <option value="">не выбрана</option>
+            <option value="">{t('project.pumpCatalog.categoryNone')}</option>
             {CATEGORIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
         <label className="field" htmlFor={`pump-effluent-${projectId}`}>
-          <span className="field-label">Характер сточных вод</span>
+          <span className="field-label">{t('project.pumpCatalog.effluent')}</span>
           <select
             id={`pump-effluent-${projectId}`}
             name={`pump-effluent-${projectId}`}
@@ -149,12 +146,12 @@ export function PumpCatalogSection({
             disabled={busy}
             onChange={(event) => void choose({ effluent: (event.target.value || undefined) as EffluentKind | undefined })}
           >
-            <option value="">не выбран</option>
+            <option value="">{t('project.pumpCatalog.effluentNone')}</option>
             {EFFLUENTS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
         <label className="field" htmlFor={`pump-working-${projectId}`}>
-          <span className="field-label">Рабочих агрегатов</span>
+          <span className="field-label">{t('project.pumpCatalog.working')}</span>
           <input
             id={`pump-working-${projectId}`}
             name={`pump-working-${projectId}`}
@@ -178,22 +175,29 @@ export function PumpCatalogSection({
             disabled={busy}
             onChange={(event) => void choose({ stormOverflowImpossible: event.target.checked })}
           />
-          Аварийный сброс дождевых вод в водный объект невозможен
+          {t('project.pumpCatalog.stormOverflow')}
         </label>
       )}
 
-      <p className="stat-line">Агрегатов в каталоге: {entries.length}</p>
+      <p className="stat-line">{t('project.pumpCatalog.count', { count: entries.length })}</p>
       {entries.length > 0 && (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Марка</th><th className="num">Подача, л/с</th><th className="num">Напор, м</th><th className="num">Мощность, кВт</th><th>Погружной</th><th>Источник</th></tr></thead>
+            <thead><tr>
+              <th>{t('project.pumpCatalog.thDesignation')}</th>
+              <th className="num">{t('project.pumpCatalog.thFlow')}</th>
+              <th className="num">{t('project.pumpCatalog.thHead')}</th>
+              <th className="num">{t('project.pumpCatalog.thPower')}</th>
+              <th>{t('project.pumpCatalog.thSubmersible')}</th>
+              <th>{t('project.pumpCatalog.thSource')}</th>
+            </tr></thead>
             <tbody>{entries.map((entry) => (
               <tr key={`${entry.designation}-${entry.flowLps}-${entry.headM}`}>
                 <td>{entry.designation}</td>
                 <td className="num">{entry.flowLps}</td>
                 <td className="num">{entry.headM}</td>
                 <td className="num">{entry.powerKw ?? '—'}</td>
-                <td>{entry.submersible ? 'да' : 'нет'}</td>
+                <td>{t(entry.submersible ? 'project.pumpCatalog.yes' : 'project.pumpCatalog.no')}</td>
                 <td>{entry.source}</td>
               </tr>
             ))}</tbody>
@@ -201,7 +205,7 @@ export function PumpCatalogSection({
         </div>
       )}
       {notice && <p className="notice">{notice}</p>}
-      <p className="hint">Если Supabase сообщает об ограничении kind, примените миграцию backend/migrations/0016_pump_catalog.sql.</p>
+      <p className="hint">{t('project.pumpCatalog.migrationHint')}</p>
     </Panel>
   )
 }
