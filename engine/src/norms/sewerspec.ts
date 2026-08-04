@@ -35,6 +35,10 @@ export function buildSewerSpecification(input: SewerSpecInput): SpecItem[] {
 
   const material = input.pipeMaterialLabel ?? 'железобетонная безнапорная'
   for (const pipe of [...input.schedule.pipes].sort((a, b) => a.diameterMm - b.diameterMm)) {
+    // Позиция без диаметра или длины в спецификацию не идёт: «Ду undefined»
+    // на «NaN м» выглядит позицией, а не пробелом, и уходит к сметчику.
+    if (!Number.isFinite(pipe.diameterMm) || !(pipe.diameterMm > 0)) continue
+    if (!Number.isFinite(pipe.lengthM)) continue
     push({
       name: `Труба ${material}`,
       spec: `Ду${pipe.diameterMm}`,

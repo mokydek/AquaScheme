@@ -855,6 +855,12 @@ export interface SewerSchedule {
   /** Pipe totals by diameter across the whole network. */
   pipes: SewerSchedulePipe[]
   totalPipeLengthM: number
+  /**
+   * Участки без диаметра или длины: в ведомость труб они не попали. Список
+   * возвращается, а не проглатывается, — иначе строка исчезает молча и разница
+   * между «нет участка» и «участок без величины» теряется.
+   */
+  incompletePipeIds?: string[]
 }
 
 export interface BuildSewerScheduleOptions {
@@ -896,8 +902,17 @@ export function buildSewerSchedule(
     pipeDiameterMm: s.diameterMm,
   }))
 
+  // Участок без диаметра или длины в ведомость труб не идёт. Прежде он
+  // попадал туда строкой «Труба безнапорная Øundefined» на «NaN м»: такая
+  // строка выглядит позицией, а не пробелом, и уходит в спецификацию к
+  // сметчику. Отсутствие величины должно быть видно как отсутствие.
   const lengthByDiameter = new Map<number, number>()
+  const incompletePipeIds: string[] = []
   for (const p of result.pipes) {
+    if (!Number.isFinite(p.diameterMm) || !(p.diameterMm > 0) || !Number.isFinite(p.lengthM)) {
+      incompletePipeIds.push(p.id)
+      continue
+    }
     lengthByDiameter.set(p.diameterMm, (lengthByDiameter.get(p.diameterMm) ?? 0) + p.lengthM)
   }
   const gravityAgsk = agskSectionForGravityPipe('concrete').code
@@ -909,7 +924,13 @@ export function buildSewerSchedule(
       lengthM: Math.round(lengthM),
       agskCode: gravityAgsk,
     }))
-  const totalPipeLengthM = Math.round(result.pipes.reduce((s, p) => s + p.lengthM, 0))
+  const totalPipeLengthM = Math.round(result.pipes.reduce(
+    (sum, p) => sum + (Number.isFinite(p.lengthM) ? p.lengthM : 0), 0))
 
-  return { manholes, pipes, totalPipeLengthM }
+  return {
+    manholes,
+    pipes,
+    totalPipeLengthM,
+    ...(incompletePipeIds.length > 0 ? { incompletePipeIds } : {}),
+  }
 }

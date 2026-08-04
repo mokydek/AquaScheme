@@ -79,9 +79,22 @@ export function buildQuantityBill(input: QuantityBillInput): QuantityBill {
   const totalLengthM = input.profile.totalLengthM ?? 0
 
   // 1. Трубы по диаметрам — выводятся полностью.
+  // Строка «Укладка трубопровода Øundefined» — не позиция, а дыра, выданная за
+  // позицию. Такие участки попадают в пробелы, где их видно.
   const lengthByDiameter = new Map<number, number>()
+  let incompletePipes = 0
   for (const pipe of input.schedule.pipes ?? []) {
+    if (!Number.isFinite(pipe.diameterMm) || !(pipe.diameterMm > 0) || !Number.isFinite(pipe.lengthM)) {
+      incompletePipes += 1
+      continue
+    }
     lengthByDiameter.set(pipe.diameterMm, (lengthByDiameter.get(pipe.diameterMm) ?? 0) + pipe.lengthM)
+  }
+  if (incompletePipes > 0) {
+    gaps.push({
+      name: 'Укладка трубопровода без диаметра или длины',
+      missing: `${incompletePipes} позиций ведомости труб без диаметра или длины: расчёт их не дал`,
+    })
   }
   for (const [diameterMm, lengthM] of [...lengthByDiameter].sort((a, b) => a[0] - b[0])) {
     rows.push({
