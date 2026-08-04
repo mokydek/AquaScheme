@@ -673,6 +673,14 @@ export const en = {
         thSection: 'Where it is cleared',
         thCode: 'Code',
       },
+      provenanceAudit: {
+        title: 'Provenance of the source values',
+        share: 'Releasable: {{percent}}% of the values ({{ready}} of {{total}}).',
+        hint: 'The release gate says the set cannot be issued; this summary says what backs each value. Values from the design task and the technical conditions form their own class: they are an authoritative project input, not an assumption.',
+        thValue: 'Value',
+        thKind: 'Provenance',
+        thSource: 'Backed by',
+      },
       pressureMain: {
         hint: 'Head is computed with Darcy-Weisbach and the Swamee-Jain friction factor. The required head is the sum of the static lift, friction losses and local losses: the lift alone does not size the pump.',
         staticHead: 'Static lift',

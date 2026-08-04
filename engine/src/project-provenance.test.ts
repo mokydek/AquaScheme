@@ -46,7 +46,11 @@ describe('происхождение ключевых величин проек�
   })
 
   it('отсутствие исходных данных названо поимённо', () => {
-    const audit = auditProjectProvenance({})
+    // Проектный диаметр передан пустым значением, а не опущен: у канализации
+    // он к проекту относится и потому обязан назваться недостающим. Опущенное
+    // поле — это «величина к системе не относится», и стоп-фактором она не
+    // становится.
+    const audit = auditProjectProvenance({ designDiameterMm: null })
     expect(audit.verifiedShare).toBe(0)
     const named = audit.blockers.map((item) => item.field)
     expect(named).toContain('Отметки съёмки')
@@ -69,5 +73,39 @@ describe('происхождение ключевых величин проек�
     expect(item.provenance.kind).toBe('stated')
     expect(item.provenance.verified).toBe(false)
     expect(item.provenance.note).toContain('не подтверждён')
+  })
+})
+
+describe('величины, к системе не относящиеся', () => {
+  it('непереданные поля в аудит не входят и стоп-фактором не становятся', () => {
+    // У водопровода нет ни каталога конструкций колодцев, ни проектного
+    // диаметра из ТУ в этом смысле. Показать их отсутствующими значило бы
+    // выставить проекту стоп-фактор за то, чего у него по определению нет.
+    const water = auditProjectProvenance({ surveyPointCount: 10, surveyPointSource: 'geometry' })
+    expect(Object.keys(water.fields)).not.toContain('Каталог конструкций колодцев')
+    expect(Object.keys(water.fields)).not.toContain('Проектный диаметр')
+    expect(Object.keys(water.fields)).not.toContain('Расчёт дождевого стока')
+  })
+
+  it('переданное пустым значением отсутствующим и показывается', () => {
+    const sewer = auditProjectProvenance({
+      surveyPointCount: 10,
+      surveyPointSource: 'geometry',
+      manholeCatalogReady: false,
+      designDiameterMm: null,
+    })
+    expect(sewer.fields['Каталог конструкций колодцев'].provenance.kind).toBe('absent')
+    expect(sewer.fields['Проектный диаметр'].provenance.kind).toBe('absent')
+  })
+
+  it('переданное заполненным подтверждается', () => {
+    const sewer = auditProjectProvenance({
+      surveyPointCount: 10,
+      surveyPointSource: 'geometry',
+      manholeCatalogReady: true,
+      designDiameterMm: 500,
+    })
+    expect(sewer.fields['Каталог конструкций колодцев'].provenance.verified).toBe(true)
+    expect(sewer.fields['Проектный диаметр'].value).toBe(500)
   })
 })

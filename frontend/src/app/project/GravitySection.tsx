@@ -15,7 +15,6 @@ import {
   solveGravityNetwork,
   assessGravityFeasibility,
   auditProjectProvenance,
-  provenanceLabel,
   summarizeRouteCoverage,
   planDropWells,
   planGravityBasins,
@@ -66,6 +65,7 @@ import { AlbumSheetSet } from './AlbumSheetSet'
 import { SchemeBuilder } from './SchemeBuilder'
 import { StormInletsView } from './StormInletsView'
 import { ReadinessView } from './ReadinessView'
+import { ProvenanceAuditView } from './ProvenanceAuditView'
 import { GeologySectionView } from './GeologySectionView'
 import { QuantityBillView } from './QuantityBillView'
 import type { QuantityBillSettings } from './QuantityBillView'
@@ -1024,41 +1024,7 @@ export function GravitySection({
         </div>
       </div>
       <div className="drawing-audit" style={{ marginBottom: 12 }}>
-        <div>
-          <h5>Происхождение исходных величин</h5>
-          <p className={`stat-line${provenance.blockers.length === 0 ? ' ok' : ' warn'}`}>
-            Пригодно к выпуску {Math.round(provenance.verifiedShare * 100)}% величин
-            ({provenance.total - provenance.blockers.length} из {provenance.total}).
-          </p>
-          <p className="hint">
-            Шлюз выпуска говорит, что выпустить нельзя; эта сводка — чем именно подтверждена
-            каждая величина. Величины из задания и ТУ идут отдельным разрядом: это авторитетный
-            вход проекта, а не принятое по умолчанию.
-          </p>
-          <div className="table-wrap" style={{ maxHeight: 300 }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Величина</th>
-                  <th scope="col">Происхождение</th>
-                  <th scope="col">Чем подтверждена</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(provenance.fields).map(([field, item]) => (
-                  <tr key={field} className={item.provenance.verified ? undefined : 'row-warn'}>
-                    <td>{field}</td>
-                    <td>{provenanceLabel(item.provenance.kind)}</td>
-                    <td>
-                      {item.provenance.source}
-                      {item.provenance.note ? ` — ${item.provenance.note}` : ''}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ProvenanceAuditView provenance={provenance} />
       </div>
 
       {routeCoverage && (

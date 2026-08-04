@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NORMATIVE_DEFAULTS } from '@aquascheme/engine'
 import type { NormativeParams } from '@aquascheme/engine'
-import { assessSourceHead } from '@aquascheme/engine'
+import { assessSourceHead, auditProjectProvenance } from '@aquascheme/engine'
+import { ProvenanceAuditView } from './ProvenanceAuditView'
 import { isSizingResultAcceptable } from '@aquascheme/engine/sizing'
 import type { SizingResult } from '@aquascheme/engine/sizing'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
@@ -24,6 +25,7 @@ export function HydraulicsSection({
   pipes,
   lastSummary,
   activeCatalogId,
+  surveyPoints,
   onChanged,
 }: {
   projectId: string
@@ -34,6 +36,8 @@ export function HydraulicsSection({
   pipes: PipeRow[]
   lastSummary: SizingResult | null
   activeCatalogId: string | null
+  /** Отметки съёмки: без них аудит не может судить об их наличии. */
+  surveyPoints: Array<{ x: number; y: number; z: number }>
   onChanged: () => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -89,6 +93,16 @@ export function HydraulicsSection({
   // нужно: без этого не подобрать насос водозабора и не назначить высоту
   // водонапорной башни.
   const headAssessment = summary ? assessSourceHead(summary) : null
+  // Аудит происхождения системе не специфичен, но жил только в самотёчной
+  // секции — В1 его не видел вовсе. Величины, которых у водопровода нет
+  // (каталог конструкций колодцев, проектный диаметр из ТУ, дождевой сток), не
+  // передаются: показать их отсутствующими значило бы выставить стоп-фактор за
+  // то, чего у системы по определению нет.
+  const provenance = auditProjectProvenance({
+    surveyPointCount: surveyPoints.length,
+    surveyPointSource: surveyPoints.length > 0 ? 'geometry' : 'none',
+    catalogReady: Boolean(activeCatalogId),
+  })
 
   return (
     <Panel
@@ -102,6 +116,8 @@ export function HydraulicsSection({
           и весь подбор диаметров стоял на выдуманной величине. Задайте напор в разделе «Источник».
         </p>
       )}
+      <ProvenanceAuditView provenance={provenance} />
+
       {headAssessment && (
         <div>
           <p className={headAssessment.deficitM > 0 ? 'notice error' : 'stat-line ok'}>{headAssessment.reason}</p>

@@ -25,7 +25,15 @@ export interface ProjectProvenanceInput {
   geologyCoverage?: { maxOffsetM?: number | null; status?: string; source?: string } | null
   /** Скважины с координатами. */
   spatialBoreholeCount?: number
-  /** Проектный диаметр из технических условий, мм. */
+  /**
+   * Проектный диаметр из технических условий, мм.
+   *
+   * Не передан вовсе — величина к системе не относится и в аудит не входит.
+   * Так же ведёт себя расчёт дождевого стока: у водопровода нет ни проектного
+   * диаметра из ТУ в этом смысле, ни каталога конструкций колодцев, и показать
+   * их отсутствующими значило бы выставить проекту стоп-фактор за то, чего у
+   * него по определению нет.
+   */
   designDiameterMm?: number | null
   /** Требуемый просвет в пересечении из ТУ, м. */
   requiredClearanceM?: number | null
@@ -35,7 +43,13 @@ export interface ProjectProvenanceInput {
   catalogReady?: boolean
   /** Каталог конструкций колодцев покрывает ведомость. */
   manholeCatalogReady?: boolean
-  /** Все применённые нормативные правила подтверждены. */
+  /**
+   * Все применённые нормативные правила подтверждены.
+   *
+   * Не передано — вызывающий не может судить о состоянии реестра, и величина в
+   * аудит не входит. Подставить сюда `false` значило бы показать красную
+   * строку, которая ни из чего не следует.
+   */
   normsVerified?: boolean
   /** Расчёт дождевого стока для К2. */
   stormRunoff?: { available?: boolean; verified?: boolean; source?: string } | null
@@ -92,11 +106,13 @@ export function auditProjectProvenance(input: ProjectProvenanceInput): ProjectPr
     ? traced(boreholes, { kind: 'measured', source: `${boreholes} скважин изысканий`, verified: true })
     : absent('скважин с координатами нет')
 
-  fields['Проектный диаметр'] = input.designDiameterMm != null && input.designDiameterMm > 0
-    ? traced(input.designDiameterMm, {
-      kind: 'stated', source: 'технические условия', verified: true,
-    })
-    : absent('проектный диаметр не задан')
+  if (input.designDiameterMm !== undefined) {
+    fields['Проектный диаметр'] = input.designDiameterMm != null && input.designDiameterMm > 0
+      ? traced(input.designDiameterMm, {
+        kind: 'stated', source: 'технические условия', verified: true,
+      })
+      : absent('проектный диаметр не задан')
+  }
 
   fields['Требуемый просвет в пересечении'] = input.requiredClearanceM != null && input.requiredClearanceM > 0
     ? traced(input.requiredClearanceM, {
@@ -118,13 +134,17 @@ export function auditProjectProvenance(input: ProjectProvenanceInput): ProjectPr
     ? traced(true, { kind: 'catalogue', source: 'активный каталог проекта', verified: true })
     : absent('каталог не подтверждён')
 
-  fields['Каталог конструкций колодцев'] = input.manholeCatalogReady
-    ? traced(true, { kind: 'catalogue', source: 'каталог конструкций проекта', verified: true })
-    : absent('каталог конструкций не покрывает ведомость')
+  if (input.manholeCatalogReady !== undefined) {
+    fields['Каталог конструкций колодцев'] = input.manholeCatalogReady
+      ? traced(true, { kind: 'catalogue', source: 'каталог конструкций проекта', verified: true })
+      : absent('каталог конструкций не покрывает ведомость')
+  }
 
-  fields['Нормативные пункты'] = input.normsVerified
-    ? traced(true, { kind: 'normative', source: 'все применённые пункты подтверждены', verified: true })
-    : traced(false, { kind: 'assumed', source: 'есть неподтверждённые пункты', verified: false })
+  if (input.normsVerified !== undefined) {
+    fields['Нормативные пункты'] = input.normsVerified
+      ? traced(true, { kind: 'normative', source: 'все применённые пункты подтверждены', verified: true })
+      : traced(false, { kind: 'assumed', source: 'есть неподтверждённые пункты', verified: false })
+  }
 
   if (input.stormRunoff !== undefined) {
     const runoff = input.stormRunoff

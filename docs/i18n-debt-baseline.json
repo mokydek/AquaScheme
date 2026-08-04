@@ -1,6 +1,6 @@
 {
   "_comment": "Текст интерфейса мимо словарей. Может только снижаться; обновляется через npm run audit:i18n -- --write-baseline. Приложение заявляет три языка, и зашитая по-русски строка двум из них показывается неверно.",
-  "total": 209,
+  "total": 204,
   "files": [
     {
       "file": "frontend/src/app/project/SituationSchemeSection.tsx",
@@ -8,7 +8,7 @@
     },
     {
       "file": "frontend/src/app/project/GravitySection.tsx",
-      "count": 30
+      "count": 25
     },
     {
       "file": "frontend/src/app/project/GeologySection.tsx",

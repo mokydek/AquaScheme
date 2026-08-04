@@ -774,6 +774,7 @@ export function ProjectPage() {
                 pipes={pipes}
                 lastSummary={lastRun}
                 activeCatalogId={project.active_catalog_id ?? null}
+                surveyPoints={topoPoints}
                 onChanged={load}
               />
               <ResultsSection lastRun={lastRun} nodes={nodes} buildings={buildings} />
