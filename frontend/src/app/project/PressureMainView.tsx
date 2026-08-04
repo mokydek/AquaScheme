@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { PressureMainResult } from '@aquascheme/engine'
 import type { PumpCatalogContent } from './PumpCatalogSection'
 import { pumpSelectionFor } from './pumpSelection'
@@ -12,6 +13,11 @@ import { pumpSelectionFor } from './pumpSelection'
  *
  * Требуемый напор берётся из расчёта, а не из геометрического подъёма: подъём
  * — только его часть, и подставить её вместо целого значило бы занизить насос.
+ *
+ * Тексты идут через словари. Казахские значения не заданы: терминологию задаёт
+ * владелец словаря, а придуманный технический термин в проектном интерфейсе
+ * хуже отсутствия перевода. До них i18next откатывается на русский — ровно то
+ * поведение, что было при зашитых строках.
  */
 export function PressureMainView({
   pressure,
@@ -22,32 +28,26 @@ export function PressureMainView({
   designFlowLps: number
   catalog: PumpCatalogContent
 }) {
+  const { t } = useTranslation()
   const requiredHeadM = pressure.requiredPumpHeadM
   const outcome = pumpSelectionFor(pressure, designFlowLps, catalog)
+  const metres = (value: number | null | undefined) =>
+    value == null ? '—' : `${value.toFixed(2)} м`
 
   return (
     <div>
-      <p className="hint">
-        Напор считается по Дарси — Вейсбаху с коэффициентом Свами — Джейна. Требуемый напор складывается из
-        геометрического подъёма, потерь по длине и местных потерь: подъём сам по себе насос не определяет.
-      </p>
+      <p className="hint">{t('project.pressureMain.hint')}</p>
 
       <div className="table-wrap">
         <table className="data-table">
           <tbody>
-            <tr><th>Геометрический подъём</th><td className="num">{pressure.staticHeadM.toFixed(2)} м</td></tr>
-            <tr><th>Потери по длине</th><td className="num">{pressure.frictionHeadM.toFixed(2)} м</td></tr>
-            <tr>
-              <th>Требуемый напор насоса</th>
-              <td className="num">{requiredHeadM == null ? '—' : `${requiredHeadM.toFixed(2)} м`}</td>
-            </tr>
-            <tr>
-              <th>Заявлено по ЛНС</th>
-              <td className="num">{pressure.availablePumpHeadM == null ? '—' : `${pressure.availablePumpHeadM.toFixed(2)} м`}</td>
-            </tr>
+            <tr><th>{t('project.pressureMain.staticHead')}</th><td className="num">{metres(pressure.staticHeadM)}</td></tr>
+            <tr><th>{t('project.pressureMain.frictionHead')}</th><td className="num">{metres(pressure.frictionHeadM)}</td></tr>
+            <tr><th>{t('project.pressureMain.requiredHead')}</th><td className="num">{metres(requiredHeadM)}</td></tr>
+            <tr><th>{t('project.pressureMain.declaredHead')}</th><td className="num">{metres(pressure.availablePumpHeadM)}</td></tr>
             <tr className={pressure.reserveHeadM != null && pressure.reserveHeadM < 0 ? 'row-warn' : undefined}>
-              <th>Запас</th>
-              <td className="num">{pressure.reserveHeadM == null ? '—' : `${pressure.reserveHeadM.toFixed(2)} м`}</td>
+              <th>{t('project.pressureMain.reserve')}</th>
+              <td className="num">{metres(pressure.reserveHeadM)}</td>
             </tr>
           </tbody>
         </table>
@@ -58,9 +58,13 @@ export function PressureMainView({
           <table className="data-table">
             <thead>
               <tr>
-                <th>Участок</th><th className="num">Длина, м</th><th className="num">Ø, мм</th>
-                <th className="num">Ниток</th><th className="num">Расход, л/с</th>
-                <th className="num">Скорость, м/с</th><th className="num">Потери, м</th>
+                <th>{t('project.pressureMain.thSegment')}</th>
+                <th className="num">{t('project.pressureMain.thLength')}</th>
+                <th className="num">{t('project.pressureMain.thDiameter')}</th>
+                <th className="num">{t('project.pressureMain.thBarrels')}</th>
+                <th className="num">{t('project.pressureMain.thFlow')}</th>
+                <th className="num">{t('project.pressureMain.thVelocity')}</th>
+                <th className="num">{t('project.pressureMain.thHeadloss')}</th>
               </tr>
             </thead>
             <tbody>{pressure.pipes.map((pipe) => (
@@ -78,26 +82,26 @@ export function PressureMainView({
         </div>
       )}
 
-      <h4>Насосное оборудование</h4>
+      <h4>{t('project.pressureMain.pumpsTitle')}</h4>
       {!outcome.ok ? (
-        <p className="notice">Подбор не выполняется: {outcome.missing.join('; ')}.</p>
+        <p className="notice">{t('project.pressureMain.notSelected', { missing: outcome.missing.join('; ') })}</p>
       ) : (
         <div>
           <div className="table-wrap">
             <table className="data-table">
               <tbody>
-                <tr><th>Марка</th><td>{outcome.selection.pump?.designation ?? '—'}</td></tr>
-                <tr><th>Источник марки</th><td>{outcome.selection.pump?.source ?? '—'}</td></tr>
-                <tr><th>Подача одного агрегата</th><td className="num">{outcome.selection.perPumpFlowLps.toFixed(2)} л/с</td></tr>
-                <tr><th>Рабочих</th><td className="num">{outcome.selection.workingCount}</td></tr>
-                <tr><th>Резервных (устанавливаются)</th><td className="num">{outcome.selection.standbyCount}</td></tr>
-                <tr><th>Всего монтируется</th><td className="num">{outcome.selection.totalInstalled}</td></tr>
-                <tr><th>Хранится на складе</th><td className="num">{outcome.selection.spareOnStoreCount}</td></tr>
+                <tr><th>{t('project.pressureMain.designation')}</th><td>{outcome.selection.pump?.designation ?? '—'}</td></tr>
+                <tr><th>{t('project.pressureMain.designationSource')}</th><td>{outcome.selection.pump?.source ?? '—'}</td></tr>
+                <tr><th>{t('project.pressureMain.perPumpFlow')}</th><td className="num">{outcome.selection.perPumpFlowLps.toFixed(2)} л/с</td></tr>
+                <tr><th>{t('project.pressureMain.working')}</th><td className="num">{outcome.selection.workingCount}</td></tr>
+                <tr><th>{t('project.pressureMain.standby')}</th><td className="num">{outcome.selection.standbyCount}</td></tr>
+                <tr><th>{t('project.pressureMain.totalInstalled')}</th><td className="num">{outcome.selection.totalInstalled}</td></tr>
+                <tr><th>{t('project.pressureMain.spareOnStore')}</th><td className="num">{outcome.selection.spareOnStoreCount}</td></tr>
                 <tr>
-                  <th>Установленная мощность</th>
+                  <th>{t('project.pressureMain.installedPower')}</th>
                   <td className="num">
                     {outcome.selection.pump?.powerKw == null
-                      ? 'не задана каталогом'
+                      ? t('project.pressureMain.powerUnknown')
                       : `${(outcome.selection.pump.powerKw * outcome.selection.totalInstalled).toFixed(1)} кВт`}
                   </td>
                 </tr>

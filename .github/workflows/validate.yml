@@ -41,6 +41,12 @@ jobs:
       - name: Audit capability reachability
         run: npm run audit:reachability
 
+      # Приложение заявляет три языка. Строка, зашитая в компонент по-русски,
+      # казахскому и английскому пользователю показывается по-русски: два языка
+      # из трёх местами неверны. Число может только снижаться.
+      - name: Audit hardcoded interface text
+        run: npm run audit:i18n
+
       - name: Build production frontend
         run: npm run build
 

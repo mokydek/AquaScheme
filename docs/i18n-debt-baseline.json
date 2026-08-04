@@ -1,0 +1,118 @@
+{
+  "_comment": "Текст интерфейса мимо словарей. Может только снижаться; обновляется через npm run audit:i18n -- --write-baseline. Приложение заявляет три языка, и зашитая по-русски строка двум из них показывается неверно.",
+  "total": 269,
+  "files": [
+    {
+      "file": "frontend/src/app/project/SituationSchemeSection.tsx",
+      "count": 37
+    },
+    {
+      "file": "frontend/src/app/project/GravitySection.tsx",
+      "count": 31
+    },
+    {
+      "file": "frontend/src/app/project/GeologySection.tsx",
+      "count": 19
+    },
+    {
+      "file": "frontend/src/app/project/AlbumSheetSet.tsx",
+      "count": 17
+    },
+    {
+      "file": "frontend/src/app/project/PumpCatalogSection.tsx",
+      "count": 17
+    },
+    {
+      "file": "frontend/src/app/project/WorkingDrawingPreview.tsx",
+      "count": 16
+    },
+    {
+      "file": "frontend/src/app/project/ImportSection.tsx",
+      "count": 14
+    },
+    {
+      "file": "frontend/src/app/project/LiveSituationMap.tsx",
+      "count": 12
+    },
+    {
+      "file": "frontend/src/app/project/ManholeCatalogSection.tsx",
+      "count": 11
+    },
+    {
+      "file": "frontend/src/app/project/PipeCalculationsView.tsx",
+      "count": 9
+    },
+    {
+      "file": "frontend/src/app/project/StormInletsView.tsx",
+      "count": 9
+    },
+    {
+      "file": "frontend/src/app/project/BlockStructuresTable.tsx",
+      "count": 8
+    },
+    {
+      "file": "frontend/src/app/project/QuantityBillView.tsx",
+      "count": 8
+    },
+    {
+      "file": "frontend/src/app/project/TitleBlockSection.tsx",
+      "count": 8
+    },
+    {
+      "file": "frontend/src/app/project/DxfLayerRoleTable.tsx",
+      "count": 6
+    },
+    {
+      "file": "frontend/src/app/project/GeologySectionView.tsx",
+      "count": 6
+    },
+    {
+      "file": "frontend/src/app/project/BasisSection.tsx",
+      "count": 5
+    },
+    {
+      "file": "frontend/src/app/project/HydraulicsSection.tsx",
+      "count": 5
+    },
+    {
+      "file": "frontend/src/app/project/SchemeView.tsx",
+      "count": 5
+    },
+    {
+      "file": "frontend/src/landing/NetworkFigure.tsx",
+      "count": 5
+    },
+    {
+      "file": "frontend/src/app/project/ReadinessView.tsx",
+      "count": 4
+    },
+    {
+      "file": "frontend/src/app/ProjectPage.tsx",
+      "count": 4
+    },
+    {
+      "file": "frontend/src/shared/ErrorBoundary.tsx",
+      "count": 4
+    },
+    {
+      "file": "frontend/src/app/project/ZoomPanSurface.tsx",
+      "count": 3
+    },
+    {
+      "file": "frontend/src/app/project/NormRegistrySection.tsx",
+      "count": 2
+    },
+    {
+      "file": "frontend/src/app/project/ReconstructionSurveySection.tsx",
+      "count": 2
+    },
+    {
+      "file": "frontend/src/app/project/CatalogSection.tsx",
+      "count": 1
+    },
+    {
+      "file": "frontend/src/app/project/ExportSection.tsx",
+      "count": 1
+    }
+  ]
+}
