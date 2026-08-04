@@ -16,6 +16,7 @@ import { Panel } from './Panel'
 import { runEngineeringRouteInWorker } from '../../shared/routeWorker'
 import { buildDxfCadContext } from '../../shared/dxfContext'
 import { DxfLayerRoleTable, DXF_ROLE_OPTIONS } from './DxfLayerRoleTable'
+import { BlockStructuresTable } from './BlockStructuresTable'
 
 type Parsed =
   | { kind: 'dxf'; data: DxfNetworkData; constraints: DxfConstraintData }
@@ -565,6 +566,13 @@ export function ImportSection({
               </label>
             </div>
           )}
+
+          {/*
+            Сооружения по именам блоков. На реальной топооснове колодцы
+            вставлены блоками на слое «0», который помечают как не инженерный,
+            и по слою они не опознаются вовсе.
+          */}
+          <BlockStructuresTable blocks={parsed.data.blockEntities ?? []} />
 
           <DxfLayerRoleTable
             idPrefix="import"
