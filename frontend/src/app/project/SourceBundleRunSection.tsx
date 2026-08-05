@@ -49,6 +49,8 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
   const [fileName, setFileName] = useState<string | null>(null)
   const [diameterMm, setDiameterMm] = useState<number | null>(null)
   const [minMainDepthM, setMinMainDepthM] = useState<number | null>(null)
+  const [firstChamber, setFirstChamber] = useState<number | null>(null)
+  const [lastChamber, setLastChamber] = useState<number | null>(null)
   const [reference, setReference] = useState<Reference>({})
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -71,6 +73,10 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
         // Порог не подставляется по умолчанию: съёмка сама врезку от
         // магистральной камеры не отличает, и число назначает инженер.
         ...(minMainDepthM !== null ? { minMainDepthM } : {}),
+        // Границы объекта заданы техническими условиями и в съёмке не
+        // отмечены: она покрывает больше, чем объект.
+        ...(firstChamber !== null ? { firstChamber } : {}),
+        ...(lastChamber !== null ? { lastChamber } : {}),
       }))
       setFileName(file.name)
     } catch (cause) {
@@ -123,6 +129,40 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
             }}
           />
           <span className="hint">{t('project.bundleRun.minMainDepthHint')}</span>
+        </label>
+        <label className="field" htmlFor={`bundle-first-${projectId}`}>
+          <span className="field-label">{t('project.bundleRun.firstChamber')}</span>
+          <input
+            id={`bundle-first-${projectId}`}
+            name={`bundle-first-${projectId}`}
+            className="input"
+            type="number"
+            min={1}
+            step={1}
+            value={firstChamber ?? ''}
+            disabled={busy}
+            onChange={(event) => {
+              const value = Math.trunc(Number(event.target.value))
+              setFirstChamber(event.target.value !== '' && value > 0 ? value : null)
+            }}
+          />
+        </label>
+        <label className="field" htmlFor={`bundle-last-${projectId}`}>
+          <span className="field-label">{t('project.bundleRun.lastChamber')}</span>
+          <input
+            id={`bundle-last-${projectId}`}
+            name={`bundle-last-${projectId}`}
+            className="input"
+            type="number"
+            min={1}
+            step={1}
+            value={lastChamber ?? ''}
+            disabled={busy}
+            onChange={(event) => {
+              const value = Math.trunc(Number(event.target.value))
+              setLastChamber(event.target.value !== '' && value > 0 ? value : null)
+            }}
+          />
         </label>
         <label className="field" htmlFor={`bundle-ref-length-${projectId}`}>
           <span className="field-label">{t('project.bundleRun.refLength')}</span>
@@ -237,6 +277,12 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
                   .map((chamber) => chamber.depthM.toFixed(2))
                   .join(', '),
               })}
+            </p>
+          ) : null}
+
+          {result.existing?.outsideBounds?.length ? (
+            <p className="stat-line">
+              {t('project.bundleRun.outsideBounds', { count: result.existing.outsideBounds.length })}
             </p>
           ) : null}
 

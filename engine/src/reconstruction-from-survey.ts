@@ -56,6 +56,14 @@ export interface ReconstructionSurveyOptions {
    */
   minMainDepthM?: number
   /**
+   * Номера первого и последнего колодца трассы, с 1.
+   *
+   * Границы объекта заданы техническими условиями, а в съёмке не отмечены:
+   * она покрывает больше, чем объект. Вывести их из чертежа нельзя.
+   */
+  firstChamber?: number
+  lastChamber?: number
+  /**
    * Роли слоёв, назначенные инженером вручную.
    *
    * Без них путь реконструкции был тупиковым: нераспознанные слои блокируют
@@ -132,7 +140,11 @@ export function buildReconstructionFromSurvey(
   const constraints = classifyDxfConstraints(data, options.roleOverrides ?? {})
   const grid = detectSurveyGrid(data)
   const existing = extractExistingUtilities(data, options.existingLayerPattern ?? /канализ/i,
-    { minMainDepthM: options.minMainDepthM })
+    {
+      minMainDepthM: options.minMainDepthM,
+      firstChamber: options.firstChamber,
+      lastChamber: options.lastChamber,
+    })
   const chain = existing.chain
   const blockers: string[] = []
 

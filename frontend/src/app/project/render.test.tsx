@@ -328,4 +328,14 @@ describe('прогон комплекта исходных данных', () => 
     expect(m).toContain('project.bundleRun.minMainDepthHint')
     expect(m).toMatch(/id="bundle-depth-p1"[^>]*value=""/)
   })
+
+  it('границы объекта задаются номерами концевых колодцев и тоже пусты', () => {
+    // Съёмка покрывает больше, чем объект: границы заданы техническими
+    // условиями и в чертеже ничем не отмечены, вывести их нельзя.
+    const m = markup()
+    expect(m).toContain('project.bundleRun.firstChamber')
+    expect(m).toContain('project.bundleRun.lastChamber')
+    expect(m).toMatch(/id="bundle-first-p1"[^>]*value=""/)
+    expect(m).toMatch(/id="bundle-last-p1"[^>]*value=""/)
+  })
 })

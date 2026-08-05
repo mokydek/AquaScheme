@@ -139,6 +139,44 @@ describe('existing utilities recovered from survey annotation', () => {
     expect(result.chain).toHaveLength(3)
   })
 
+
+  it('границы объекта обрезают цепочку по номерам концевых колодцев', () => {
+    // Съёмка шире объекта: границы заданы техническими условиями и в чертеже
+    // ничем не отмечены. На ул. Станкевича крайняя камера лежала за концом
+    // трассы, и длина выходила 483,4 м против 458,94 по документам.
+    const four = survey([
+      [0, 0, '690.00'], [0, 1, '686.00'],
+      [40, 0, '689.00'], [40, 1, '685.00'],
+      [80, 0, '688.00'], [80, 1, '684.00'],
+      [120, 0, '687.00'], [120, 1, '683.00'],
+    ])
+    const whole = extractExistingUtilities(four)
+    expect(whole.chain).toHaveLength(4)
+    expect(whole.chainLengthM).toBeCloseTo(120, 0)
+    expect(whole.outsideBounds).toEqual([])
+
+    const bounded = extractExistingUtilities(four, /канализ/i, { firstChamber: 1, lastChamber: 3 })
+    expect(bounded.chain).toHaveLength(3)
+    expect(bounded.chainLengthM).toBeCloseTo(80, 0)
+    expect(bounded.outsideBounds).toHaveLength(1)
+    expect(bounded.reason).toContain('за границами объекта')
+    // Камера за границей остаётся измеренным фактом, а не исчезает.
+    expect(bounded.manholes).toHaveLength(4)
+  })
+
+  it('бессмысленные границы не обрезают ничего', () => {
+    const three = survey([
+      [0, 0, '690.00'], [0, 1, '686.00'],
+      [40, 0, '689.00'], [40, 1, '685.00'],
+      [80, 0, '688.00'], [80, 1, '684.00'],
+    ])
+    // Конец раньше начала: обрезать по такому нельзя, цепочка остаётся целой.
+    expect(extractExistingUtilities(three, /канализ/i, { firstChamber: 3, lastChamber: 1 }).chain)
+      .toHaveLength(3)
+    // Номер за пределом цепочки не создаёт пустоты.
+    expect(extractExistingUtilities(three, /канализ/i, { lastChamber: 99 }).chain).toHaveLength(3)
+  })
+
   it('ignores annotation of other utilities', () => {
     const result = extractExistingUtilities(survey([
       [0, 0, '685.00', 'NAD_MТЕПЛОТР'],

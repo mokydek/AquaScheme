@@ -51,6 +51,8 @@ export interface ExistingUtilityNetwork {
    * a judgement about which run they belong to, not a measurement.
    */
   laterals: ExistingManhole[]
+  /** Камеры вне границ объекта: съёмка шире объекта, границы задаёт инженер. */
+  outsideBounds: ExistingManhole[]
   reason: string
 }
 
@@ -104,6 +106,10 @@ const numeric = (entity: DxfTextEntity): number | null => {
  */
 export interface ExistingUtilityOptions {
   minMainDepthM?: number
+  /** Номер первого колодца трассы в цепочке, с 1. По техническим условиям. */
+  firstChamber?: number
+  /** Номер последнего колодца трассы в цепочке, с 1. По техническим условиям. */
+  lastChamber?: number
 }
 
 export function extractExistingUtilities(
@@ -177,7 +183,19 @@ export function extractExistingUtilities(
   const mains = manholes.filter(isMain)
 
   const ordered = orderAlongRoute(mains)
-  const chain = longestRun(ordered)
+  const run = longestRun(ordered)
+
+  // Границы объекта заданы техническими условиями — «от такого-то дома до
+  // такой-то улицы», — а в съёмке ничем не отмечены: она покрывает больше, чем
+  // объект. На ул. Станкевича крайняя камера лежала за концом трассы, и длина
+  // выходила 483,4 м против 458,94 по документам; без неё — 454,0 м, то есть
+  // недобор 1,1 %. Номера концевых колодцев называет инженер по ТУ; вывести их
+  // из съёмки нельзя, и умолчания здесь нет.
+  const firstChamber = Math.max(1, Math.trunc(options.firstChamber ?? 1))
+  const lastChamber = Math.min(run.length, Math.trunc(options.lastChamber ?? run.length))
+  const chain = lastChamber >= firstChamber ? run.slice(firstChamber - 1, lastChamber) : run
+  const outsideBounds = run.filter((chamber) => !chain.includes(chamber))
+
   let chainLengthM = 0
   let maxStepM = 0
   for (let i = 1; i < chain.length; i++) {
@@ -185,7 +203,7 @@ export function extractExistingUtilities(
     chainLengthM += step
     maxStepM = Math.max(maxStepM, step)
   }
-  const detachedCount = mains.length - chain.length
+  const detachedCount = mains.length - run.length
 
   return {
     manholes,
@@ -195,11 +213,15 @@ export function extractExistingUtilities(
     detachedCount,
     maxStepM: Number(maxStepM.toFixed(2)),
     laterals,
+    outsideBounds,
     reason: manholes.length === 0
       ? 'Пары отметок «крышка/лоток» не найдены: существующие колодцы по чертежу не восстанавливаются.'
       : `Восстановлено колодцев: ${manholes.length}; марок труб: ${pipeLabels.length}; `
         + (laterals.length > 0
           ? `отнесено к врезкам по глубине менее ${minMainDepthM} м: ${laterals.length}; `
+          : '')
+        + (outsideBounds.length > 0
+          ? `за границами объекта: ${outsideBounds.length}; `
           : '')
         + `непрерывная цепочка ${chain.length} шт., ${chainLengthM.toFixed(1)} м`
         + (detachedCount > 0
