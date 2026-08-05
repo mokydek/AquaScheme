@@ -55,12 +55,27 @@ export function buildStankevichaNetwork(): TracedNetwork {
 export async function seedStankevichaProject(projectId: string): Promise<StankevichaSeedResult> {
   const failures: string[] = []
   let seededSections = 0
+  /**
+   * Какая миграция добавляет вид набора. База отвергает незнакомый вид
+   * ограничением `datasets_kind_check`, и сырой текст Postgres не говорит
+   * пользователю, что делать: нужен не разбор SQL, а имя файла миграции.
+   */
+  const MIGRATION_BY_KIND: Record<string, string> = {
+    'title block': '0017_title_block.sql',
+    'master plan': '0018_master_plan.sql',
+  }
+
   const step = async (name: string, action: () => Promise<void>) => {
     try {
       await action()
       seededSections += 1
     } catch (error) {
-      failures.push(`${name}: ${formatAppError(error)}`)
+      const text = formatAppError(error)
+      const migration = MIGRATION_BY_KIND[name]
+      failures.push(migration && /datasets_kind_check/.test(text)
+        ? `${name}: база не принимает этот вид набора — примените миграцию`
+          + ` backend/migrations/${migration} (или backend/bootstrap.sql целиком)`
+        : `${name}: ${text}`)
     }
   }
 
