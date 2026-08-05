@@ -77,6 +77,36 @@ describe('existing utilities recovered from survey annotation', () => {
     expect(result.reason).toContain('вне цепочки')
   })
 
+  it('сшивает трассу через поворот, а не бросает камеры за ним', () => {
+    // Г-образная трасса по двум улицам: сначала вдоль X, затем вдоль Y. Лоток
+    // вдоль неё падает не строго — у камеры на повороте отметка выше, чем у
+    // предыдущей, как и бывает на реальной съёмке. Обход строго вниз по лотку
+    // на такой камере обрывался, и всё, что за поворотом, в порядок вообще не
+    // попадало: на объекте так терялось 6 камер из 17.
+    const result = extractExistingUtilities(survey([
+      [0, 0, '690.00'], [0, 1, '686.00'],
+      [40, 0, '689.50'], [40, 1, '685.60'],
+      [80, 0, '689.00'], [80, 1, '685.90'],
+      [80, 40, '688.50'], [81, 40, '685.20'],
+      [80, 80, '688.00'], [81, 80, '684.80'],
+    ]))
+    expect(result.manholes).toHaveLength(5)
+    expect(result.chain).toHaveLength(5)
+    expect(result.detachedCount).toBe(0)
+    // Ни одного скачка через квартал: шаг остаётся уличным.
+    expect(result.maxStepM).toBeLessThan(45)
+  })
+
+  it('голова цепочки — верховой конец, а не произвольный', () => {
+    const result = extractExistingUtilities(survey([
+      [0, 0, '690.00'], [0, 1, '686.00'],
+      [40, 0, '689.00'], [40, 1, '685.00'],
+      [80, 0, '688.00'], [80, 1, '684.00'],
+    ]))
+    expect(result.chain[0].invertElevationM).toBeGreaterThan(
+      result.chain[result.chain.length - 1].invertElevationM)
+  })
+
   it('ignores annotation of other utilities', () => {
     const result = extractExistingUtilities(survey([
       [0, 0, '685.00', 'NAD_MТЕПЛОТР'],

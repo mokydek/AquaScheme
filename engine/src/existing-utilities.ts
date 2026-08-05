@@ -147,7 +147,7 @@ export function extractExistingUtilities(
     })
   }
 
-  const ordered = orderByFlow(manholes)
+  const ordered = orderAlongRoute(manholes)
   const chain = longestRun(ordered)
   let chainLengthM = 0
   let maxStepM = 0
@@ -202,31 +202,57 @@ function longestRun(ordered: ExistingManhole[]): ExistingManhole[] {
 }
 
 /**
- * Orders chambers along the flow. A gravity run falls monotonically, so the
- * highest invert is the head; from there each step takes the nearest chamber
- * that is not higher, which follows the pipe instead of jumping across the
- * street to a neighbouring branch.
+ * Orders chambers along the route, following the geometry and letting the
+ * invert decide only which end is the head.
+ *
+ * A gravity run does fall monotonically, but the surveyed invert does not:
+ * chambers of side connections sit on the same layer, and a reading is taken
+ * to the centimetre. Ordering by a strict fall therefore walks downhill until
+ * nothing lower is left nearby and simply stops — every chamber it stepped
+ * past stays out of the ordering entirely. On a Г-shaped route along two
+ * streets this dropped 6 chambers of 17 and left a phantom 111 m leap across
+ * the corner, after which the run looked as if it were missing manholes the
+ * survey plainly showed.
+ *
+ * So the walk is geometric: start at an end of the point set, take the nearest
+ * chamber each time, and stitch straight through the corner. The invert is
+ * used once, at the end, to orient head to tail.
  */
-function orderByFlow(manholes: ExistingManhole[]): ExistingManhole[] {
-  if (manholes.length < 2) return [...manholes]
-  const remaining = [...manholes]
-  remaining.sort((a, b) => b.invertElevationM - a.invertElevationM)
-  const chain: ExistingManhole[] = [remaining.shift()!]
+function orderAlongRoute(manholes: ExistingManhole[]): ExistingManhole[] {
+  if (manholes.length < 3) return [...manholes]
 
+  // Seed at an end of the run, not in its middle: the chamber farthest from
+  // the centroid. Starting mid-route would walk one half and then jump back.
+  const centroidX = manholes.reduce((sum, m) => sum + m.x, 0) / manholes.length
+  const centroidY = manholes.reduce((sum, m) => sum + m.y, 0) / manholes.length
+  const remaining = [...manholes]
+  let seed = 0
+  let seedDistance = -1
+  for (let i = 0; i < remaining.length; i++) {
+    const distance = Math.hypot(remaining[i].x - centroidX, remaining[i].y - centroidY)
+    if (distance > seedDistance) {
+      seedDistance = distance
+      seed = i
+    }
+  }
+
+  const chain: ExistingManhole[] = [remaining.splice(seed, 1)[0]]
   while (remaining.length > 0) {
     const current = chain[chain.length - 1]
-    let bestIndex = -1
+    let bestIndex = 0
     let bestDistance = Infinity
     for (let i = 0; i < remaining.length; i++) {
-      if (remaining[i].invertElevationM > current.invertElevationM + 1e-9) continue
       const distance = Math.hypot(remaining[i].x - current.x, remaining[i].y - current.y)
       if (distance < bestDistance) {
         bestDistance = distance
         bestIndex = i
       }
     }
-    if (bestIndex < 0) break
     chain.push(remaining.splice(bestIndex, 1)[0])
   }
-  return chain
+
+  // Head is the upstream end: the run has to fall from it, not towards it.
+  const first = chain[0].invertElevationM
+  const last = chain[chain.length - 1].invertElevationM
+  return last > first ? chain.reverse() : chain
 }
