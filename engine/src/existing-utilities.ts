@@ -45,6 +45,12 @@ export interface ExistingUtilityNetwork {
   detachedCount: number
   /** Longest step inside `chain`, m — a sanity check on the ordering. */
   maxStepM: number
+  /**
+   * Chambers excluded as house connections by the engineer's minimum main-line
+   * depth. Kept, not discarded: they are surveyed facts, and the exclusion is
+   * a judgement about which run they belong to, not a measurement.
+   */
+  laterals: ExistingManhole[]
   reason: string
 }
 
@@ -86,9 +92,24 @@ const numeric = (entity: DxfTextEntity): number | null => {
  * plausible manhole depth, so a pair of unrelated spot heights is not read as a
  * chamber.
  */
+/**
+ * Наименьшая глубина камеры магистрали, м.
+ *
+ * Умолчания нет намеренно. Признака, по которому камеру врезки отличает от
+ * магистральной сама съёмка, найти не удалось, и это проверено на объекте по
+ * ул. Станкевича: смещение от оси не разделяет их вовсе — у одной врезки оно
+ * 2,5 м, а у настоящей магистральной камеры 10,0 м; правило «лоток выше обоих
+ * соседей» ловит одну магистральную и пропускает одну врезку. Разделяет только
+ * глубина, и решение о пороге принимает инженер по техническому отчёту.
+ */
+export interface ExistingUtilityOptions {
+  minMainDepthM?: number
+}
+
 export function extractExistingUtilities(
   data: DxfNetworkData,
   layerPattern: RegExp = /канализ/i,
+  options: ExistingUtilityOptions = {},
 ): ExistingUtilityNetwork {
   const onLayer = (data.textEntities ?? []).filter((entity) => layerPattern.test(entity.layer ?? ''))
 
@@ -147,7 +168,15 @@ export function extractExistingUtilities(
     })
   }
 
-  const ordered = orderAlongRoute(manholes)
+  // Врезки отделяются до построения цепочки: попав в неё, они удлиняют трассу
+  // и сбивают шаг между колодцами, а на плане встают как магистральные.
+  const minMainDepthM = options.minMainDepthM
+  const isMain = (manhole: ExistingManhole) =>
+    minMainDepthM === undefined || manhole.depthM >= minMainDepthM
+  const laterals = manholes.filter((manhole) => !isMain(manhole))
+  const mains = manholes.filter(isMain)
+
+  const ordered = orderAlongRoute(mains)
   const chain = longestRun(ordered)
   let chainLengthM = 0
   let maxStepM = 0
@@ -156,7 +185,7 @@ export function extractExistingUtilities(
     chainLengthM += step
     maxStepM = Math.max(maxStepM, step)
   }
-  const detachedCount = manholes.length - chain.length
+  const detachedCount = mains.length - chain.length
 
   return {
     manholes,
@@ -165,9 +194,13 @@ export function extractExistingUtilities(
     chainLengthM: Number(chainLengthM.toFixed(2)),
     detachedCount,
     maxStepM: Number(maxStepM.toFixed(2)),
+    laterals,
     reason: manholes.length === 0
       ? 'Пары отметок «крышка/лоток» не найдены: существующие колодцы по чертежу не восстанавливаются.'
       : `Восстановлено колодцев: ${manholes.length}; марок труб: ${pipeLabels.length}; `
+        + (laterals.length > 0
+          ? `отнесено к врезкам по глубине менее ${minMainDepthM} м: ${laterals.length}; `
+          : '')
         + `непрерывная цепочка ${chain.length} шт., ${chainLengthM.toFixed(1)} м`
         + (detachedCount > 0
           ? `; вне цепочки ${detachedCount} — вероятно, другая ветвь, участок выбирает инженер.`

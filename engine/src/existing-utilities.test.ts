@@ -107,6 +107,38 @@ describe('existing utilities recovered from survey annotation', () => {
       result.chain[result.chain.length - 1].invertElevationM)
   })
 
+
+  it('врезки отделяются от магистрали по заданной инженером глубине', () => {
+    // Мелкая камера между магистральными — врезка: попав в цепочку, она
+    // удлиняет трассу и сбивает шаг между колодцами, а на плане встаёт как
+    // магистральная. Порог задаёт инженер: съёмка сама их не различает.
+    const survey5 = survey([
+      [0, 0, '690.00'], [0, 1, '686.00'],
+      [40, 0, '689.00'], [40, 1, '687.20'],
+      [80, 0, '688.00'], [80, 1, '684.00'],
+    ])
+    const asIs = extractExistingUtilities(survey5)
+    expect(asIs.chain).toHaveLength(3)
+    expect(asIs.laterals).toHaveLength(0)
+
+    const filtered = extractExistingUtilities(survey5, /канализ/i, { minMainDepthM: 2.5 })
+    expect(filtered.manholes).toHaveLength(3)
+    expect(filtered.chain).toHaveLength(2)
+    expect(filtered.laterals).toHaveLength(1)
+    expect(filtered.laterals[0].depthM).toBeCloseTo(1.8, 2)
+    expect(filtered.reason).toContain('отнесено к врезкам')
+  })
+
+  it('без порога ни одна камера врезкой не считается', () => {
+    const result = extractExistingUtilities(survey([
+      [0, 0, '690.00'], [0, 1, '689.30'],
+      [40, 0, '689.00'], [40, 1, '685.00'],
+      [80, 0, '688.00'], [80, 1, '684.00'],
+    ]))
+    expect(result.laterals).toEqual([])
+    expect(result.chain).toHaveLength(3)
+  })
+
   it('ignores annotation of other utilities', () => {
     const result = extractExistingUtilities(survey([
       [0, 0, '685.00', 'NAD_MТЕПЛОТР'],

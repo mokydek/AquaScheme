@@ -47,6 +47,15 @@ export interface ReconstructionSurveyOptions {
   /** Layers whose annotation describes the line being reconstructed. */
   existingLayerPattern?: RegExp
   /**
+   * Наименьшая глубина камеры магистрали, м: мельче — врезка.
+   *
+   * Умолчания нет. На объекте по ул. Станкевича проверено, что съёмка сама
+   * врезку от магистральной камеры не отличает — ни смещением от оси, ни
+   * отметкой лотка относительно соседей. Разделяет только глубина, и порог
+   * назначает инженер по техническому отчёту.
+   */
+  minMainDepthM?: number
+  /**
    * Роли слоёв, назначенные инженером вручную.
    *
    * Без них путь реконструкции был тупиковым: нераспознанные слои блокируют
@@ -122,7 +131,8 @@ export function buildReconstructionFromSurvey(
   const system = options.system ?? 'sewer'
   const constraints = classifyDxfConstraints(data, options.roleOverrides ?? {})
   const grid = detectSurveyGrid(data)
-  const existing = extractExistingUtilities(data, options.existingLayerPattern ?? /канализ/i)
+  const existing = extractExistingUtilities(data, options.existingLayerPattern ?? /канализ/i,
+    { minMainDepthM: options.minMainDepthM })
   const chain = existing.chain
   const blockers: string[] = []
 
