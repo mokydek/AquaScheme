@@ -30,6 +30,7 @@ import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
 import { ReconstructionSurveySection } from './project/ReconstructionSurveySection'
 import { SourceBundleRunSection } from './project/SourceBundleRunSection'
+import { StankevichaDemoView } from './project/StankevichaDemoView'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
 import { GeologySection } from './project/GeologySection'
@@ -91,6 +92,8 @@ export function ProjectPage() {
   const [lastRun, setLastRun] = useState<SizingResult | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'notFound' | 'loadError'>('loading')
   const [demoBusy, setDemoBusy] = useState(false)
+  const [demoChoiceOpen, setDemoChoiceOpen] = useState(false)
+  const [realObjectShown, setRealObjectShown] = useState(false)
   const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
   const [demoFailures, setDemoFailures] = useState<string[]>([])
   const [demoStage, setDemoStage] = useState<string | null>(null)
@@ -575,13 +578,45 @@ export function ProjectPage() {
               className={`btn btn-ghost btn-sm${demoBusy ? ' is-loading' : ''}`}
               disabled={demoBusy || pipelineBusy}
               aria-busy={demoBusy}
-              onClick={() => void loadDemo()}
+              aria-expanded={demoChoiceOpen}
+              onClick={() => setDemoChoiceOpen((open) => !open)}
             >
               {demoBusy && <span className="button-spinner" aria-hidden="true" />}
               {demoBusy ? 'Загрузка проекта…' : t('project.demo')}
             </button>
           </div>
         </div>
+        {/*
+          Выбор источника демонстрации. Второй вариант читает файлы объекта, а
+          не хранит их: данные реального объекта в репозиторий не попадают, и
+          демо-набор ими не заполняется.
+        */}
+        {demoChoiceOpen && !demoBusy && (
+          <div className="section-actions" role="group" aria-label={t('project.demoChoice.title')}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={demoBusy || pipelineBusy}
+              onClick={() => { setDemoChoiceOpen(false); void loadDemo() }}
+            >
+              {t('project.demoChoice.synthetic')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => { setDemoChoiceOpen(false); setRealObjectShown(true) }}
+            >
+              {t('project.demoChoice.realObject')}
+            </button>
+          </div>
+        )}
+        {realObjectShown && (
+          <div className="panel" style={{ marginTop: 12 }}>
+            <h4>{t('project.stankevicha.title')}</h4>
+            <StankevichaDemoView />
+          </div>
+        )}
+        {demoChoiceOpen && !demoBusy && <p className="hint">{t('project.demoChoice.hint')}</p>}
         <p className="hint">{t('project.pipeline.hint')}</p>
         {datasetsLoadError && (
           <p className="notice error" role="alert">
@@ -646,7 +681,9 @@ export function ProjectPage() {
             реконструкцией, потому что отвечает на тот же вопрос — что удалось
             восстановить из съёмки, а что нет.
           */}
-          {(isSewer || isStorm) && <SourceBundleRunSection projectId={project.id} />}
+          {(isSewer || isStorm) && (
+            <div id="source-bundle-run"><SourceBundleRunSection projectId={project.id} /></div>
+          )}
           {(isSewer || isStorm) && (
             <>
               <ImportSection

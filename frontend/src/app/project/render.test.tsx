@@ -39,6 +39,8 @@ const { LinetypeRolesTable } = await import('./LinetypeRolesTable')
 const { DxfLayerRoleTable } = await import('./DxfLayerRoleTable')
 const { MasterPlanView } = await import('./MasterPlanView')
 const { SourceBundleRunSection } = await import('./SourceBundleRunSection')
+const { StankevichaDemoView } = await import('./StankevichaDemoView')
+const { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } = await import('../../shared/stankevichaDemo')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
 
@@ -337,5 +339,29 @@ describe('прогон комплекта исходных данных', () => 
     expect(m).toContain('project.bundleRun.lastChamber')
     expect(m).toMatch(/id="bundle-first-p1"[^>]*value=""/)
     expect(m).toMatch(/id="bundle-last-p1"[^>]*value=""/)
+  })
+})
+
+describe('демонстрация на настоящем объекте', () => {
+  it('камер столько же, сколько в документах, и это видно как совпадение', () => {
+    expect(STANKEVICHA_CHAMBERS).toHaveLength(STANKEVICHA_CONDITIONS.declaredChambers)
+    expect(html(createElement(StankevichaDemoView))).toContain('project.stankevicha.matches')
+  })
+
+  it('длина считается из координат, а не хранится числом', () => {
+    // Иначе правка координат молча рассогласует подпись с геометрией.
+    const half = stankevichaChainLengthM(STANKEVICHA_CHAMBERS.slice(0, 2))
+    expect(half).toBeGreaterThan(0)
+    expect(half).toBeLessThan(stankevichaChainLengthM())
+    expect(stankevichaChainLengthM()).toBeGreaterThan(STANKEVICHA_CONDITIONS.declaredLengthM)
+  })
+
+  it('расхождение по длине названо прямо, а не спрятано', () => {
+    // Демонстрация на настоящем объекте ценна именно расхождением: если его
+    // убрать с экрана, она станет такой же декорацией, как вымышленная сеть.
+    const markup = html(createElement(StankevichaDemoView))
+    expect(markup).toContain('project.stankevicha.lengthGap')
+    expect(markup).toContain('project.stankevicha.decisions')
+    expect(markup).toMatch(/\+\d+\.\d\d \(\+\d+\.\d%\)/)
   })
 })
