@@ -344,6 +344,47 @@ export function ProjectPage() {
     }
   }
 
+  /**
+   * Загрузка настоящего объекта. Отдельно от синтетического демо: там сеть
+   * выдумана и её не жаль, здесь данные объекта, и замена уже введённого
+   * подтверждается тем же вопросом, что и в демо.
+   */
+  const loadRealObject = async (): Promise<boolean> => {
+    if (!id || demoBusy) return false
+    const hasAnyCurrentData = Object.keys(datasets).length > 0
+      || buildings.length > 0 || nodes.length > 0 || pipes.length > 0
+    if (hasAnyCurrentData && !window.confirm(t('project.demoChoice.replaceConfirm'))) return false
+    setDemoBusy(true)
+    setDemoNotice(null)
+    setDemoFailures([])
+    try {
+      const { STANKEVICHA_PROJECT_NAME, seedStankevichaProject } = await import('../shared/stankevichaSeed')
+      const result = await seedStankevichaProject(id)
+      if (result.failures.length > 0) {
+        await load()
+        setDemoFailures(result.failures)
+        setDemoNotice('demoError')
+        return false
+      }
+      const update = await supabase
+        .from('projects')
+        .update({ name: STANKEVICHA_PROJECT_NAME, system_type: 'sewer', work_type: 'reconstruction' })
+        .eq('id', id)
+      if (update.error) throw update.error
+      await load()
+      setRealObjectShown(true)
+      setDemoNotice('demoDone')
+      return true
+    } catch (error) {
+      await load().catch(() => undefined)
+      setDemoFailures([`объект: ${formatAppError(error)}`])
+      setDemoNotice('demoError')
+      return false
+    } finally {
+      setDemoBusy(false)
+    }
+  }
+
   const runPipeline = async (): Promise<void> => {
     if (!id || pipelineBusy) return
     setPipelineBusy(true)
@@ -604,7 +645,8 @@ export function ProjectPage() {
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => { setDemoChoiceOpen(false); setRealObjectShown(true) }}
+              disabled={demoBusy || pipelineBusy}
+              onClick={() => { setDemoChoiceOpen(false); void loadRealObject() }}
             >
               {t('project.demoChoice.realObject')}
             </button>
