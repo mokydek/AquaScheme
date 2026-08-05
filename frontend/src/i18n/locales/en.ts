@@ -707,7 +707,7 @@ export const en = {
         hint: 'The training network is invented geometry: it shows the calculation works. The real site is the Stankevicha reconstruction: it shows what invented geometry cannot — where the program differs from the documents and what the readiness gate stands on. Your own files can be run below, in the source data set section.',
       },
       profileSheet: {
-        horizonAndScale: 'Datum: {{horizon}} m · horizontal 1:{{horizontal}} · vertical 1:{{vertical}}',
+        horizonAndScale: 'Datum: {{horizon}} m · horizontal 1:{{horizontal}} · vertical 1:{{vertical}} · exaggeration {{exaggeration}}:1 (preview, not a standard scale)',
       },
       bundleRun: {
         title: 'Run a set of source data',

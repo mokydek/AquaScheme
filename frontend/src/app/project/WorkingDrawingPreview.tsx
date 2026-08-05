@@ -61,7 +61,7 @@ function DrawingFrame({ sheet, children, showFrame = true }: { sheet: WorkingDra
       {sheet.status !== 'VERIFIED' && (
         <text
           x="590"
-          y="688"
+          y="712"
           textAnchor="middle"
           fontSize="15"
           fontWeight="700"
@@ -209,6 +209,62 @@ function PlanPreview({
   const ox = (value: number) => 955 + (value - minX) * overviewScale
   const oy = (value: number) => 45 + 88 - (value - minY) * overviewScale
   const linePoints = (points: Array<{ x: number; y: number }>) => points.map((point) => `${x(point.x)},${y(point.y)}`).join(' ')
+
+  /**
+   * Раскладка подписей: место выбирается свободное, а не по чётности номера.
+   *
+   * Прежнее правило ставило колодцы через один вправо-влево без всякой проверки
+   * занятости. На реальном объекте это давало 44 пересекающиеся пары: 41 %
+   * площади подписей закрывалось соседями, ВК-10 исчезал с листа целиком, а у
+   * ВК-12 рамка соседа съедала первую букву — читалось «К-12».
+   *
+   * Кандидаты перебираются по восьми направлениям от точки; берётся первое
+   * место, свободное от уже занятых. Если свободного нет — подпись всё равно
+   * ставится в первом кандидате: спрятать номер колодца хуже, чем наложить.
+   */
+  const placed: Array<{ x: number; y: number; w: number; h: number }> = []
+  const overlaps = (box: { x: number; y: number; w: number; h: number }) =>
+    placed.some((other) => box.x < other.x + other.w && box.x + box.w > other.x
+      && box.y < other.y + other.h && box.y + box.h > other.y)
+  const placeLabel = (cx: number, cy: number, w: number, h: number) => {
+    const offsets: Array<[number, number]> = [
+      [10, -22], [-w - 10, -22], [10, 8], [-w - 10, 8],
+      [10, -40], [-w - 10, -40], [10, 26], [-w - 10, 26],
+    ]
+    for (const [dx, dy] of offsets) {
+      const box = { x: cx + dx, y: cy + dy, w, h }
+      if (!overlaps(box)) { placed.push(box); return box }
+    }
+    const fallback = { x: cx + offsets[0][0], y: cy + offsets[0][1], w, h }
+    placed.push(fallback)
+    return fallback
+  }
+
+  // Подпись помещается, если её ширина не больше длины участка на листе.
+  const pipeOnSheetLength = (pipe: typeof scene.pipes[number]) => {
+    const points = pipe.fragments.flat()
+    if (points.length < 2) return 0
+    const first = points[0]
+    const last = points[points.length - 1]
+    return Math.hypot(x(last.x) - x(first.x), y(last.y) - y(first.y))
+  }
+  /**
+   * Подпись участка ступенчатая: полная, если помещается; иначе один диаметр;
+   * иначе ничего. Строгое правило «или полностью, или никак» на этом объекте
+   * снимало все 13 подписей разом — самый длинный участок 69 м даёт на листе
+   * 108 точек против 130 у полной подписи, — и план оставался без диаметров.
+   * Уклон и длина при этом не пропадают: они в боковике профиля.
+   */
+  const CHAR_WIDTH = 5.2
+  const shownPipeLabels = scene.pipes.map((pipe) => {
+    const available = pipeOnSheetLength(pipe)
+    if (available >= Math.max(52, pipe.label.length * CHAR_WIDTH)) return { pipe, text: pipe.label }
+    const short = pipe.diameterMm ? `Ø${pipe.diameterMm}` : null
+    if (short && available >= short.length * CHAR_WIDTH + 6) return { pipe, text: short }
+    return { pipe, text: null }
+  }).filter((item): item is { pipe: typeof scene.pipes[number]; text: string } => item.text !== null)
+  const shortened = shownPipeLabels.filter((item) => item.text !== item.pipe.label).length
+  const hiddenPipeLabels = scene.pipes.length - shownPipeLabels.length
   return (
     <DrawingFrame sheet={sheet} showFrame={showFrame}>
       <defs><clipPath id={`clip-${sheet.id}`}><rect x={content.x} y={content.y} width={content.width} height={content.height} /></clipPath></defs>
@@ -247,33 +303,54 @@ function PlanPreview({
           />
         )))}
         <polyline points={route} fill="none" stroke="#1746b5" strokeWidth="5" strokeLinejoin="round" />
-        {scene.stations.map((station) => (
+        {/*
+          Пикеты кладутся тем же раскладчиком, что и колодцы. Раньше они
+          ставились в x+8, y−8 без всякой проверки, и рамки колодцев их резали:
+          от «ПК4+6.36» оставалось «36», от «ПК2+84.06» — «.06».
+        */}
+        {scene.stations.map((station) => {
+          const box = placeLabel(x(station.x), y(station.y), Math.max(34, station.label.length * 5.6), 13)
+          return (
           <g key={`station-${station.chainageM}`} data-plan-station={station.chainageM}>
             {station.boundary && <line x1={x(station.x)} y1={content.y} x2={x(station.x)} y2={content.y + content.height} stroke="#d33" strokeDasharray="8 6" />}
             <line x1={x(station.x)} y1={y(station.y) - 7} x2={x(station.x)} y2={y(station.y) + 7} stroke="#111" />
             <circle cx={x(station.x)} cy={y(station.y)} r={station.boundary ? 5 : 3} fill="#fff" stroke="#1746b5" strokeWidth="2" />
-            <text x={x(station.x) + 8} y={y(station.y) - 8} fontSize="10" fontWeight="700">{station.label}</text>
+            <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#fff" fillOpacity="0.85" stroke="none" />
+            <text x={box.x + 2} y={box.y + 10} fontSize="9" fontWeight="700">{station.label}</text>
           </g>
-        ))}
-        {scene.nodes.map((node, index) => {
+          )
+        })}
+        {scene.nodes.map((node) => {
           const labelWidth = Math.max(32, node.label.length * 6)
-          const labelX = index % 2 === 0 ? x(node.x) + 10 : x(node.x) - labelWidth - 10
+          const box = placeLabel(x(node.x), y(node.y), labelWidth, 16)
           return <g key={node.id} data-plan-node={node.id}>
             {node.kind === 'source'
               ? <rect x={x(node.x) - 5} y={y(node.y) - 5} width="10" height="10" fill="#fff" stroke="#1746b5" strokeWidth="2" />
               : <circle cx={x(node.x)} cy={y(node.y)} r="5" fill="#fff" stroke="#1746b5" strokeWidth="2" />}
-            <line x1={x(node.x)} y1={y(node.y)} x2={labelX} y2={y(node.y) - 14} stroke="#333" />
-            <rect x={labelX} y={y(node.y) - 28} width={labelWidth} height="16" fill="#fff" stroke="#555" />
-            <text x={labelX + 4} y={y(node.y) - 17} fontSize="9">{node.label}</text>
+            <line x1={x(node.x)} y1={y(node.y)} x2={box.x + box.w / 2} y2={box.y + box.h} stroke="#333" strokeWidth="0.7" />
+            <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#fff" stroke="#555" />
+            <text x={box.x + 4} y={box.y + 11} fontSize="9">{node.label}</text>
           </g>
         })}
-        {scene.pipes.map((pipe, index) => {
+        {/*
+          Подпись участка ставится только там, где она короче самого участка.
+          Замер на реальном объекте: «Ø450 · i=13.14‰ · L=26.6 м» — это 130
+          точек, а участок P-6 длиной 13,4 м занимает на листе 21 точку, то есть
+          подпись в шесть раз длиннее того, что подписывает. При 1:500 она
+          покрывает 83 м местности. Раскладкой это не лечится: 41 % площади
+          подписей закрывалось соседями, ВК-10 исчезал с листа целиком, а ВК-12
+          читался как «К-12».
+          Пропущенные величины не теряются: диаметр, уклон и длина каждого
+          участка стоят в боковике продольного профиля. Число пропущенных
+          подписей выводится под чертежом — молча ничего не исчезает.
+        */}
+        {shownPipeLabels.map(({ pipe, text }) => {
           const px = x(pipe.labelPoint.x)
-          const py = y(pipe.labelPoint.y) + (index % 2 === 0 ? -10 : 14)
-          const labelWidth = Math.max(52, pipe.label.length * 5.2)
+          const py = y(pipe.labelPoint.y) - 10
+          const labelWidth = Math.max(26, text.length * CHAR_WIDTH + 6)
           return <g key={`label-${pipe.pipeId}`} data-plan-pipe-label={pipe.pipeId} transform={`translate(${px} ${py}) rotate(${-pipe.labelAngleDeg})`}>
-            <rect x="-3" y="-11" width={labelWidth} height="15" fill="#fff" fillOpacity="0.92" stroke="#1746b5" />
-            <text x="1" y="0" fontSize="8.5" fill="#1746b5">{pipe.label}</text>
+            <rect x="-3" y="-11" width={labelWidth} height="15" fill="#fff" stroke="#1746b5" />
+            <text x="1" y="0" fontSize="8.5" fill="#1746b5">{text}</text>
           </g>
         })}
       </g>
@@ -300,7 +377,19 @@ function PlanPreview({
         <line x1="120" y1="12" x2="148" y2="12" stroke="#9b2c8c" strokeDasharray="6 4" /><text x="155" y="15">коммуникации</text>
         <line x1="10" y1="31" x2="38" y2="31" stroke="#d22" /><text x="45" y="34">красные линии / коридор</text>
       </g>
-      <text x="55" y="681" fontSize="9">В окне: {scene.contextFeatureCount} объектов подосновы, {topo.length} высотных отметок, {scene.pipes.length} участков сети, {scene.nodes.length} сооружений.</text>
+      {/*
+        Пояснение под чертежом разбито на две строки: одной оно дотягивалось до
+        середины листа и налезало на отметку статуса.
+      */}
+      <text x="55" y="676" fontSize="9">
+        В окне: {scene.contextFeatureCount} объектов подосновы, {topo.length} высотных отметок, {scene.pipes.length} участков сети, {scene.nodes.length} сооружений.
+      </text>
+      {(shortened > 0 || hiddenPipeLabels > 0) && (
+        <text x="55" y="688" fontSize="9">
+          {shortened > 0 && `Подписей сокращено до диаметра: ${shortened} — уклон и длина в боковике профиля.`}
+          {hiddenPipeLabels > 0 && ` Не поместилось совсем: ${hiddenPipeLabels} из ${scene.pipes.length}.`}
+        </text>
+      )}
     </DrawingFrame>
   )
 }
@@ -395,17 +484,21 @@ function ProfilePreview({ sheet, profile, schedule, showFrame }: {
   const maxElevation = Math.ceil(Math.max(...stations.map((station) => station.groundElevationM)) + 1)
   const x = (chainageM: number) => 180 + ((chainageM - from) / Math.max(to - from, 1)) * 930
   const y = (elevationM: number) => 420 - ((elevationM - minElevation) / Math.max(maxElevation - minElevation, 1)) * 300
-  // Масштаб объявляется вычисленным, а не подписанным «на глаз»: холст листа
-  // задан жёстко, поэтому знаменатель зависит от длины участка и перепада.
-  // Округление до ряда 100/200/500/1000 — то, чем пользуется чертёжник.
-  const roundScale = (value: number) => {
-    const series = [50, 100, 200, 250, 500, 1000, 2000, 5000]
-    return series.find((step) => step >= value) ?? Math.ceil(value / 1000) * 1000
-  }
-  // 1 единица холста ≈ 0,265 мм при печати на А3; отсюда знаменатель.
-  const MM_PER_UNIT = 0.265
-  const horizontalScale = roundScale(Math.max(to - from, 1) * 1000 / (930 * MM_PER_UNIT))
-  const verticalScale = roundScale(Math.max(maxElevation - minElevation, 1) * 1000 / (300 * MM_PER_UNIT))
+  // Масштаб считается от геометрии листа и подписывается как есть.
+  //
+  // Прежняя редакция округляла знаменатель вверх по ряду 100/200/500, но чертёж
+  // при этом не перестраивала — подпись расходилась с рисунком вдвое: по
+  // вертикали выходило 1:100,6, а на листе стояло «1:200». Подписать
+  // округлённый масштаб можно только вместе с перестроением; иначе это
+  // выдуманное число на чертеже, а по нему инженер снимает размеры.
+  //
+  // Ширина холста 1180 единиц соответствует ширине листа А3 — 420 мм.
+  const MM_PER_UNIT = 420 / 1180
+  const horizontalScale = Math.round(Math.max(to - from, 1) * 1000 / (930 * MM_PER_UNIT))
+  const verticalScale = Math.round(Math.max(maxElevation - minElevation, 1) * 1000 / (300 * MM_PER_UNIT))
+  // Превышение вертикали над горизонталью: на продольном профиле его принято
+  // держать около 5:1, здесь оно задано пропорциями холста и потому больше.
+  const exaggeration = (horizontalScale / Math.max(verticalScale, 1)).toFixed(1)
 
   const ground = stations.map((station) => `${x(station.chainageM)},${y(station.groundElevationM)}`).join(' ')
   const invert = stations.map((station) => `${x(station.chainageM)},${y(station.invertElevationM)}`).join(' ')
@@ -424,6 +517,7 @@ function ProfilePreview({ sheet, profile, schedule, showFrame }: {
         horizon: minElevation.toFixed(2),
         horizontal: horizontalScale,
         vertical: verticalScale,
+        exaggeration,
       })}</text>
       {/*
         Линии сетки без отметок высоту прочесть не дают: их было семь, и ни одна
