@@ -29,6 +29,7 @@ import { fetchCatalogs } from '../shared/catalog'
 import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
 import { ReconstructionSurveySection } from './project/ReconstructionSurveySection'
+import { SourceBundleRunSection } from './project/SourceBundleRunSection'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
 import { GeologySection } from './project/GeologySection'
@@ -639,6 +640,13 @@ export function ProjectPage() {
               onSaved={load}
             />
           )}
+          {/*
+            Прогон комплекта исходных данных: что программа выдаст на съёмке
+            реального объекта и чем это отличается от документов. Стоит рядом с
+            реконструкцией, потому что отвечает на тот же вопрос — что удалось
+            восстановить из съёмки, а что нет.
+          */}
+          {(isSewer || isStorm) && <SourceBundleRunSection projectId={project.id} />}
           {(isSewer || isStorm) && (
             <>
               <ImportSection
