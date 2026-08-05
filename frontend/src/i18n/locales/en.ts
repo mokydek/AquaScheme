@@ -150,8 +150,8 @@ export const en = {
       },
       systemTypeNote: {
         water: 'The full calculation cycle is available',
-        sewer: 'The K1 calculation module is in development',
-        storm: 'The K2 calculation module is in development',
+        sewer: 'Gravity calculation, profile and working drawings; issue is opened by the readiness gate',
+        storm: 'Storm runoff, gullies and working drawings; issue is opened by the readiness gate',
       },
       backStep: 'Back',
       create: 'Create project',
