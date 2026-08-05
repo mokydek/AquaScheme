@@ -706,6 +706,9 @@ export const en = {
         replaceConfirm: 'Replace the project data with the Stankevicha site? The network, survey, geology, seismicity, title block and conditions diameters will be overwritten.',
         hint: 'The training network is invented geometry: it shows the calculation works. The real site is the Stankevicha reconstruction: it shows what invented geometry cannot — where the program differs from the documents and what the readiness gate stands on. Your own files can be run below, in the source data set section.',
       },
+      profileSheet: {
+        horizonAndScale: 'Datum: {{horizon}} m · horizontal 1:{{horizontal}} · vertical 1:{{vertical}}',
+      },
       bundleRun: {
         title: 'Run a set of source data',
         conditionsLabel: 'Technical inspection or conditions (PDF with a text layer, TXT)',

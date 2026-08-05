@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import type {
   GravityProfile,
   RouteConstraintInput,
@@ -11,6 +12,16 @@ import type {
 } from '@aquascheme/engine'
 import { buildPlanSheetScene, formatPlanPicket as picket } from '../../shared/planScene'
 import type { PlanPipeDesign } from '../../shared/planScene'
+
+/** Заголовки граф боковика профиля. Состав постоянный, поэтому вынесен из тела. */
+const PROFILE_ROWS = [
+  'Отметка лотка, м',
+  'Отметка земли, м',
+  'Диаметр, мм',
+  'Уклон / длина',
+  'Расстояние, м',
+  'Колодец / ПК',
+]
 
 function statusText(status: WorkingDrawingSheet['status']): string {
   return {
@@ -40,16 +51,23 @@ function DrawingFrame({ sheet, children, showFrame = true }: { sheet: WorkingDra
         <text x="1126" y="758" textAnchor="middle" fontSize="9">{sheet.status}</text>
       </>}
       {children}
+      {/*
+        Отметка статуса вынесена под поле чертежа и не повёрнута. Наискось через
+        середину она перекрывала 25 % площади графика — 6067 точек краски внутри
+        поля, 18 из них в пределах точки от линии лотка, — то есть мешала читать
+        ровно то, ради чего лист и смотрят. Предупреждение обязано быть видным,
+        но не поверх линий.
+      */}
       {sheet.status !== 'VERIFIED' && (
         <text
           x="590"
-          y="400"
+          y="688"
           textAnchor="middle"
-          fontSize="34"
+          fontSize="15"
           fontWeight="700"
+          letterSpacing="2"
           fill={sheet.status === 'BLOCKED' || sheet.status === 'STALE' ? '#b42318' : '#8a5a00'}
-          opacity="0.24"
-          transform="rotate(-18 590 400)"
+          opacity="0.75"
         >
           {statusText(sheet.status)}
         </text>
@@ -348,7 +366,24 @@ function NetworkPlanPreview({
   )
 }
 
-function ProfilePreview({ sheet, profile, showFrame }: { sheet: WorkingDrawingSheet; profile: GravityProfile | null; showFrame: boolean }) {
+/**
+ * Продольный профиль.
+ *
+ * Боковик объявлял шесть граф, а заполнял четыре: «Уклон / длина» и
+ * «Расстояние, м» оставались пустыми — треть высоты боковика (62 точки из 186)
+ * занимали пустые строки с заголовками. Обе величины считаются из тех же
+ * станций, что и линии, и никаких новых исходных данных не требуют.
+ *
+ * Номер колодца брать неоткуда, пока в вид не передана ведомость: у станции
+ * профиля есть только `nodeId`, а марка колодца живёт в `schedule.manholes`.
+ */
+function ProfilePreview({ sheet, profile, schedule, showFrame }: {
+  sheet: WorkingDrawingSheet
+  profile: GravityProfile | null
+  schedule: SewerSchedule | null
+  showFrame: boolean
+}) {
+  const { t } = useTranslation()
   const stations = (profile?.stations ?? []).filter((station) => !sheet.interval
     || (station.chainageM >= sheet.interval.fromM - 1e-9 && station.chainageM <= sheet.interval.toM + 1e-9))
   if (stations.length < 2) {
@@ -360,14 +395,52 @@ function ProfilePreview({ sheet, profile, showFrame }: { sheet: WorkingDrawingSh
   const maxElevation = Math.ceil(Math.max(...stations.map((station) => station.groundElevationM)) + 1)
   const x = (chainageM: number) => 180 + ((chainageM - from) / Math.max(to - from, 1)) * 930
   const y = (elevationM: number) => 420 - ((elevationM - minElevation) / Math.max(maxElevation - minElevation, 1)) * 300
+  // Масштаб объявляется вычисленным, а не подписанным «на глаз»: холст листа
+  // задан жёстко, поэтому знаменатель зависит от длины участка и перепада.
+  // Округление до ряда 100/200/500/1000 — то, чем пользуется чертёжник.
+  const roundScale = (value: number) => {
+    const series = [50, 100, 200, 250, 500, 1000, 2000, 5000]
+    return series.find((step) => step >= value) ?? Math.ceil(value / 1000) * 1000
+  }
+  // 1 единица холста ≈ 0,265 мм при печати на А3; отсюда знаменатель.
+  const MM_PER_UNIT = 0.265
+  const horizontalScale = roundScale(Math.max(to - from, 1) * 1000 / (930 * MM_PER_UNIT))
+  const verticalScale = roundScale(Math.max(maxElevation - minElevation, 1) * 1000 / (300 * MM_PER_UNIT))
+
   const ground = stations.map((station) => `${x(station.chainageM)},${y(station.groundElevationM)}`).join(' ')
   const invert = stations.map((station) => `${x(station.chainageM)},${y(station.invertElevationM)}`).join(' ')
-  const rows = ['Отметка лотка, м', 'Отметка земли, м', 'Диаметр, мм', 'Уклон / длина', 'Расстояние, м', 'Колодец / ПК']
+  // Марка колодца ведомости, если она есть; иначе — обозначение узла сети.
+  // Пустой графы быть не должно: инженер по ней и находит колодец на плане.
+  const labelByNode = new Map((schedule?.manholes ?? [])
+    .filter((manhole) => manhole.nodeId)
+    .map((manhole) => [manhole.nodeId as string, manhole.label]))
+  const manholeLabel = (nodeId: string) => labelByNode.get(nodeId) ?? nodeId
+
+  const rows = PROFILE_ROWS
   return (
     <DrawingFrame sheet={sheet} showFrame={showFrame}>
       <text x="55" y="48" fontSize="17" fontWeight="700">{sheet.title}</text>
-      <text x="55" y="84" fontSize="10">Условный горизонт: {minElevation.toFixed(2)} м</text>
-      {Array.from({ length: 7 }, (_, index) => <line key={index} x1="180" y1={120 + index * 50} x2="1110" y2={120 + index * 50} stroke="#ddd" />)}
+      <text x="55" y="84" fontSize="10">{t('project.profileSheet.horizonAndScale', {
+        horizon: minElevation.toFixed(2),
+        horizontal: horizontalScale,
+        vertical: verticalScale,
+      })}</text>
+      {/*
+        Линии сетки без отметок высоту прочесть не дают: их было семь, и ни одна
+        не подписана. Подпись ставится слева, у самой линии.
+      */}
+      {Array.from({ length: 7 }, (_, index) => {
+        const lineY = 120 + index * 50
+        const elevation = minElevation + (420 - lineY) / 300 * (maxElevation - minElevation)
+        return (
+          <g key={index}>
+            <line x1="180" y1={lineY} x2="1110" y2={lineY} stroke="#ddd" />
+            <text x="176" y={lineY + 3} textAnchor="end" fontSize="7.5" fill="#555">
+              {elevation.toFixed(2)}
+            </text>
+          </g>
+        )
+      })}
       <polyline points={ground} fill="none" stroke="#6c5134" strokeWidth="2.5" />
       <polyline points={invert} fill="none" stroke="#1746b5" strokeWidth="3.5" />
       {stations.map((station) => (
@@ -380,15 +453,46 @@ function ProfilePreview({ sheet, profile, showFrame }: { sheet: WorkingDrawingSh
           <text x="61" y={490 + index * 31} fontSize="9">{label}</text>
         </g>
       ))}
-      {stations.map((station) => (
+      {stations.map((station, index) => {
+        // Колонки ближе 26 точек не вмещают «685.55» рядом: числа сливаются в
+        // «685.55685.46». Тесная колонка опускается на второй ярус — приём
+        // чертёжника, а не уменьшение шрифта до нечитаемого.
+        const previousX = index > 0 ? x(stations[index - 1].chainageM) : -Infinity
+        const tight = x(station.chainageM) - previousX < 26
+        const drop = tight ? 9 : 0
+        return (
         <g key={`table-${station.nodeId}`}>
           <line x1={x(station.chainageM)} y1="470" x2={x(station.chainageM)} y2="656" stroke="#bbb" />
-          <text x={x(station.chainageM)} y="489" textAnchor="middle" fontSize="8">{station.invertElevationM.toFixed(2)}</text>
-          <text x={x(station.chainageM)} y="520" textAnchor="middle" fontSize="8">{station.groundElevationM.toFixed(2)}</text>
-          <text x={x(station.chainageM)} y="551" textAnchor="middle" fontSize="8">{station.diameterMm}</text>
-          <text x={x(station.chainageM)} y="644" textAnchor="middle" fontSize="8">{picket(station.chainageM)}</text>
+          <text x={x(station.chainageM)} y={489 + drop} textAnchor="middle" fontSize="8">{station.invertElevationM.toFixed(2)}</text>
+          <text x={x(station.chainageM)} y={520 + drop} textAnchor="middle" fontSize="8">{station.groundElevationM.toFixed(2)}</text>
+          <text x={x(station.chainageM)} y={551 + drop} textAnchor="middle" fontSize="8">{station.diameterMm}</text>
+          <text x={x(station.chainageM)} y={641 + drop} textAnchor="middle" fontSize="7.5">
+            {manholeLabel(station.nodeId)}
+          </text>
+          <text x={x(station.chainageM)} y={651 + drop} textAnchor="middle" fontSize="7">
+            {picket(station.chainageM)}
+          </text>
         </g>
-      ))}
+        )
+      })}
+      {/*
+        Уклон, длина и расстояние относятся к участку между станциями, а не к
+        станции, поэтому подписываются посередине пролёта.
+      */}
+      {stations.slice(1).map((station, index) => {
+        const previous = stations[index]
+        const lengthM = station.chainageM - previous.chainageM
+        const fall = previous.invertElevationM - station.invertElevationM
+        const middle = (x(previous.chainageM) + x(station.chainageM)) / 2
+        return (
+          <g key={`span-${previous.nodeId}-${station.nodeId}`}>
+            <text x={middle} y="582" textAnchor="middle" fontSize="7.5">
+              {lengthM > 0 ? `${(fall / lengthM * 1000).toFixed(1)}‰ · ${lengthM.toFixed(1)}` : '—'}
+            </text>
+            <text x={middle} y="613" textAnchor="middle" fontSize="7.5">{lengthM.toFixed(2)}</text>
+          </g>
+        )
+      })}
     </DrawingFrame>
   )
 }
@@ -541,7 +645,7 @@ export function WorkingDrawingPreview({
 }) {
   if (sheet.kind === 'plan') return <PlanPreview sheet={sheet} drawingSet={drawingSet} network={network} schedule={schedule} pipeDiameterMm={pipeDiameterMm} pipeDesign={pipeDesign} buildingLabels={buildingLabels} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
   if (sheet.kind === 'network_plan') return <NetworkPlanPreview sheet={sheet} drawingSet={drawingSet} surveyPoints={surveyPoints} showTopography={showTopography} showFrame={showFrame} constraints={constraints} />
-  if (sheet.kind === 'profile') return <ProfilePreview sheet={sheet} profile={sheet.profileData ?? profile} showFrame={showFrame} />
+  if (sheet.kind === 'profile') return <ProfilePreview sheet={sheet} profile={sheet.profileData ?? profile} schedule={schedule} showFrame={showFrame} />
   if (sheet.kind === 'material_table') return <MaterialPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
   if (sheet.kind === 'specification') return <SpecificationPreview sheet={sheet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
   return <DetailPreview sheet={sheet} drawingSet={drawingSet} schedule={schedule} manholeConstructions={manholeConstructions} showFrame={showFrame} />
