@@ -38,6 +38,7 @@ const { BlockStructuresTable } = await import('./BlockStructuresTable')
 const { LinetypeRolesTable } = await import('./LinetypeRolesTable')
 const { DxfLayerRoleTable } = await import('./DxfLayerRoleTable')
 const { MasterPlanView } = await import('./MasterPlanView')
+const { SourceBundleRunSection } = await import('./SourceBundleRunSection')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
 
@@ -308,5 +309,23 @@ describe('сверка со схемой генплана на экране', ()
     const markup = render({ segments: [{ id: 'У-9', planDiameterMm: 500 }] })
     expect(markup).toContain('project.masterPlan.missing')
     expect(markup).toContain('У-9')
+  })
+})
+
+describe('прогон комплекта исходных данных', () => {
+  const markup = () => html(createElement(SourceBundleRunSection, { projectId: 'p1' }))
+
+  it('без диаметра файл не принимается: он берётся из ТУ, а не из съёмки', () => {
+    expect(markup()).toContain('project.bundleRun.needDiameter')
+    expect(markup()).toMatch(/type="file"[^>]*disabled/)
+  })
+
+  it('порог глубины врезок есть на экране и пуст по умолчанию', () => {
+    // Без поля на экране порог остаётся только в движке, и проверить его
+    // на сайте нельзя. Пустым он и должен быть: умолчания у него нет.
+    const m = markup()
+    expect(m).toContain('project.bundleRun.minMainDepth')
+    expect(m).toContain('project.bundleRun.minMainDepthHint')
+    expect(m).toMatch(/id="bundle-depth-p1"[^>]*value=""/)
   })
 })

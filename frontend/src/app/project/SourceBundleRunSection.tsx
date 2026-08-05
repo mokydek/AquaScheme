@@ -48,6 +48,7 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [diameterMm, setDiameterMm] = useState<number | null>(null)
+  const [minMainDepthM, setMinMainDepthM] = useState<number | null>(null)
   const [reference, setReference] = useState<Reference>({})
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -67,6 +68,9 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
       setResult(buildReconstructionFromSurvey(data, {
         designDiameterMm: diameterMm ?? 0,
         system: 'sewer',
+        // Порог не подставляется по умолчанию: съёмка сама врезку от
+        // магистральной камеры не отличает, и число назначает инженер.
+        ...(minMainDepthM !== null ? { minMainDepthM } : {}),
       }))
       setFileName(file.name)
     } catch (cause) {
@@ -101,6 +105,24 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
               setDiameterMm(Number.isFinite(value) && value > 0 ? value : null)
             }}
           />
+        </label>
+        <label className="field" htmlFor={`bundle-depth-${projectId}`}>
+          <span className="field-label">{t('project.bundleRun.minMainDepth')}</span>
+          <input
+            id={`bundle-depth-${projectId}`}
+            name={`bundle-depth-${projectId}`}
+            className="input"
+            type="number"
+            min={0}
+            step={0.1}
+            value={minMainDepthM ?? ''}
+            disabled={busy}
+            onChange={(event) => {
+              const value = Number(event.target.value)
+              setMinMainDepthM(event.target.value !== '' && Number.isFinite(value) && value > 0 ? value : null)
+            }}
+          />
+          <span className="hint">{t('project.bundleRun.minMainDepthHint')}</span>
         </label>
         <label className="field" htmlFor={`bundle-ref-length-${projectId}`}>
           <span className="field-label">{t('project.bundleRun.refLength')}</span>
@@ -199,6 +221,22 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
           {result.existing?.detachedCount ? (
             <p className="stat-line warn">
               {t('project.bundleRun.detached', { count: result.existing.detachedCount })}
+            </p>
+          ) : null}
+
+          {/*
+            Отделённые врезки называются поимённо, с глубиной. Иначе порог
+            выглядел бы как «убрало три штуки» без возможности проверить, те ли
+            это камеры: суждение о принадлежности должно быть перепроверяемым.
+          */}
+          {result.existing?.laterals?.length ? (
+            <p className="stat-line">
+              {t('project.bundleRun.laterals', {
+                count: result.existing.laterals.length,
+                list: result.existing.laterals
+                  .map((chamber) => chamber.depthM.toFixed(2))
+                  .join(', '),
+              })}
             </p>
           ) : null}
 
