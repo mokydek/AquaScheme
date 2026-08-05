@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
 import { buildReconstructionFromSurvey } from '@aquascheme/engine'
-import type { ReconstructionFromSurvey } from '@aquascheme/engine'
+import type { ConditionsFromText, ReconstructionFromSurvey } from '@aquascheme/engine'
 import { routeUpload } from '../../shared/upload'
 import { Panel } from './Panel'
 
@@ -17,7 +17,13 @@ import { Panel } from './Panel'
  * находка, а не ошибка ввода, и решение по нему принимает инженер.
  *
  * Данные объекта здесь не хранятся и в репозиторий не попадают: файл читается
- * в браузере, эталон вводится руками.
+ * в браузере.
+ *
+ * Диаметр, длину и число колодцев инженер больше не вводит: они написаны в
+ * техническом обследовании прямым текстом и читаются из него. Рядом с каждой
+ * величиной показывается фрагмент документа, откуда она взята, — иначе
+ * проверить прочтение нельзя, а верить программе на слово в проектном деле
+ * нечему.
  */
 
 interface Reference {
@@ -52,6 +58,50 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
   const [firstChamber, setFirstChamber] = useState<number | null>(null)
   const [lastChamber, setLastChamber] = useState<number | null>(null)
   const [reference, setReference] = useState<Reference>({})
+  const [conditions, setConditions] = useState<ConditionsFromText | null>(null)
+  const [conditionsFile, setConditionsFile] = useState<string | null>(null)
+
+  /**
+   * Чтение документа. Скан без текстового слоя даёт пустой текст — об этом
+   * говорится прямо, а не молчаливым «ничего не найдено».
+   */
+  const onConditions = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setBusy(true)
+    setError(null)
+    try {
+      const { loadPdfTextByPage } = await import('../../shared/pdfText')
+      const pages = /\.pdf$/i.test(file.name)
+        ? await loadPdfTextByPage(file)
+        : []
+      const text = pages.length > 0
+        ? pages.flatMap((page) => page.items.map((item) => item.str)).join(' ')
+        : await file.text()
+      if (text.trim() === '') {
+        setError(t('project.bundleRun.noTextLayer'))
+        setConditions(null)
+        return
+      }
+      const { extractConditionsFromText } = await import('@aquascheme/engine')
+      const found = extractConditionsFromText(text)
+      setConditions(found)
+      setConditionsFile(file.name)
+      // Прочитанное подставляется в поля: инженер видит источник и может
+      // поправить, но перепечатывать написанное в документе не должен.
+      if (found.diameterMm) setDiameterMm(found.diameterMm.value)
+      setReference((prev) => ({
+        ...prev,
+        lengthM: found.lengthM?.value ?? prev.lengthM,
+        manholes: found.chambers?.value ?? prev.manholes,
+      }))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+      event.target.value = ''
+    }
+  }
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -93,6 +143,50 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
   return (
     <Panel title={t('project.bundleRun.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.bundleRun.hint')}</p>
+
+      <div className="section-actions">
+        <input
+          id={`bundle-conditions-${projectId}`}
+          name={`bundle-conditions-${projectId}`}
+          className="file-input"
+          type="file"
+          accept=".pdf,.txt"
+          aria-label={t('project.bundleRun.conditionsLabel')}
+          disabled={busy}
+          onChange={(event) => void onConditions(event)}
+        />
+      </div>
+      {conditions && (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead><tr>
+              <th scope="col">{t('project.bundleRun.thRead')}</th>
+              <th scope="col" className="num">{t('project.bundleRun.thValue')}</th>
+              <th scope="col">{t('project.bundleRun.thQuote')}</th>
+            </tr></thead>
+            <tbody>
+              {([
+                ['readDiameter', conditions.diameterMm],
+                ['readLength', conditions.lengthM],
+                ['readChambers', conditions.chambers],
+                ['readMaterial', conditions.material],
+              ] as const).map(([key, found]) => (
+                <tr key={key}>
+                  <td>{t(`project.bundleRun.${key}`)}</td>
+                  <td className="num">{found ? String(found.value) : '—'}</td>
+                  <td className="hint">{found ? `«${found.quote}»` : t('project.bundleRun.notFound')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {conditions && conditions.ambiguous.length > 0 && (
+        <p className="stat-line warn">
+          {t('project.bundleRun.ambiguous', { list: conditions.ambiguous.join('; ') })}
+        </p>
+      )}
+      {conditionsFile && <p className="stat-line">{t('project.bundleRun.conditionsFile', { name: conditionsFile })}</p>}
 
       <div className="form-grid">
         <label className="field" htmlFor={`bundle-diameter-${projectId}`}>

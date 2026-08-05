@@ -77,3 +77,4 @@ export * from './demoStorm'
 // Note: ./dxf is a subpath export only (it pulls in @tarikjabiri/dxf), so the
 // DXF library stays out of bundles that do not generate drawings.
 export * from './geo'
+export * from './norms/conditions-text'
