@@ -345,3 +345,23 @@ describe('designGravitySegment minBurial strategy (benchmark G-14)', () => {
     expect(a.issues.filter((i) => i.code === 'overMaxFilling')).toHaveLength(0)
   })
 })
+
+describe('нулевой расчётный расход', () => {
+  it('диаметр не подбирается, а принимается по ряду, и об этом сказано', () => {
+    // Раньше перебор доходил до конца ряда: ни один диаметр не проходит
+    // проверку на самоочищение при нулевой скорости. На реконструкции по
+    // ул. Станкевича, где притока по зданиям нет, в план так попадало «Ø2400»
+    // с замечанием о переполнении — при нулевом-то расходе.
+    const design = designGravitySegment(0, { system: 'sewer' })
+    expect(design.fillRatio).toBe(0)
+    expect(design.velocityMs).toBe(0)
+    expect(design.issues.map((issue) => issue.code)).toEqual(['noDesignFlow'])
+    expect(design.diameterMm).toBeLessThan(500)
+  })
+
+  it('ряд по техническим условиям принимается как есть', () => {
+    const design = designGravitySegment(0, { system: 'sewer', allowedDiametersMm: [450] })
+    expect(design.diameterMm).toBe(450)
+    expect(design.issues.map((issue) => issue.code)).toEqual(['noDesignFlow'])
+  })
+})

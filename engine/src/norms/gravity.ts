@@ -100,6 +100,8 @@ export type GravityIssueCode =
   | 'overMaxFilling'
   | 'overMaxVelocity'
   | 'noSuitableDiameter'
+  /** Расчётного расхода нет — диаметр не подобран, а принят по ряду. */
+  | 'noDesignFlow'
 
 export interface GravityIssue {
   code: GravityIssueCode
@@ -166,6 +168,31 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
     : [...GRAVITY_DIAMETERS]
   const candidates = catalogue.filter((d) => d >= minDia)
   let fallback: GravitySegmentDesign | null = null
+
+  // Нулевой расчётный расход — не исходное данное для подбора. Наполнения и
+  // скорости у него нет, проверку на самоочищение не проходит ни один диаметр,
+  // и перебор доходил до конца ряда: на реконструкции по ул. Станкевича, где
+  // притока по зданиям нет, в план шло «Ø2400» с замечанием о переполнении —
+  // при нулевом-то расходе. Диаметр здесь не подбирается, а принимается по
+  // техническим условиям, и сказать об этом надо прямо.
+  if (!(flowLps > 0)) {
+    const adopted = candidates[0] ?? minDia
+    return {
+      diameterMm: adopted,
+      slope: Math.round(Math.max(groundSlope, minSlopeForDiameter(adopted)?.value ?? 0, 0.0005) * 1e5) / 1e5,
+      fillRatio: 0,
+      velocityMs: 0,
+      flowLps,
+      issues: [
+        {
+          code: 'noDesignFlow',
+          refs: ['sewer.minDiameter'],
+          message: 'Расчётного расхода нет: диаметр не подобран, а принят наименьший из заданного ряда.'
+            + ' Задайте ряд по техническим условиям либо приток по зданиям',
+        },
+      ],
+    }
+  }
 
   if (opts.strategy === 'minBurial') {
     // For every diameter find the smallest workable slope (filling and
