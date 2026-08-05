@@ -2,15 +2,21 @@ import { describe, expect, it } from 'vitest'
 import type { DxfNetworkData } from './dxfread'
 import { extractExistingUtilities } from './existing-utilities'
 
-function survey(texts: Array<[number, number, string, string?]>): DxfNetworkData {
+function survey(
+  texts: Array<[number, number, string, string?]>,
+  segments: DxfNetworkData['segments'] = [],
+): DxfNetworkData {
   return {
     ok: true,
     points: [],
     layers: [{ name: 'NAD_MКАНАЛИЗ', segments: 0, points: 0 }],
-    segments: [],
+    segments,
     textEntities: texts.map(([x, y, text, layer]) => ({ x, y, text, layer: layer ?? 'NAD_MКАНАЛИЗ' })),
   }
 }
+
+const line = (layer: string, a: [number, number], b: [number, number]) =>
+  ({ layer, points: [{ x: a[0], y: a[1] }, { x: b[0], y: b[1] }] })
 
 describe('existing utilities recovered from survey annotation', () => {
   it('pairs rim and invert labels into chambers with a depth', () => {
@@ -175,6 +181,44 @@ describe('existing utilities recovered from survey annotation', () => {
       .toHaveLength(3)
     // Номер за пределом цепочки не создаёт пустоты.
     expect(extractExistingUtilities(three, /канализ/i, { lastChamber: 99 }).chain).toHaveLength(3)
+  })
+
+
+  it('камера переносится с подписи на объект по выноске', () => {
+    // Отметки подписывают сбоку от колодца и соединяют выноской: подпись стоит
+    // там, где для неё есть место. Пока координатой служила позиция подписи,
+    // каждая вершина трассы несла сдвиг в несколько метров, и ломаная выходила
+    // длиннее настоящей — на ул. Станкевича трасса удлинялась на 4,9 м.
+    const result = extractExistingUtilities(survey(
+      [
+        [0, 0, '690.00'], [0, 1, '686.00'],
+        // Подпись отнесена на 3 м вбок от трубы, к ней ведёт выноска.
+        [40, 3, '689.00'], [40, 4, '685.00'],
+        [80, 0, '688.00'], [80, 1, '684.00'],
+      ],
+      [
+        line('SIT_LКАНАЛИЗ', [0, 0], [40, 0]),
+        line('SIT_LКАНАЛИЗ', [40, 0], [80, 0]),
+        line('NAD_MКАНАЛИЗ', [40, 3], [40, 0]),
+      ],
+    ))
+    const middle = result.chain[1]
+    expect(middle.y).toBeCloseTo(0, 2)
+    expect(result.chainLengthM).toBeCloseTo(80, 1)
+  })
+
+  it('без линий сети и без выноски позиция остаётся прежней', () => {
+    // Гадать, в какую сторону сдвигать камеру, нельзя.
+    const bare = extractExistingUtilities(survey([
+      [40, 3, '689.00'], [40, 4, '685.00'],
+    ]))
+    expect(bare.manholes[0].y).toBeCloseTo(3, 2)
+
+    const noLeader = extractExistingUtilities(survey(
+      [[40, 3, '689.00'], [40, 4, '685.00']],
+      [line('SIT_LКАНАЛИЗ', [0, 0], [80, 0])],
+    ))
+    expect(noLeader.manholes[0].y).toBeCloseTo(3, 2)
   })
 
   it('ignores annotation of other utilities', () => {

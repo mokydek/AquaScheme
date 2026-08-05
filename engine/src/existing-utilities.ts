@@ -174,6 +174,8 @@ export function extractExistingUtilities(
     })
   }
 
+  snapChambersToLeaders(manholes, data, layerPattern, elevations.map((item) => item.entity))
+
   // Врезки отделяются до построения цепочки: попав в неё, они удлиняют трассу
   // и сбивают шаг между колодцами, а на плане встают как магистральные.
   const minMainDepthM = options.minMainDepthM
@@ -227,6 +229,78 @@ export function extractExistingUtilities(
         + (detachedCount > 0
           ? `; вне цепочки ${detachedCount} — вероятно, другая ветвь, участок выбирает инженер.`
           : '.'),
+  }
+}
+
+/** Дальше этого выноска к камере не относится. Реальные — 3,2…3,8 м. */
+const LEADER_RADIUS_M = 3
+
+/**
+ * Переносит камеру с позиции подписи на объект, куда указывает выноска.
+ *
+ * Отметки съёмщик подписывает сбоку от колодца и соединяет выноской: подпись
+ * стоит там, где для неё есть место, а не там, где колодец. Пока координатой
+ * камеры служила позиция подписи, каждая вершина трассы несла свой сдвиг в
+ * несколько метров, и ломаная выходила длиннее настоящей — на ул. Станкевича
+ * сдвиги достигали 3,7 м, а трасса удлинялась на 4,9 м.
+ *
+ * Какой конец выноски — объект, определяется линией самой сети: колодец стоит
+ * на трубе. Поэтому из двух концов берётся тот, что ближе к штрихам условного
+ * знака сети. Если сети на чертеже нет или выноски у камеры нет, позиция
+ * остаётся прежней: гадать, в какую сторону сдвигать, нельзя.
+ */
+function snapChambersToLeaders(
+  manholes: ExistingManhole[],
+  data: DxfNetworkData,
+  layerPattern: RegExp,
+  labelEntities: DxfTextEntity[],
+): void {
+  // Слой подписей определяется по доле отметок, а не по наличию текста: на
+  // слое самой сети у Станкевича лежит одна случайная надпись, и по признаку
+  // «есть текст» слой сети тоже считался подписным — штрихов не оставалось
+  // вовсе, и перенос молча не срабатывал.
+  const byLayer = new Map<string, number>()
+  for (const entity of labelEntities) {
+    const layer = entity.layer ?? ''
+    byLayer.set(layer, (byLayer.get(layer) ?? 0) + 1)
+  }
+  const labelLayers = new Set(
+    [...byLayer].filter(([, count]) => count >= labelEntities.length / 4).map(([layer]) => layer))
+  const matching = (data.segments ?? []).filter((segment) =>
+    layerPattern.test(segment.layer ?? '') && (segment.points?.length ?? 0) >= 2)
+  // Выноски лежат на слое подписей, штрихи сети — на остальных слоях сети.
+  const leaders = matching.filter((segment) => labelLayers.has(segment.layer ?? ''))
+  const strokes = matching.filter((segment) => !labelLayers.has(segment.layer ?? ''))
+  if (leaders.length === 0 || strokes.length === 0) return
+
+  const toStrokes = (x: number, y: number) => {
+    let best = Infinity
+    for (const stroke of strokes) {
+      for (const point of stroke.points) {
+        const distance = Math.hypot(point.x - x, point.y - y)
+        if (distance < best) best = distance
+      }
+    }
+    return best
+  }
+
+  for (const manhole of manholes) {
+    let candidate: { x: number; y: number } | null = null
+    let bestAttachment = Infinity
+    for (const leader of leaders) {
+      const ends = [leader.points[0], leader.points[leader.points.length - 1]]
+      for (let k = 0; k < 2; k++) {
+        const attachment = Math.hypot(ends[k].x - manhole.x, ends[k].y - manhole.y)
+        if (attachment > LEADER_RADIUS_M || attachment >= bestAttachment) continue
+        bestAttachment = attachment
+        candidate = { x: ends[1 - k].x, y: ends[1 - k].y }
+      }
+    }
+    if (!candidate) continue
+    if (toStrokes(candidate.x, candidate.y) < toStrokes(manhole.x, manhole.y)) {
+      manhole.x = candidate.x
+      manhole.y = candidate.y
+    }
   }
 }
 
