@@ -774,9 +774,25 @@ function protectiveGridIssues(design: ProtectiveGridDesign | null | undefined): 
   return issues
 }
 
+/**
+ * Проверки, общие для всех плановых листов.
+ *
+ * Здесь был мёртвый параметр `missingAlignmentPipeIds` и стоп-фактор
+ * PIPE_ALIGNMENT_MISSING: функция вызывалась ровно один раз и с пустым
+ * литералом, поэтому код не выставлялся никогда. Убран не потому, что потеря
+ * оси безобидна, а потому, что от неё защищают два других механизма, и оба
+ * проверены тестами:
+ *
+ *   - путь с участком без фактической оси не строится вовсе
+ *     (`workingDrawingPlanPaths`: `if (built.missingAlignmentPipeIds.length > 0) continue`),
+ *     и лист остаётся без интервала — срабатывает PLAN_GEOMETRY_MISSING;
+ *   - боковая ветвь без оси блокирует сводный план кодом NETWORK_ALIGNMENT_MISSING.
+ *
+ * Неработающая проверка рядом с работающими опаснее её отсутствия: она читается
+ * как гарантия, которой нет.
+ */
 function sharedPlanChecks(
   input: WorkingDrawingInput,
-  missingAlignmentPipeIds: string[],
 ): { blockers: WorkingDrawingIssue[]; warnings: WorkingDrawingIssue[]; sources: WorkingDrawingSource[] } {
   const blockers: WorkingDrawingIssue[] = []
   const warnings: WorkingDrawingIssue[] = []
@@ -784,11 +800,6 @@ function sharedPlanChecks(
   const georeferenced = !!input.georeference && input.georeference.kind !== 'unreferenced'
   if (input.routeStatus === 'blocked') blockers.push(issue('ROUTE_BLOCKED', 'Проектная трасса имеет неустранённые стоп-факторы.', 'route'))
   if (input.routeStatus === 'stale') blockers.push(issue('ROUTE_STALE', 'Исходные данные изменены; трассу необходимо пересчитать.', 'route'))
-  if (missingAlignmentPipeIds.length > 0) blockers.push(issue(
-    'PIPE_ALIGNMENT_MISSING',
-    `У ${missingAlignmentPipeIds.length} участков отсутствует фактическая полилиния оси; соединение конечных точек не допускается.`,
-    'route',
-  ))
   if (!georeferenced) blockers.push(issue('GEOREFERENCE_MISSING', 'Не подтверждена система координат или геопривязка проекта.', 'georeference'))
   if (surveyCount < 2) blockers.push(issue('TOPOGRAPHY_MISSING', 'Недостаточно точек топографической съёмки для планов и профилей.', 'topography'))
   if (input.planContextFeatureCount === 0) blockers.push(issue(
@@ -808,7 +819,10 @@ function sharedPlanChecks(
   blockers.push(...deliverableRequirementIssues(input))
   if (input.routeStatus === 'preliminary') warnings.push(issue('ROUTE_PRELIMINARY', 'Трасса имеет предварительный статус.', 'route'))
   const sources = [
-    makeSource('route', input.network.pipes.length > 0 && missingAlignmentPipeIds.length === 0, input.routeStatus === 'calculated', undefined, `${input.network.pipes.length} участков`),
+    // Условие `missingAlignmentPipeIds.length === 0` убрано вместе с мёртвым
+    // параметром: список всегда приходил пустым, и слагаемое было тождественно
+    // истинным. Поведение не меняется.
+    makeSource('route', input.network.pipes.length > 0, input.routeStatus === 'calculated', undefined, `${input.network.pipes.length} участков`),
     makeSource('georeference', georeferenced, georeferenced, input.georeference?.source),
     makeSource(
       'topography',
@@ -1018,7 +1032,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     opts,
   })
 
-  const planChecks = sharedPlanChecks(input, [])
+  const planChecks = sharedPlanChecks(input)
   const planItems: Array<{
     planPath?: WorkingDrawingPlanPath
     interval?: SheetInterval

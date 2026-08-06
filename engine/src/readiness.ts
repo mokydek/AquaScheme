@@ -74,7 +74,6 @@ const SECTION_BY_CODE: Record<string, string> = {
   ROUTE_INPUT_BLOCKER: 'Ситуационная схема: стоп-факторы',
   NETWORK_GEOMETRY_MISSING: 'Ситуационная схема',
   NETWORK_ALIGNMENT_MISSING: 'Ситуационная схема',
-  PIPE_ALIGNMENT_MISSING: 'Ситуационная схема',
   PLAN_GEOMETRY_MISSING: 'Ситуационная схема',
   PROFILE_DATA_MISSING: 'Самотёчный расчёт',
   PROFILE_ALIGNMENT_MISSING: 'Самотёчный расчёт',
