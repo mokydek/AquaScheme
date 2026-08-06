@@ -54,9 +54,6 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [diameterMm, setDiameterMm] = useState<number | null>(null)
-  const [minMainDepthM, setMinMainDepthM] = useState<number | null>(null)
-  const [firstChamber, setFirstChamber] = useState<number | null>(null)
-  const [lastChamber, setLastChamber] = useState<number | null>(null)
   const [reference, setReference] = useState<Reference>({})
   const [conditions, setConditions] = useState<ConditionsFromText | null>(null)
   const [conditionsFile, setConditionsFile] = useState<string | null>(null)
@@ -120,13 +117,9 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
       setResult(buildReconstructionFromSurvey(data, {
         designDiameterMm: diameterMm ?? 0,
         system: 'sewer',
-        // Порог не подставляется по умолчанию: съёмка сама врезку от
-        // магистральной камеры не отличает, и число назначает инженер.
-        ...(minMainDepthM !== null ? { minMainDepthM } : {}),
-        // Границы объекта заданы техническими условиями и в съёмке не
-        // отмечены: она покрывает больше, чем объект.
-        ...(firstChamber !== null ? { firstChamber } : {}),
-        ...(lastChamber !== null ? { lastChamber } : {}),
+        // Порог врезок не задаётся: программа находит его по разрыву в
+        // распределении глубин и показывает основание. Границы объекта тоже
+        // не спрашиваются — цепочка строится от верхового конца до выпуска.
       }))
       setFileName(file.name)
     } catch (cause) {
@@ -204,92 +197,6 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
               const value = Number(event.target.value)
               setDiameterMm(Number.isFinite(value) && value > 0 ? value : null)
             }}
-          />
-        </label>
-        <label className="field" htmlFor={`bundle-depth-${projectId}`}>
-          <span className="field-label">{t('project.bundleRun.minMainDepth')}</span>
-          <input
-            id={`bundle-depth-${projectId}`}
-            name={`bundle-depth-${projectId}`}
-            className="input"
-            type="number"
-            min={0}
-            step={0.1}
-            value={minMainDepthM ?? ''}
-            disabled={busy}
-            onChange={(event) => {
-              const value = Number(event.target.value)
-              setMinMainDepthM(event.target.value !== '' && Number.isFinite(value) && value > 0 ? value : null)
-            }}
-          />
-          <span className="hint">{t('project.bundleRun.minMainDepthHint')}</span>
-        </label>
-        <label className="field" htmlFor={`bundle-first-${projectId}`}>
-          <span className="field-label">{t('project.bundleRun.firstChamber')}</span>
-          <input
-            id={`bundle-first-${projectId}`}
-            name={`bundle-first-${projectId}`}
-            className="input"
-            type="number"
-            min={1}
-            step={1}
-            value={firstChamber ?? ''}
-            disabled={busy}
-            onChange={(event) => {
-              const value = Math.trunc(Number(event.target.value))
-              setFirstChamber(event.target.value !== '' && value > 0 ? value : null)
-            }}
-          />
-        </label>
-        <label className="field" htmlFor={`bundle-last-${projectId}`}>
-          <span className="field-label">{t('project.bundleRun.lastChamber')}</span>
-          <input
-            id={`bundle-last-${projectId}`}
-            name={`bundle-last-${projectId}`}
-            className="input"
-            type="number"
-            min={1}
-            step={1}
-            value={lastChamber ?? ''}
-            disabled={busy}
-            onChange={(event) => {
-              const value = Math.trunc(Number(event.target.value))
-              setLastChamber(event.target.value !== '' && value > 0 ? value : null)
-            }}
-          />
-        </label>
-        <label className="field" htmlFor={`bundle-ref-length-${projectId}`}>
-          <span className="field-label">{t('project.bundleRun.refLength')}</span>
-          <input
-            id={`bundle-ref-length-${projectId}`}
-            name={`bundle-ref-length-${projectId}`}
-            className="input"
-            type="number"
-            min={0}
-            step={0.01}
-            value={reference.lengthM ?? ''}
-            disabled={busy}
-            onChange={(event) => setReference((prev) => ({
-              ...prev,
-              lengthM: event.target.value === '' ? undefined : Number(event.target.value),
-            }))}
-          />
-        </label>
-        <label className="field" htmlFor={`bundle-ref-manholes-${projectId}`}>
-          <span className="field-label">{t('project.bundleRun.refManholes')}</span>
-          <input
-            id={`bundle-ref-manholes-${projectId}`}
-            name={`bundle-ref-manholes-${projectId}`}
-            className="input"
-            type="number"
-            min={0}
-            step={1}
-            value={reference.manholes ?? ''}
-            disabled={busy}
-            onChange={(event) => setReference((prev) => ({
-              ...prev,
-              manholes: event.target.value === '' ? undefined : Number(event.target.value),
-            }))}
           />
         </label>
       </div>

@@ -53,6 +53,8 @@ export interface ExistingUtilityNetwork {
   laterals: ExistingManhole[]
   /** Камеры вне границ объекта: съёмка шире объекта, границы задаёт инженер. */
   outsideBounds: ExistingManhole[]
+  /** Порог, выведенный из данных, если инженер своего не задавал. */
+  depthThreshold: DepthThresholdSuggestion | null
   reason: string
 }
 
@@ -110,6 +112,65 @@ export interface ExistingUtilityOptions {
   firstChamber?: number
   /** Номер последнего колодца трассы в цепочке, с 1. По техническим условиям. */
   lastChamber?: number
+}
+
+/**
+ * Порог глубины, отделяющий врезки от колодцев магистрали, — по самим данным.
+ *
+ * Инженер вводил его руками, потому что признака «врезка» в чертеже нет:
+ * проверены 123 признака, потолок 16 камер из 17. Но само распределение глубин
+ * подсказывает ответ: камеры сбиваются в две кучки, а между ними зияет разрыв.
+ * На объекте по ул. Станкевича это 1,70 / 1,75 / 2,06 против 2,91…4,50 —
+ * разрыв 0,85 м при типичном соседском шаге 0,05…0,2 м.
+ *
+ * Ищется наибольший разрыв в отсортированном ряду глубин. Порог принимается,
+ * только если разрыв заметно больше обычного шага и делит ряд не пополам:
+ * врезок обычно единицы, и если «разрыв» рассекает выборку надвое, это не
+ * врезки, а просто разные глубины заложения. Не уверены — возвращаем null,
+ * и тогда врезкой не считается никто: выдуманный порог хуже отсутствующего.
+ */
+export interface DepthThresholdSuggestion {
+  /** Глубина, ниже которой камера считается врезкой, м. */
+  minMainDepthM: number
+  /** Сколько камер отсекается. */
+  lateralCount: number
+  /** Разрыв, на котором проведена граница, м. */
+  gapM: number
+  /** Чем обоснован: показывается инженеру, чтобы он мог не согласиться. */
+  reason: string
+}
+
+export function suggestMainDepthThreshold(
+  manholes: ExistingManhole[],
+): DepthThresholdSuggestion | null {
+  const depths = manholes.map((manhole) => manhole.depthM).sort((a, b) => a - b)
+  if (depths.length < 6) return null
+
+  const steps = depths.slice(1).map((depth, index) => depth - depths[index])
+  const sorted = [...steps].sort((a, b) => a - b)
+  const medianStep = sorted[Math.floor(sorted.length / 2)]
+  let bestIndex = -1
+  let bestGap = 0
+  for (let index = 0; index < steps.length; index++) {
+    // Граница не может рассекать выборку надвое: врезок единицы, а не половина.
+    if (index + 1 > depths.length / 3) break
+    if (steps[index] > bestGap) { bestGap = steps[index]; bestIndex = index }
+  }
+  if (bestIndex < 0) return null
+  // Разрыв должен быть заметно больше обычного шага, иначе это не две кучки.
+  if (!(bestGap >= Math.max(medianStep * 4, 0.5))) return null
+
+  const lateralCount = bestIndex + 1
+  const threshold = Number(((depths[bestIndex] + depths[bestIndex + 1]) / 2).toFixed(2))
+  return {
+    minMainDepthM: threshold,
+    lateralCount,
+    gapM: Number(bestGap.toFixed(2)),
+    reason: `Глубины камер разделены разрывом ${bestGap.toFixed(2)} м`
+      + ` (${depths[bestIndex].toFixed(2)} → ${depths[bestIndex + 1].toFixed(2)})`
+      + ` при обычном шаге ${medianStep.toFixed(2)} м;`
+      + ` мельче порога ${lateralCount} камер из ${depths.length}.`,
+  }
 }
 
 export function extractExistingUtilities(
@@ -178,7 +239,13 @@ export function extractExistingUtilities(
 
   // Врезки отделяются до построения цепочки: попав в неё, они удлиняют трассу
   // и сбивают шаг между колодцами, а на плане встают как магистральные.
-  const minMainDepthM = options.minMainDepthM
+  // Порог не задан — берётся предложенный по разрыву в самих данных. Раньше
+  // здесь было «не задан — врезок нет», и инженеру приходилось подбирать число
+  // руками, хотя распределение глубин его подсказывает.
+  const suggestion = options.minMainDepthM === undefined
+    ? suggestMainDepthThreshold(manholes)
+    : null
+  const minMainDepthM = options.minMainDepthM ?? suggestion?.minMainDepthM
   const isMain = (manhole: ExistingManhole) =>
     minMainDepthM === undefined || manhole.depthM >= minMainDepthM
   const laterals = manholes.filter((manhole) => !isMain(manhole))
@@ -216,11 +283,14 @@ export function extractExistingUtilities(
     maxStepM: Number(maxStepM.toFixed(2)),
     laterals,
     outsideBounds,
+    depthThreshold: suggestion,
     reason: manholes.length === 0
       ? 'Пары отметок «крышка/лоток» не найдены: существующие колодцы по чертежу не восстанавливаются.'
       : `Восстановлено колодцев: ${manholes.length}; марок труб: ${pipeLabels.length}; `
         + (laterals.length > 0
-          ? `отнесено к врезкам по глубине менее ${minMainDepthM} м: ${laterals.length}; `
+          ? `отнесено к врезкам по глубине менее ${minMainDepthM} м: ${laterals.length}`
+            + (suggestion ? ` (порог выведен из данных — ${suggestion.reason})` : ' (порог задан инженером)')
+            + '; '
           : '')
         + (outsideBounds.length > 0
           ? `за границами объекта: ${outsideBounds.length}; `

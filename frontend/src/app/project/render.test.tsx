@@ -322,31 +322,22 @@ describe('прогон комплекта исходных данных', () => 
     expect(markup()).toMatch(/type="file"[^>]*disabled/)
   })
 
-  it('порог глубины врезок есть на экране и пуст по умолчанию', () => {
-    // Без поля на экране порог остаётся только в движке, и проверить его
-    // на сайте нельзя. Пустым он и должен быть: умолчания у него нет.
+  it('порога врезок и границ на экране нет: программа выводит их сама', () => {
+    // Инженер не должен вводить то, что выводится из данных. Порог находится
+    // по разрыву в распределении глубин, границы — от верхового конца до
+    // выпуска. Поля убраны, а не спрятаны: пустое поле требует заполнения.
     const m = markup()
-    expect(m).toContain('project.bundleRun.minMainDepth')
-    expect(m).toContain('project.bundleRun.minMainDepthHint')
-    expect(m).toMatch(/id="bundle-depth-p1"[^>]*value=""/)
+    expect(m).not.toContain('bundle-depth-')
+    expect(m).not.toContain('bundle-first-')
+    expect(m).not.toContain('bundle-last-')
   })
 
-  it('есть приём документа: величины читаются, а не вводятся', () => {
-    // Диаметр, длина и число колодцев написаны в техническом обследовании
-    // прямым текстом; перекладывать их набор на инженера было нечем оправдать.
+  it('длина и число колодцев по документам не вводятся, а читаются', () => {
     const m = markup()
+    expect(m).not.toContain('bundle-ref-length-')
+    expect(m).not.toContain('bundle-ref-manholes-')
+    // Приём документа при этом на месте: из него величины и берутся.
     expect(m).toContain('project.bundleRun.conditionsLabel')
-    expect(m).toMatch(/accept="\.pdf,\.txt"/)
-  })
-
-  it('границы объекта задаются номерами концевых колодцев и тоже пусты', () => {
-    // Съёмка покрывает больше, чем объект: границы заданы техническими
-    // условиями и в чертеже ничем не отмечены, вывести их нельзя.
-    const m = markup()
-    expect(m).toContain('project.bundleRun.firstChamber')
-    expect(m).toContain('project.bundleRun.lastChamber')
-    expect(m).toMatch(/id="bundle-first-p1"[^>]*value=""/)
-    expect(m).toMatch(/id="bundle-last-p1"[^>]*value=""/)
   })
 })
 

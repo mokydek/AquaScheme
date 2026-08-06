@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DxfNetworkData } from './dxfread'
-import { extractExistingUtilities } from './existing-utilities'
+import { extractExistingUtilities, suggestMainDepthThreshold } from './existing-utilities'
 
 function survey(
   texts: Array<[number, number, string, string?]>,
@@ -230,5 +230,71 @@ describe('existing utilities recovered from survey annotation', () => {
     expect(result.manholes).toHaveLength(0)
     expect(result.pipeLabels).toHaveLength(0)
     expect(result.reason).toContain('не найдены')
+  })
+})
+
+describe('порог врезок выводится из самих данных', () => {
+  const chamber = (depthM: number) => ({ x: 0, y: 0, rimElevationM: 690, invertElevationM: 690 - depthM, depthM })
+
+  it('находит разрыв между двумя кучками глубин', () => {
+    // Так распределены глубины на реальном объекте: три врезки и магистраль.
+    const found = suggestMainDepthThreshold(
+      [1.70, 1.75, 2.06, 2.91, 2.97, 3.44, 3.50, 3.60, 3.62, 3.64, 3.69, 3.80, 3.84, 3.96, 4.04, 4.47, 4.50]
+        .map(chamber))
+    expect(found?.lateralCount).toBe(3)
+    expect(found?.minMainDepthM).toBeCloseTo(2.49, 2)
+    expect(found?.gapM).toBeCloseTo(0.85, 2)
+    expect(found?.reason).toContain('2.06')
+  })
+
+  it('ровный ряд порога не даёт: две кучки надо ещё увидеть', () => {
+    // Глубины идут с равным шагом — врезок здесь нет, и выдумывать границу
+    // нельзя: выдуманный порог хуже отсутствующего.
+    const even = Array.from({ length: 12 }, (_, index) => chamber(3 + index * 0.1))
+    expect(suggestMainDepthThreshold(even)).toBeNull()
+  })
+
+  it('разрыв посередине выборки врезками не считается', () => {
+    // Половина камер мельче другой половины — это разные глубины заложения,
+    // а не врезки: их обычно единицы.
+    const halves = [...Array.from({ length: 6 }, () => chamber(1.5)),
+      ...Array.from({ length: 6 }, () => chamber(4.0))]
+    expect(suggestMainDepthThreshold(halves)).toBeNull()
+  })
+
+  it('на малой выборке не гадает', () => {
+    expect(suggestMainDepthThreshold([1.7, 4.0, 4.1].map(chamber))).toBeNull()
+  })
+
+  it('без ввода инженера врезки отделяются сами, и основание видно', () => {
+    const survey5 = survey([
+      [0, 0, '690.00'], [0, 1, '686.00'],
+      [40, 0, '689.00'], [40, 1, '685.00'],
+      [80, 0, '688.00'], [80, 1, '684.00'],
+      [120, 0, '687.00'], [120, 1, '683.10'],
+      [160, 0, '686.00'], [160, 1, '682.10'],
+      [200, 0, '685.00'], [200, 1, '684.30'],
+    ])
+    const auto = extractExistingUtilities(survey5)
+    expect(auto.depthThreshold).not.toBeNull()
+    expect(auto.laterals).toHaveLength(1)
+    expect(auto.reason).toContain('порог выведен из данных')
+  })
+
+  it('заданный инженером порог предложенный не перебивается', () => {
+    const survey5 = survey([
+      [0, 0, '690.00'], [0, 1, '686.00'],
+      [40, 0, '689.00'], [40, 1, '685.00'],
+      [80, 0, '688.00'], [80, 1, '684.00'],
+      [120, 0, '687.00'], [120, 1, '683.10'],
+      [160, 0, '686.00'], [160, 1, '682.10'],
+      [200, 0, '685.00'], [200, 1, '684.30'],
+    ])
+    // Порог инженера 1,0 м отсекает камеру глубиной 0,70 — то же, что нашла бы
+    // программа, но по решению человека, и в основании это так и сказано.
+    const manual = extractExistingUtilities(survey5, /канализ/i, { minMainDepthM: 1.0 })
+    expect(manual.depthThreshold).toBeNull()
+    expect(manual.laterals).toHaveLength(1)
+    expect(manual.reason).toContain('порог задан инженером')
   })
 })
