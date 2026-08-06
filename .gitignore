@@ -30,9 +30,15 @@ npm-debug.log*
 # Local analysis and generated scratch artifacts
 tmp/
 
-# Official norm editions must not be redistributed
-docs/norms/*.pdf
-docs/norms/txt/
+# Нормативные документы хранятся вместе с кодом — решение владельца от
+# 06.08.2026. Без них ни один из 95 пунктов норм-реестра не проверяем: и
+# человек, и агент вынуждены верить записи «verified» на слово, а ссылки на
+# пункты появляются там, где документа никто не открывал.
+#
+# Условие: репозиторий приватный. Официальные редакции норм — документы под
+# авторским правом, распространять их нельзя. При открытии репозитория это
+# правило пересматривается ПЕРВЫМ, вместе с правилом 2 CLAUDE.md о данных
+# реальных объектов.
 
 # Real-object benchmark data (confidential: sources and the etalon album).
 # The whole folder stays local; only generic product code goes to git.
