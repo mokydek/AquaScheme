@@ -28,6 +28,8 @@ export interface ConditionsFromText {
   lengthM: ExtractedValue<number> | null
   /** Число колодцев, шт. */
   chambers: ExtractedValue<number> | null
+  /** Диаметр колодца, мм: подтверждает выведенный по норме размер камеры. */
+  chamberDiameterMm: ExtractedValue<number> | null
   /** Материал трубы, как записан в документе. */
   material: ExtractedValue<string> | null
   /** Что найти не удалось: показывается инженеру, а не проглатывается. */
@@ -53,6 +55,15 @@ const LENGTH = new RegExp(
 
 /** Колодцы: «колодцы Ø1,5м – 14 шт». Тире бывает коротким и длинным. */
 const CHAMBERS = /колодц[а-яё]*\s+[Øø]\s*[\d.,]+\s*м\s*[-–—]\s*(\d{1,3})\s*шт/gi
+
+/**
+ * Диаметр колодца из той же строки, отдельным шаблоном ради своей группы.
+ *
+ * Величина нужна не сама по себе: труба лежит между стенками камер, и длина
+ * трубы короче длины оси ровно на диаметр колодца. Программа выводит его из
+ * п. 7.4.2 по глубине, а документ даёт независимое подтверждение.
+ */
+const CHAMBER_DIAMETER = /колодц[а-яё]*\s+[Øø]\s*([\d.,]+)\s*м\s*[-–—]\s*\d{1,3}\s*шт/gi
 
 /** Материал: «Материал канализационной сети – керамическая труба». */
 const MATERIAL = new RegExp(
@@ -87,6 +98,7 @@ export function extractConditionsFromText(text: string): ConditionsFromText {
   const diameter = collect(source, DIAMETER, numeric)
   const length = collect(source, LENGTH, numeric)
   const chambers = collect(source, CHAMBERS, (raw) => Math.trunc(Number(raw)))
+  const chamberDiameter = collect(source, CHAMBER_DIAMETER, (raw) => Math.round(numeric(raw) * 1000))
   const material = collect(source, MATERIAL, (raw) => raw.toLowerCase())
 
   const missing: string[] = []
@@ -105,6 +117,7 @@ export function extractConditionsFromText(text: string): ConditionsFromText {
     diameterMm: diameter.hit,
     lengthM: length.hit,
     chambers: chambers.hit,
+    chamberDiameterMm: chamberDiameter.hit,
     material: material.hit,
     missing,
     ambiguous,

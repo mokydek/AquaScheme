@@ -12,9 +12,9 @@ import { Panel } from './Panel'
  * Отвечает на один вопрос: что выдаст программа, если положить в неё съёмку
  * реального объекта, и чем это отличается от того, что записано в документах.
  *
- * Эталонные величины вводятся отдельно и в расчёт не подставляются: они нужны
- * только для сравнения. Подгонять по ним расчёт нельзя — расхождение это
- * находка, а не ошибка ввода, и решение по нему принимает инженер.
+ * Сравнение с документом делает движок, а не эта секция: там оно покрыто
+ * тестами и одинаково во всех путях. Подгонять расчёт под документ нельзя —
+ * расхождение это находка, и решение по нему принимает инженер.
  *
  * Данные объекта здесь не хранятся и в репозиторий не попадают: файл читается
  * в браузере.
@@ -26,27 +26,6 @@ import { Panel } from './Panel'
  * нечему.
  */
 
-interface Reference {
-  lengthM?: number
-  manholes?: number
-  diameterMm?: number
-}
-
-function Delta({ ours, reference }: { ours: number | null; reference?: number }) {
-  const { t } = useTranslation()
-  if (ours === null || reference === undefined || !Number.isFinite(reference)) {
-    return <span className="hint">{t('project.bundleRun.noReference')}</span>
-  }
-  const delta = ours - reference
-  const percent = reference !== 0 ? (delta / reference) * 100 : 0
-  if (Math.abs(delta) < 1e-9) return <span className="ok">{t('project.bundleRun.matches')}</span>
-  return (
-    <span className="warn">
-      {delta > 0 ? '+' : ''}{delta.toFixed(2)} ({percent > 0 ? '+' : ''}{percent.toFixed(1)}%)
-    </span>
-  )
-}
-
 export function SourceBundleRunSection({ projectId }: { projectId: string }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
@@ -54,7 +33,6 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [diameterMm, setDiameterMm] = useState<number | null>(null)
-  const [reference, setReference] = useState<Reference>({})
   const [conditions, setConditions] = useState<ConditionsFromText | null>(null)
   const [conditionsFile, setConditionsFile] = useState<string | null>(null)
 
@@ -84,14 +62,10 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
       const found = extractConditionsFromText(text)
       setConditions(found)
       setConditionsFile(file.name)
-      // Прочитанное подставляется в поля: инженер видит источник и может
-      // поправить, но перепечатывать написанное в документе не должен.
+      // Прочитанное подставляется в поле диаметра: инженер видит источник и
+      // может поправить, но перепечатывать написанное в документе не должен.
+      // Длина и число колодцев в поля не идут вовсе — они уходят на сверку.
       if (found.diameterMm) setDiameterMm(found.diameterMm.value)
-      setReference((prev) => ({
-        ...prev,
-        lengthM: found.lengthM?.value ?? prev.lengthM,
-        manholes: found.chambers?.value ?? prev.manholes,
-      }))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -117,6 +91,9 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
       setResult(buildReconstructionFromSurvey(data, {
         designDiameterMm: diameterMm ?? 0,
         system: 'sewer',
+        // Прочитанный документ идёт не во вход расчёта, а на сверку: программа
+        // считает всё по съёмке и сама сообщает, где расходится с отчётом.
+        ...(conditions ? { document: conditions } : {}),
         // Порог врезок не задаётся: программа находит его по разрыву в
         // распределении глубин и показывает основание. Границы объекта тоже
         // не спрашиваются — цепочка строится от верхового конца до выпуска.
@@ -129,9 +106,6 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
       event.target.value = ''
     }
   }
-
-  const chainCount = result?.network?.nodes?.length ?? null
-  const lengthM = result ? result.totalLengthM : null
 
   return (
     <Panel title={t('project.bundleRun.title')} status={result ? 'filled' : 'empty'}>
@@ -221,38 +195,84 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
           <p className="stat-line">{t('project.bundleRun.file', { name: fileName ?? '' })}</p>
           <p className="stat-line">{result.reason}</p>
 
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">{t('project.bundleRun.thMetric')}</th>
-                  <th scope="col" className="num">{t('project.bundleRun.thOurs')}</th>
-                  <th scope="col" className="num">{t('project.bundleRun.thReference')}</th>
-                  <th scope="col">{t('project.bundleRun.thDelta')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>{t('project.bundleRun.metricLength')}</td>
-                  <td className="num">{lengthM === null ? '—' : lengthM.toFixed(2)}</td>
-                  <td className="num">{reference.lengthM ?? '—'}</td>
-                  <td><Delta ours={lengthM} reference={reference.lengthM} /></td>
-                </tr>
-                <tr>
-                  <td>{t('project.bundleRun.metricManholes')}</td>
-                  <td className="num">{chainCount ?? '—'}</td>
-                  <td className="num">{reference.manholes ?? '—'}</td>
-                  <td><Delta ours={chainCount} reference={reference.manholes} /></td>
-                </tr>
-                <tr>
-                  <td>{t('project.bundleRun.metricCrossings')}</td>
-                  <td className="num">{result.crossings?.length ?? 0}</td>
-                  <td className="num">—</td>
-                  <td><span className="hint">{t('project.bundleRun.noReference')}</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          {/*
+            Длина оси и длина трубы разведены намеренно: спецификация заказывает
+            вторую, и пока они были одним числом, трубы заказывалось больше на
+            все камеры трассы.
+          */}
+          <p className="stat-line">{result.pipeLength.reason}</p>
+
+          {/*
+            Сверку с документом делает движок. Здесь только показ: величина,
+            что вышло по чертежу, что написано в отчёте и в чём разница.
+          */}
+          {result.agreement && result.agreement.checks.length > 0 && (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">{t('project.bundleRun.thMetric')}</th>
+                    <th scope="col" className="num">{t('project.bundleRun.thOurs')}</th>
+                    <th scope="col" className="num">{t('project.bundleRun.thReference')}</th>
+                    <th scope="col">{t('project.bundleRun.thDelta')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.agreement.checks.map((check) => (
+                    <tr key={check.quantity}>
+                      <td>{check.quantity}</td>
+                      <td className="num">{check.fromSurvey}</td>
+                      <td className="num">{check.fromDocument}</td>
+                      <td className={check.agrees ? 'ok' : 'warn'}>{check.note}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td>{t('project.bundleRun.metricCrossings')}</td>
+                    <td className="num">{result.crossings?.length ?? 0}</td>
+                    <td className="num">—</td>
+                    <td><span className="hint">{t('project.bundleRun.noReference')}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/*
+            Главный вопрос реконструкции — годится ли существующий профиль под
+            проектную трубу. Ответ считается по отметкам лотков без ввода.
+          */}
+          <h5>{t('project.bundleRun.slopes')}</h5>
+          <p className={result.slopes.counter + result.slopes.belowMin === 0 ? 'stat-line ok' : 'stat-line warn'}>
+            {result.slopes.summary}
+          </p>
+          <p className="hint">
+            {t('project.bundleRun.minSlope', {
+              value: (result.slopes.minSlope.value * 1000).toFixed(2),
+              note: result.slopes.minSlope.note ?? '',
+            })}
+          </p>
+          {result.slopes.spans.filter((span) => span.verdict !== 'ok').length > 0 && (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">{t('project.bundleRun.thSpan')}</th>
+                    <th scope="col" className="num">{t('project.bundleRun.thSpanLength')}</th>
+                    <th scope="col">{t('project.bundleRun.thSpanVerdict')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.slopes.spans.filter((span) => span.verdict !== 'ok').map((span) => (
+                    <tr key={span.pipeId}>
+                      <td>{span.fromNodeId} → {span.toNodeId}</td>
+                      <td className="num">{span.lengthM.toFixed(1)}</td>
+                      <td className="warn">{span.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/*
             Отброшенные камеры показываются рядом с блокерами намеренно: на

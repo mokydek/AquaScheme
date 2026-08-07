@@ -37,6 +37,28 @@ export function minSlopeForDiameter(diameterMm: number): Justified<number> | nul
   return null
 }
 
+/**
+ * 7.4.2: размеры смотровых колодцев бытовой и производственной сети. Труба до
+ * 600 мм — круглый колодец 1000 мм; от 700 мм — длина D + 400 мм. Глубже 1,8 м
+ * колодец принимается не менее 1500 мм независимо от диаметра трубы.
+ *
+ * Размер колодца нужен не только спецификации: труба укладывается между
+ * стенками камер, поэтому длина трубы короче расстояния между их центрами
+ * ровно на этот диаметр. Без него длина трубы завышается.
+ */
+export function sewerChamberDiameterMm(pipeDiameterMm: number, depthM: number): Justified<number> {
+  const byBore = pipeDiameterMm <= 600 ? 1000 : pipeDiameterMm + 400
+  const deep = depthM > 1.8
+  return justified(
+    deep ? Math.max(byBore, 1500) : byBore,
+    ['sewer.manhole.size'],
+    'normative',
+    deep
+      ? `глубина ${depthM.toFixed(2)} м свыше 1,8 м — колодец не менее 1500 мм`
+      : `труба ${pipeDiameterMm} мм при глубине ${depthM.toFixed(2)} м`,
+  )
+}
+
 export interface MinVelocityRow {
   dMinMm: number
   dMaxMm: number | null

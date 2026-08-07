@@ -57,7 +57,11 @@ describe('reconstruction assembled from a survey', () => {
 
     expect(result.schedule.manholes.map((m) => m.label)).toEqual(['КК-1', 'КК-2', 'КК-3', 'КК-4'])
     expect(result.schedule.manholes[0].picket).toBe('ПК0')
-    expect(result.schedule.totalPipeLengthM).toBeCloseTo(180, 0)
+    // Спецификация заказывает трубу, а труба лежит между стенками камер: из
+    // 180 м оси вычитаются три участка по 1,5 м (п. 7.4.2 при глубине > 1,8 м).
+    expect(result.schedule.totalPipeLengthM).toBeCloseTo(175.5, 2)
+    expect(result.pipeLength.axisLengthM).toBeCloseTo(180, 0)
+    expect(result.pipeLength.deductionM).toBeCloseTo(4.5, 2)
     // DN450 is a transcribed catalogue position, so the exact code is carried.
     expect(result.schedule.pipes[0].agskCode).toBe('241-702-0903')
 

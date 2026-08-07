@@ -12,7 +12,17 @@ import {
   type DxfLayerRole,
   type DxfNetworkData,
 } from './dxfread'
+import {
+  agreeWithDocument,
+  assessExistingSlopes,
+  derivePipeLength,
+  dominantPipeLabel,
+  type ExistingSlopeAssessment,
+  type PipeLengthBreakdown,
+  type SourceAgreement,
+} from './existing-condition'
 import { extractExistingUtilities, type ExistingUtilityNetwork } from './existing-utilities'
+import type { ConditionsFromText } from './norms/conditions-text'
 import { detectSurveyGrid, type SurveyGridFinding } from './surveygrid'
 import { picketLabelExact } from './norms/sheetset'
 import { manholeSpacingM } from './norms/sewer'
@@ -92,6 +102,14 @@ export interface ReconstructionSurveyOptions {
    * посчитанное. Без неё переход выявляется, но длина футляра не заполняется.
    */
   roadWidthM?: number
+  /**
+   * Величины, прочитанные из технического отчёта.
+   *
+   * Нужны не как вход расчёта — всё считается по съёмке, — а как вторая
+   * независимая запись тех же величин. Без сверки проект молча выдавал свою
+   * длину рядом с другой длиной в отчёте и о расхождении не сообщал.
+   */
+  document?: ConditionsFromText
 }
 
 export interface ReconstructionFromSurvey {
@@ -107,7 +125,19 @@ export interface ReconstructionFromSurvey {
   georeference: RouteGeoreference
   /** Chainage of every chamber along the run, m. */
   chainageM: number[]
+  /** Длина оси по центрам камер: по ней идёт пикетаж и профиль. */
   totalLengthM: number
+  /**
+   * Длина трубы между стенками камер и её разбор.
+   *
+   * Раньше спецификация заказывала длину оси, то есть с запасом на все камеры
+   * трассы. Это не запас, а ошибка счёта: труба в камере не лежит.
+   */
+  pipeLength: PipeLengthBreakdown
+  /** Проходят ли существующие уклоны по самоочищающей скорости. */
+  slopes: ExistingSlopeAssessment
+  /** Сходимость измеренного по чертежу с написанным в отчёте. `null` — отчёта нет. */
+  agreement: SourceAgreement | null
   /**
    * Пересечения трассы с автомобильными дорогами.
    *
@@ -207,6 +237,16 @@ export function buildReconstructionFromSurvey(
     pipeIds: pipes.map((pipe) => pipe.id),
   }
 
+  // Труба лежит между стенками камер, а ось проходит через их центры: на
+  // каждую камеру трассы длина трубы короче на её диаметр. Диаметр камеры не
+  // назначается, а следует из п. 7.4.2 по проектной трубе и измеренной глубине.
+  const pipeLength = derivePipeLength({
+    nodeIds: nodes.map((node) => node.id),
+    depthsM: chain.map((chamber) => chamber.depthM),
+    chainageM,
+    designDiameterMm: options.designDiameterMm,
+  })
+
   const schedule: SewerSchedule = {
     manholes: chain.map((chamber, index) => ({
       nodeId: nodes[index].id,
@@ -218,13 +258,54 @@ export function buildReconstructionFromSurvey(
     pipes: [{
       designation: `Труба DN${options.designDiameterMm}`,
       diameterMm: options.designDiameterMm,
-      lengthM: totalLengthM,
+      lengthM: pipeLength.pipeLengthM,
       // Exact catalogue position where it was transcribed, otherwise the
       // подраздел, so the specification still carries a classifier value.
       agskCode: agskConcreteGravityPipeCode(options.designDiameterMm)
         ?? agskSectionForGravityPipe('concrete').code,
     }],
-    totalPipeLengthM: totalLengthM,
+    totalPipeLengthM: pipeLength.pipeLengthM,
+  }
+
+  // Годится ли существующий профиль под проектную трубу — главный вопрос
+  // реконструкции. Считается по отметкам лотков, ввода не требует.
+  const slopes = assessExistingSlopes({
+    pipeIds: pipes.map((pipe) => pipe.id),
+    fromNodeIds: pipes.map((pipe) => pipe.fromNode),
+    toNodeIds: pipes.map((pipe) => pipe.toNode),
+    lengthsM: pipes.map((pipe) => pipe.lengthM),
+    invertsM: chain.map((chamber) => chamber.invertElevationM),
+    depthsM: chain.map((chamber) => chamber.depthM),
+    designDiameterMm: options.designDiameterMm,
+    system,
+  })
+  if (slopes.counter > 0 || slopes.belowMin > 0) {
+    blockers.push(
+      `${slopes.summary} Участки: `
+      + slopes.spans.filter((span) => span.verdict !== 'ok')
+        .slice(0, 5)
+        .map((span) => `${span.pipeId} — ${span.note}`)
+        .join('; ')
+      + `${slopes.counter + slopes.belowMin > 5 ? ' и далее' : ''}.`,
+    )
+  }
+
+  // Сверка с отчётом: не вход расчёта, а вторая запись тех же величин.
+  const surveyLabel = dominantPipeLabel(chain, existing.pipeLabels)
+  const chamberSizes = pipeLength.chamberSizes.map((size) => size.diameterMm.value)
+  const agreement = options.document
+    ? agreeWithDocument({
+      pipeLengthM: pipeLength.pipeLengthM,
+      chamberCount: chain.length,
+      surveyLabel,
+      // Сверять с документом есть смысл только один размер камеры: если норма
+      // дала разные, сверка ничего не значит.
+      normChamberDiameterMm: new Set(chamberSizes).size === 1 ? chamberSizes[0] : null,
+      document: options.document,
+    })
+    : null
+  if (agreement && agreement.agreed < agreement.checks.length) {
+    blockers.push(`Чертёж и технический отчёт расходятся. ${agreement.summary}`)
   }
 
   /** Отметка на пикете по линейной интерполяции между замерами в колодцах. */
@@ -362,6 +443,9 @@ export function buildReconstructionFromSurvey(
       : { kind: 'unreferenced', source: grid.reason },
     chainageM,
     totalLengthM,
+    pipeLength,
+    slopes,
+    agreement,
     /** Пересечения с автомобильными дорогами: каждое требует футляра. */
     roadCrossings,
     depthBands,
@@ -370,7 +454,9 @@ export function buildReconstructionFromSurvey(
     reason: chain.length < 2
       ? 'Реконструкция по съёмке не собрана: нет цепочки колодцев.'
       : `Реконструкция ${system === 'storm' ? 'К2' : 'К1'} DN${options.designDiameterMm}: `
-        + `${chain.length} колодцев, ${totalLengthM.toFixed(1)} м, пересечений ${crossings.length}`
-        + `${options.minChamberDiameterMm ? `, минимальный колодец ${options.minChamberDiameterMm} мм` : ''}.`,
+        + `${chain.length} колодцев, ось ${totalLengthM.toFixed(1)} м, `
+        + `трубы ${pipeLength.pipeLengthM.toFixed(1)} м, пересечений ${crossings.length}`
+        + `${options.minChamberDiameterMm ? `, минимальный колодец ${options.minChamberDiameterMm} мм` : ''}.`
+        + `${agreement ? ` ${agreement.summary}` : ''}`,
   }
 }
