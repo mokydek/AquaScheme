@@ -45,6 +45,27 @@ describe('crossing cards from a survey', () => {
     expect(cards[0].existingElevationM).toBe(684.30)
   })
 
+  it('reads the crossed utility size from the survey caption', () => {
+    const data = survey(
+      [['SIT_LТЕПЛОТР', 100]],
+      [['NAD_MТЕПЛОТР', 104, 2, '2хст.150'], ['NAD_MВОДОПРО', 100, 1, 'ст.50']],
+    )
+    const cards = crossingsFromSurvey(AXIS, classifyDxfConstraints(data), data)
+    // Подпись водопровода ближе в плане, но описывает другой вид сети.
+    expect(cards[0].size).toBe('сталь Ø150, 2 тр.')
+    // Расстояние до подписи пишется в карточку: оно и есть мера доверия.
+    expect(cards[0].source).toContain('«2хст.150»')
+    expect(cards[0].source).toMatch(/в \d+\.\d м/)
+  })
+
+  it('leaves the size empty for a utility the survey does not caption', () => {
+    // Кабельные слои несут только отметки: ни диаметра, ни числа каналов.
+    const data = survey([['SIT_LЛИН_СВЯ', 60]], [['NAD_MЛИН_СВЯ', 60, 1, '684.80']])
+    const cards = crossingsFromSurvey(AXIS, classifyDxfConstraints(data), data)
+    expect(cards).toHaveLength(1)
+    expect(cards[0].size).toBeUndefined()
+  })
+
   it('computes clearance against the crown, not the invert', () => {
     const data = survey([['SIT_LВОДОПРО', 50]], [['NAD_MВОДОПРО', 50, 1, '685.00']])
     const cards = crossingsFromSurvey(AXIS, classifyDxfConstraints(data), data, {

@@ -1,4 +1,5 @@
 import { clearanceNote, crossingClearance } from './crossing-clearance'
+import { parsePipeLabel } from './existing-utilities'
 import type { DxfConstraintData, DxfNetworkData } from './dxfread'
 import type { CrossingRecord } from './working-drawings'
 
@@ -91,6 +92,49 @@ export function crossingsFromSurvey(
     .filter((label) => ELEVATION.test(label.raw)
       && Number.isFinite(label.x) && Number.isFinite(label.y) && Number.isFinite(label.value))
 
+  /** Подписи размера на слоях коммуникаций: «кер.300», «2хст.150», «500ст.». */
+  const sizeLabels = (data.textEntities ?? [])
+    .map((entity) => ({
+      kind: utilityKind(entity.layer ?? ''),
+      x: entity.x,
+      y: entity.y,
+      raw: String(entity.text ?? '').trim(),
+      parsed: parsePipeLabel(String(entity.text ?? '')),
+    }))
+    .filter((label) => label.parsed !== null && Number.isFinite(label.x) && Number.isFinite(label.y))
+
+  /**
+   * Ближайшая подпись того же вида сети — без порога расстояния.
+   *
+   * Привязать подпись к конкретной ломаной нельзя: коммуникация нарисована
+   * условным знаком из десятков отдельных штрихов, и подпись прилипает к
+   * одному штриху, а пересечение приходится на другой — на объекте по
+   * ул. Станкевича так заполнялись 3 карточки из 42.
+   *
+   * Порога здесь тоже нет: любой радиус пришлось бы подбирать под желаемое
+   * число заполненных карточек (6 м дают 15 из 42, 20 м дают 30), а такое
+   * число не выведено, а подогнано. Правило полное: берётся ближайшая подпись
+   * своего вида, и расстояние до неё пишется в карточку. Оно и есть мера
+   * доверия — подпись в 2 м описывает этот же пролёт, подпись в 60 м требует
+   * проверки, и инженер видит, какой случай перед ним.
+   *
+   * Вид без подписей размера не получает вовсе: у кабельных слоёв съёмка не
+   * несёт ни диаметра, ни числа каналов, и карточка остаётся незаполненной.
+   */
+  const sizeAt = (kind: string, hit: Point) => {
+    let best: (typeof sizeLabels)[number] | null = null
+    let bestDistance = Number.POSITIVE_INFINITY
+    for (const label of sizeLabels) {
+      if (label.kind !== kind) continue
+      const distance = Math.hypot(label.x - hit.x, label.y - hit.y)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = label
+      }
+    }
+    return best === null ? null : { label: best, distanceM: bestDistance }
+  }
+
   // Cumulative chainage of each axis vertex.
   const chainage: number[] = [0]
   for (let i = 1; i < axis.length; i++) {
@@ -142,12 +186,18 @@ export function crossingsFromSurvey(
           designInvertElevationM: designInvert ?? undefined,
           designDiameterMm: options.designDiameterMm,
         })
+        const size = sizeAt(kind, hit)
         records.push({
           id: `X-${records.length + 1}`,
           stationM: Number(stationM.toFixed(2)),
           kind,
           source: `топосъёмка, слой «${layer}»`
+            + (size ? `; размер по подписи «${size.label.raw}» в ${size.distanceM.toFixed(1)} м` : '')
             + (clearance ? `; просвет ${clearanceNote(clearance)}` : ''),
+          ...(size ? {
+            size: `${size.label.parsed!.material} Ø${size.label.parsed!.diameterMm}`
+              + (size.label.parsed!.count > 1 ? `, ${size.label.parsed!.count} тр.` : ''),
+          } : {}),
           ...(elevation !== undefined ? { existingElevationM: elevation } : {}),
           ...(designInvert !== null ? { designInvertElevationM: designInvert } : {}),
           ...(clearance ? { clearanceM: clearance.clearanceM } : {}),

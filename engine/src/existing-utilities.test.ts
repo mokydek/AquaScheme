@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DxfNetworkData } from './dxfread'
-import { extractExistingUtilities, suggestMainDepthThreshold } from './existing-utilities'
+import { extractExistingUtilities, parsePipeLabel, suggestMainDepthThreshold } from './existing-utilities'
 
 function survey(
   texts: Array<[number, number, string, string?]>,
@@ -296,5 +296,47 @@ describe('порог врезок выводится из самих данны�
     expect(manual.depthThreshold).toBeNull()
     expect(manual.laterals).toHaveLength(1)
     expect(manual.reason).toContain('порог задан инженером')
+  })
+})
+
+describe('разбор подписи трубы', () => {
+  it('берёт сокращённую и полную основу материала', () => {
+    expect(parsePipeLabel('кер.300')).toEqual({ material: 'керамика', diameterMm: 300, count: 1 })
+    expect(parsePipeLabel('керам.100')).toEqual({ material: 'керамика', diameterMm: 100, count: 1 })
+  })
+
+  it('снимает префикс сети', () => {
+    expect(parsePipeLabel('К-кер.300')?.diameterMm).toBe(300)
+    expect(parsePipeLabel('В-ст.200')?.material).toBe('сталь')
+  })
+
+  it('читает число труб с обеих сторон от материала', () => {
+    expect(parsePipeLabel('2хст.150')).toEqual({ material: 'сталь', diameterMm: 150, count: 2 })
+    expect(parsePipeLabel('ст.2х325')).toEqual({ material: 'сталь', diameterMm: 325, count: 2 })
+    expect(parsePipeLabel('ст2х250')?.count).toBe(2)
+  })
+
+  it('терпит обратный порядок и отсутствие точки', () => {
+    expect(parsePipeLabel('500ст.')).toEqual({ material: 'сталь', diameterMm: 500, count: 1 })
+    expect(parsePipeLabel('ст150')?.diameterMm).toBe(150)
+  })
+
+  it('отбрасывает хвост с отметкой заложения, а не принимает его за диаметр', () => {
+    expect(parsePipeLabel('ст.219 Н=4.5')).toEqual({ material: 'сталь', diameterMm: 219, count: 1 })
+    expect(parsePipeLabel('ст.57 Нтр.3.5')?.diameterMm).toBe(57)
+  })
+
+  it('не разбирает то, что подписью трубы не является', () => {
+    // Всё это лежит на тех же слоях съёмки по ул. Станкевича.
+    for (const raw of ['закр.', 'нед.', 'засып', 'опуск в', 'землю', 'Н=4.5', 'Н-2.5',
+      'в.тр.', 'к.я', 'К', 'В', 'Т', '3КЖ', '2КН', 'ул.Станкевича', '8000', '684.80']) {
+      expect(parsePipeLabel(raw), raw).toBeNull()
+    }
+  })
+
+  it('не гадает, когда в подписи несколько диаметров', () => {
+    // «ст.2х150.133.89» — три трубы разного диаметра одной строкой; какой из
+    // них главный, из подписи не следует.
+    expect(parsePipeLabel('ст.2х150.133.89')).toBeNull()
   })
 })

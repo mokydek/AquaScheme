@@ -59,10 +59,9 @@ export interface ExistingUtilityNetwork {
 }
 
 const ELEVATION = /^\d{2,4}[.,]\d{1,3}$/
-/** «кер.300», «чуг 200», «ст.100», «пэ.160», «а/ц 150», «ж/б 400». */
-const PIPE_LABEL = /^(кер|чуг|ст|пэ|пнд|пвх|а\/ц|ац|ж\/б|жб|бет|кир)\.?\s*(\d{2,4})$/i
 
 const MATERIALS: Record<string, string> = {
+  керам: 'керамика',
   кер: 'керамика',
   чуг: 'чугун',
   ст: 'сталь',
@@ -76,6 +75,80 @@ const MATERIALS: Record<string, string> = {
   бет: 'бетон',
   кир: 'кирпич',
 }
+
+/** Основы материалов, как их пишет геодезист. Порядок важен: «керам» до «кер». */
+const MATERIAL_STEM = 'керам|кер|чуг|ст|пэ|пнд|пвх|а\\/ц|ац|ж\\/б|жб|бет|кир'
+
+/**
+ * Подпись трубы: «кер.300», «чуг 200», «ст150», «а/ц 150».
+ *
+ * Шаблон расширен по тому, что действительно написано в съёмке, а не по
+ * догадке. На объекте по ул. Станкевича прежний вариант не брал целых три
+ * формы записи и терял 26 подписей теплосети из 26:
+ *
+ *   «К-кер.300», «В-ст.200»  — префикс сети перед материалом;
+ *   «керам.100»              — полная основа вместо сокращённой;
+ *   «2хст.150», «ст.2х325»   — число труб, до и после материала;
+ *   «ст.219 Н=4.5»           — хвост с глубиной заложения.
+ *
+ * Число труб не выбрасывается: «2х» — признак двухтрубной теплосети, и в
+ * карточке пересечения он значим.
+ */
+const PIPE_LABEL = new RegExp(
+  '^(?:[КВТГ]-)?'            // префикс сети: К-канализация, В-водопровод
+  + '(?:(\\d)х)?'            // «2хст.150»
+  + `(${MATERIAL_STEM})`
+  + '\\.?\\s*'
+  + '(?:(\\d)х)?'            // «ст.2х325»
+  + '(\\d{2,4})'
+  + '(?:\\s+.*)?$',          // «Н=4.5», «Нтр.3.5» — отметка, а не диаметр
+  'i',
+)
+
+/** Обратный порядок: «500ст.» — число перед материалом. */
+const PIPE_LABEL_REVERSED = new RegExp(`^(\\d{2,4})\\s*(${MATERIAL_STEM})\\.?$`, 'i')
+
+export interface ParsedPipeLabel {
+  material: string
+  diameterMm: number
+  /** Число труб в подписи: «2хст.150» — две. По умолчанию одна. */
+  count: number
+}
+
+/**
+ * Разбирает одну подпись трубы.
+ *
+ * Вынесено из `extractExistingUtilities` наружу: тот отбирает сущности по слою
+ * реконструируемой сети, а подписи чужих коммуникаций нужны карточкам
+ * пересечений. `null` — подпись не про трубу; «закр.», «засып», «Н=4.5»,
+ * «опуск в» на тех же слоях разбору не поддаются и не должны.
+ */
+export function parsePipeLabel(raw: string): ParsedPipeLabel | null {
+  const text = String(raw ?? '').trim()
+  if (text === '' || ELEVATION.test(text)) return null
+
+  const direct = PIPE_LABEL.exec(text)
+  if (direct) {
+    const stem = direct[2].toLowerCase()
+    const diameterMm = Number(direct[4])
+    if (!MATERIALS[stem] || !Number.isFinite(diameterMm)) return null
+    return {
+      material: MATERIALS[stem],
+      diameterMm,
+      count: Number(direct[1] ?? direct[3] ?? 1),
+    }
+  }
+
+  const reversed = PIPE_LABEL_REVERSED.exec(text)
+  if (reversed) {
+    const stem = reversed[2].toLowerCase()
+    const diameterMm = Number(reversed[1])
+    if (!MATERIALS[stem] || !Number.isFinite(diameterMm)) return null
+    return { material: MATERIALS[stem], diameterMm, count: 1 }
+  }
+  return null
+}
+
 
 /** Labels close enough to describe the same chamber. */
 const PAIR_RADIUS_M = 2.5
@@ -182,13 +255,13 @@ export function extractExistingUtilities(
 
   const pipeLabels: ExistingPipeLabel[] = []
   for (const entity of onLayer) {
-    const match = PIPE_LABEL.exec(String(entity.text ?? '').trim())
-    if (!match || !Number.isFinite(entity.x) || !Number.isFinite(entity.y)) continue
+    const parsed = parsePipeLabel(String(entity.text ?? ''))
+    if (!parsed || !Number.isFinite(entity.x) || !Number.isFinite(entity.y)) continue
     pipeLabels.push({
       x: entity.x,
       y: entity.y,
-      material: MATERIALS[match[1].toLowerCase()] ?? match[1],
-      diameterMm: Number(match[2]),
+      material: parsed.material,
+      diameterMm: parsed.diameterMm,
       raw: String(entity.text).trim(),
     })
   }
