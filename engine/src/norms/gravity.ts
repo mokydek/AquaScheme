@@ -5,6 +5,7 @@ import {
   minSewerInvertDepthM,
   minSlopeForDiameter,
   minVelocityMps,
+  sewerChamberDiameterMm,
   sewerRoughnessN,
   type SewerNetworkLevel,
 } from './sewer'
@@ -933,6 +934,26 @@ export function buildSewerSchedule(
   // попадал туда строкой «Труба безнапорная Øundefined» на «NaN м»: такая
   // строка выглядит позицией, а не пробелом, и уходит в спецификацию к
   // сметчику. Отсутствие величины должно быть видно как отсутствие.
+  // Труба лежит между стенками камер, а длина участка меряется по их осям: на
+  // каждом конце она короче на половину диаметра камеры (п. 7.4.2). Прежде
+  // спецификация заказывала длину по осям, то есть с лишней трубой на каждую
+  // камеру трассы. Условность одна и та же и здесь, и на пути реконструкции —
+  // расходиться они не должны.
+  //
+  // Узел без замеренной глубины вычета не даёт: камеры для него не подобрать,
+  // а вычитать наугад значило бы занизить заказ.
+  const depthByNode = new Map(stations.map((station) => [station.nodeId, station.depthM]))
+  const chamberRadiusM = (nodeId: string, pipeDiameterMm: number): number => {
+    const depthM = depthByNode.get(nodeId)
+    return depthM === undefined ? 0 : sewerChamberDiameterMm(pipeDiameterMm, depthM).value / 2000
+  }
+  const laidLengthM = (pipe: GravityPipeResult): number => Math.max(
+    pipe.lengthM
+    - chamberRadiusM(pipe.fromNode, pipe.diameterMm)
+    - chamberRadiusM(pipe.toNode, pipe.diameterMm),
+    0,
+  )
+
   const lengthByDiameter = new Map<number, number>()
   const incompletePipeIds: string[] = []
   for (const p of result.pipes) {
@@ -940,7 +961,7 @@ export function buildSewerSchedule(
       incompletePipeIds.push(p.id)
       continue
     }
-    lengthByDiameter.set(p.diameterMm, (lengthByDiameter.get(p.diameterMm) ?? 0) + p.lengthM)
+    lengthByDiameter.set(p.diameterMm, (lengthByDiameter.get(p.diameterMm) ?? 0) + laidLengthM(p))
   }
   const gravityAgsk = agskSectionForGravityPipe('concrete').code
   const pipes: SewerSchedulePipe[] = [...lengthByDiameter.entries()]
@@ -952,7 +973,9 @@ export function buildSewerSchedule(
       agskCode: gravityAgsk,
     }))
   const totalPipeLengthM = Math.round(result.pipes.reduce(
-    (sum, p) => sum + (Number.isFinite(p.lengthM) ? p.lengthM : 0), 0))
+    (sum, p) => sum + (Number.isFinite(p.lengthM) && Number.isFinite(p.diameterMm) && p.diameterMm > 0
+      ? laidLengthM(p)
+      : 0), 0))
 
   return {
     manholes,

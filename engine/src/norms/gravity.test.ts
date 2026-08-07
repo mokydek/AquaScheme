@@ -322,7 +322,13 @@ describe('materials schedule (ведомость колодцев и труб)',
     expect(schedule.manholes[0].picket).toMatch(/^ПК/)
     expect(schedule.pipes.every((p) => p.designation.includes('безнапорная'))).toBe(true)
     expect(schedule.pipes.every((p) => p.agskCode === '241-7')).toBe(true) // ЖБ раздел АГСК
-    expect(schedule.totalPipeLengthM).toBe(200)
+    // Ведомость заказывает трубу, а не ось: из 200 м по осям вычитаются
+    // половины камер на концах двух участков (п. 7.4.2). Меньше оси, но не
+    // сильно — ровно на камеры, поэтому проверяется и величина вычета.
+    const deductionM = 200 - schedule.totalPipeLengthM
+    expect(deductionM).toBeGreaterThan(0)
+    expect(deductionM).toBeLessThanOrEqual(3 * 1.5)
+    expect(schedule.totalPipeLengthM).toBe(197)
   })
 })
 
