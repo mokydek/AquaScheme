@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { crossingClearance } from '@aquascheme/engine'
 import type { CrossingRecord } from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
@@ -36,18 +37,17 @@ const show = (value: number | undefined): string =>
   value === undefined || !Number.isFinite(value) ? '' : String(value)
 
 /**
- * Просвет от верха проектной трубы до низа пересекаемой сети.
+ * Просвет от проектной трубы до пересекаемой сети.
  *
- * Без диаметра не считается вовсе: верх трубы отстоит от лотка ровно на
- * диаметр, и подстановка нуля завысила бы просвет на всю толщину трубы.
+ * Формула одна на весь проект — `crossingClearance` в движке: до этого она жила
+ * в трёх копиях, и разбор съёмки считал по лотку вместо верха трубы.
  */
 function clearanceOf(row: CrossingRecord, designDiameterMm: number | undefined): number | undefined {
-  if (!Number.isFinite(designDiameterMm) || (designDiameterMm as number) <= 0) return undefined
-  if (!Number.isFinite(row.existingElevationM) || !Number.isFinite(row.designInvertElevationM)) {
-    return undefined
-  }
-  const crown = (row.designInvertElevationM as number) + (designDiameterMm as number) / 1000
-  return Math.round(((row.existingElevationM as number) - crown) * 1000) / 1000
+  return crossingClearance({
+    existingElevationM: row.existingElevationM,
+    designInvertElevationM: row.designInvertElevationM,
+    designDiameterMm,
+  })?.clearanceM
 }
 
 export function CrossingsSection({

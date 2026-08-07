@@ -148,8 +148,37 @@ describe('отбор пересечений на вскрытие', () => {
       ],
     })
     expect(result.summary).toContain('Пересечений 4')
-    expect(result.summary).toContain('отнивелировано 1')
+    // «Отнивелировано» само по себе больше не исход: замер сравнивается с
+    // требуемым просветом, и сводка разводит обеспеченный и недостаточный.
+    expect(result.summary).toContain('замерено 1')
     expect(result.summary).toContain('просвет обеспечен расчётом 1')
     expect(result.summary).toContain('вскрывать 2')
+  })
+
+  it('замер меньше требуемого просвета блокирует выпуск, а не проходит как отнивелированный', () => {
+    // Газопровод на 684.55 при верхе трубы 682.45 — просвет 2.10 м.
+    const enough = triageCrossings({ ...base, crossings: [card('X-7', 'газопровод', 684.55)] })
+    expect(enough.items[0].verdict).toBe('levelled')
+    expect(enough.conflicts).toHaveLength(0)
+
+    // Тот же замер при требуемых 3 м: измерение выполнено, вскрывать нечего,
+    // но просвет не добран — прежде такое молча уходило в благополучные.
+    const short = triageCrossings({
+      ...base,
+      requiredClearanceM: 3,
+      crossings: [card('X-7', 'газопровод', 684.55)],
+    })
+    expect(short.items[0].verdict).toBe('levelled_insufficient')
+    expect(short.conflicts).toHaveLength(1)
+    expect(short.needLevelling).toHaveLength(0)
+    expect(short.items[0].reason).toContain('вскрывать нечего')
+  })
+
+  it('требуемый просвет влияет на исход замера, а не только неотнивелированных', () => {
+    const crossings = [card('X-8', 'газопровод', 684.55)]
+    const loose = triageCrossings({ ...base, requiredClearanceM: 0.5, crossings })
+    const tight = triageCrossings({ ...base, requiredClearanceM: 3, crossings })
+    expect(loose.conflicts).toHaveLength(0)
+    expect(tight.conflicts).toHaveLength(1)
   })
 })

@@ -717,7 +717,7 @@ export const ru = {
         thRead: 'Прочитано из документа',
         thValue: 'Значение',
         thQuote: 'Откуда взято',
-        readDiameter: 'Диаметр трубы, мм',
+        readDiameter: 'Диаметр существующей трубы, мм',
         readLength: 'Протяжённость, м',
         readChambers: 'Колодцев, шт.',
         readMaterial: 'Материал',

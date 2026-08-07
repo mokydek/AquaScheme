@@ -1,3 +1,4 @@
+import { clearanceNote, crossingClearance } from './crossing-clearance'
 import type { DxfConstraintData, DxfNetworkData } from './dxfread'
 import type { CrossingRecord } from './working-drawings'
 
@@ -17,6 +18,12 @@ export interface SurveyCrossingOptions {
   labelRadiusM?: number
   /** Design invert at a chainage, for the clearance column. */
   designInvertAtM?: (stationM: number) => number | null
+  /**
+   * Проектный диаметр, мм: просвет считается от ВЕРХА проектной трубы, а верх
+   * отстоит от лотка ровно на диаметр. Без диаметра колонка просвета остаётся
+   * пустой — прежде она заполнялась разностью до лотка и завышала просвет.
+   */
+  designDiameterMm?: number
   /**
    * Chainages of the axis's own chambers. A reconstruction is laid along an
    * existing main, so the axis inevitably "crosses" that main at every chamber.
@@ -128,16 +135,22 @@ export function crossingsFromSurvey(
           }
         }
         const designInvert = options.designInvertAtM?.(stationM) ?? null
+        // Просвет считается от верха проектной трубы и со знаком: сеть внутри
+        // её габарита даёт отрицательное число, а не мнимый запас.
+        const clearance = crossingClearance({
+          existingElevationM: elevation,
+          designInvertElevationM: designInvert ?? undefined,
+          designDiameterMm: options.designDiameterMm,
+        })
         records.push({
           id: `X-${records.length + 1}`,
           stationM: Number(stationM.toFixed(2)),
           kind,
-          source: `топосъёмка, слой «${layer}»`,
+          source: `топосъёмка, слой «${layer}»`
+            + (clearance ? `; просвет ${clearanceNote(clearance)}` : ''),
           ...(elevation !== undefined ? { existingElevationM: elevation } : {}),
           ...(designInvert !== null ? { designInvertElevationM: designInvert } : {}),
-          ...(elevation !== undefined && designInvert !== null
-            ? { clearanceM: Number(Math.abs(elevation - designInvert).toFixed(3)) }
-            : {}),
+          ...(clearance ? { clearanceM: clearance.clearanceM } : {}),
           // Owner, method and approval are administrative facts a survey does
           // not carry; the card stays unapproved until an engineer fills them.
           approved: false,

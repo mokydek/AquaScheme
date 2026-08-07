@@ -41,7 +41,9 @@ describe('project document forms (НБ2)', () => {
     for (const form of ACT_FORMS) {
       expect(form.mandatory).toBe(true)
       expect(form.pdfPage).toBeGreaterThan(0)
-      expect(getClause(form.clauseId)?.status).toBe('verified')
+      // Проверяется запись о переписывании, а не статус: статус зависит от
+      // наличия PDF в репозитории, и текст формы им не подтверждается.
+      expect(getClause(form.clauseId)?.sourcePage, form.clauseId).toBeGreaterThan(0)
     }
   })
 
@@ -56,7 +58,7 @@ describe('project document forms (НБ2)', () => {
     expect(DESIGN_TASK_POINTS).toHaveLength(19)
     expect(DESIGN_TASK_POINTS[0]).toBe('Основание для проектирования.')
     expect(DESIGN_TASK_POINTS[1]).toBe('Вид строительства.')
-    expect(getClause('psd.designTask')?.status).toBe('verified')
+    expect(getClause('psd.designTask')?.sourcePage).toBeGreaterThan(0)
     expect(getClause('psd.tep')?.sourcePage).toBe(111)
     expect(getClause('psd.passport')?.sourcePage).toBe(119)
   })

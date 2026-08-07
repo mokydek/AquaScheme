@@ -1,4 +1,5 @@
 import type { DxfConstraintData } from './dxfread'
+import { clearanceNote, crossingClearance, crownElevationM } from './crossing-clearance'
 import type { CrossingRecord } from './working-drawings'
 
 /**
@@ -19,8 +20,18 @@ import type { CrossingRecord } from './working-drawings'
  */
 
 export type CrossingVerdict =
-  /** Отметка снята — исход считается по факту. */
+  /** Отметка снята, и просвет по ней обеспечен. */
   | 'levelled'
+  /**
+   * Отметка снята, и просвет по ней МЕНЬШЕ требуемого.
+   *
+   * Отдельно от `conflict_certain`: тот выводится из диапазона глубин, а этот —
+   * из замера. Прежде такого исхода не было вовсе: любое отнивелированное
+   * пересечение получало `levelled` и уходило в сводку как благополучное, даже
+   * когда просвет не добирал до требуемого. Вскрывать здесь нечего — решается
+   * проектом, поэтому попадает в `conflicts`.
+   */
+  | 'levelled_insufficient'
   /** Просвет обеспечен даже при самом глубоком правдоподобном залегании. */
   | 'clears_by_margin'
   /** Просвета нет даже при самом мелком: нужна перекладка или футляр. */
@@ -190,19 +201,36 @@ export function deriveDepthBandsFromSurvey(
 /** Делит пересечения по необходимости вскрытия. */
 export function triageCrossings(input: CrossingTriageInput): CrossingTriage {
   const items = input.crossings.map((crossing): TriagedCrossing => {
-    // Уже отнивелированное вскрывать незачем.
+    // Уже отнивелированное вскрывать незачем — но замер надо ещё сравнить с
+    // требуемым просветом. Прежде сравнения не было: `requiredClearanceM` в
+    // этой ветке не читался вовсе, и просвет 0,08 м при требуемых 0,4 уходил в
+    // сводку как «отнивелировано», не блокируя выпуск.
     if (crossing.existingElevationM !== undefined) {
-      const clearance = crossing.designInvertElevationM === undefined
-        ? null
-        : round(crossing.existingElevationM - (crossing.designInvertElevationM + input.designDiameterMm / 1000))
+      const measured = crossingClearance({
+        existingElevationM: crossing.existingElevationM,
+        designInvertElevationM: crossing.designInvertElevationM,
+        designDiameterMm: input.designDiameterMm,
+      })
+      if (measured === null) {
+        return {
+          crossing,
+          verdict: 'levelled',
+          worstClearanceM: null,
+          bestClearanceM: null,
+          reason: 'Отметка снята; проектный лоток на этом пикете неизвестен.',
+        }
+      }
+      const enough = measured.side !== 'within' && measured.clearanceM >= input.requiredClearanceM
       return {
         crossing,
-        verdict: 'levelled',
-        worstClearanceM: clearance,
-        bestClearanceM: clearance,
-        reason: clearance === null
-          ? 'Отметка снята; проектный лоток на этом пикете неизвестен.'
-          : `Отметка снята: просвет ${clearance.toFixed(2)} м.`,
+        verdict: enough ? 'levelled' : 'levelled_insufficient',
+        worstClearanceM: measured.clearanceM,
+        bestClearanceM: measured.clearanceM,
+        reason: enough
+          ? `Отметка снята: ${clearanceNote(measured)} при требуемых ${input.requiredClearanceM} м.`
+          : `Отметка снята: ${clearanceNote(measured)} — меньше требуемых `
+            + `${input.requiredClearanceM} м. Измерение уже выполнено, вскрывать нечего: `
+            + 'требуется футляр, перекладка или изменение проектных отметок.',
       }
     }
 
@@ -221,7 +249,7 @@ export function triageCrossings(input: CrossingTriageInput): CrossingTriage {
     }
 
     // Верх проектируемой трубы — от него считается просвет до сети сверху.
-    const crown = crossing.designInvertElevationM + input.designDiameterMm / 1000
+    const crown = crownElevationM(crossing.designInvertElevationM, input.designDiameterMm)
     // Чем глубже лежит пересекаемая сеть, тем меньше просвет.
     const worst = round((ground - band.maxM) - crown)
     const best = round((ground - band.minM) - crown)
@@ -249,15 +277,21 @@ export function triageCrossings(input: CrossingTriageInput): CrossingTriage {
 
   const needLevelling = items.filter((item) =>
     item.verdict === 'needs_levelling' || item.verdict === 'unknown_band')
-  const conflicts = items.filter((item) => item.verdict === 'conflict_certain')
+  // Замеренный недобор просвета — тоже конфликт: вскрытие его не снимет.
+  const conflicts = items.filter((item) =>
+    item.verdict === 'conflict_certain' || item.verdict === 'levelled_insufficient')
   const cleared = items.filter((item) => item.verdict === 'clears_by_margin').length
   const levelled = items.filter((item) => item.verdict === 'levelled').length
+  const insufficient = items.filter((item) => item.verdict === 'levelled_insufficient').length
 
   return {
     items,
     needLevelling,
     conflicts,
-    summary: `Пересечений ${items.length}: отнивелировано ${levelled}, `
+    // «Отнивелировано» больше не значит «благополучно»: замеры разведены на
+    // обеспечившие просвет и не обеспечившие.
+    summary: `Пересечений ${items.length}: замерено ${levelled + insufficient} `
+      + `(просвет обеспечен ${levelled}, недостаточен ${insufficient}), `
       + `просвет обеспечен расчётом ${cleared}, вскрывать ${needLevelling.length}, `
       + `неустранимых измерением ${conflicts.length}.`,
   }

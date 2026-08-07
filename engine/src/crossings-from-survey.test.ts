@@ -45,13 +45,38 @@ describe('crossing cards from a survey', () => {
     expect(cards[0].existingElevationM).toBe(684.30)
   })
 
-  it('computes clearance against the design invert when it is known', () => {
+  it('computes clearance against the crown, not the invert', () => {
+    const data = survey([['SIT_LВОДОПРО', 50]], [['NAD_MВОДОПРО', 50, 1, '685.00']])
+    const cards = crossingsFromSurvey(AXIS, classifyDxfConstraints(data), data, {
+      designInvertAtM: () => 682.2,
+      designDiameterMm: 450,
+    })
+    // 685.00 − (682.20 + 0.45): просвет считается от верха трубы. До правки
+    // здесь стояло 2.8 — разность до лотка, завышенная на весь диаметр.
+    expect(cards[0].clearanceM).toBeCloseTo(2.35, 3)
+    expect(cards[0].designInvertElevationM).toBe(682.2)
+  })
+
+  it('leaves the clearance empty when the design bore is unknown', () => {
     const data = survey([['SIT_LВОДОПРО', 50]], [['NAD_MВОДОПРО', 50, 1, '685.00']])
     const cards = crossingsFromSurvey(AXIS, classifyDxfConstraints(data), data, {
       designInvertAtM: () => 682.2,
     })
-    expect(cards[0].clearanceM).toBeCloseTo(2.8, 3)
+    // Пустая колонка честнее разности до лотка: верх трубы без диаметра неизвестен.
+    expect(cards[0].clearanceM).toBeUndefined()
     expect(cards[0].designInvertElevationM).toBe(682.2)
+  })
+
+  it('reports a utility passing under the design pipe as a gap below the invert', () => {
+    const data = survey([['SIT_LКАНАЛИЗ', 50]], [['NAD_MКАНАЛИЗ', 50, 1, '681.90']])
+    const cards = crossingsFromSurvey(AXIS, classifyDxfConstraints(data), data, {
+      designInvertAtM: () => 682.2,
+      designDiameterMm: 450,
+    })
+    // Сеть ниже лотка: 682.20 − 681.90. Знаковая разность до верха трубы дала бы
+    // −0.75 и объявила бы столкновение там, где сеть спокойно проходит снизу.
+    expect(cards[0].clearanceM).toBeCloseTo(0.3, 3)
+    expect(cards[0].source).toContain('под лотком трубы')
   })
 
   it('does not turn a multi-stroke symbol into a dozen crossings', () => {

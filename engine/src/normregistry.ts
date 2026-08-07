@@ -72,7 +72,49 @@ const BOTH_WORK: WorkType[] = ['new', 'reconstruction']
 
 const SN_VODOOTVEDENIE_PDF = 'docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf'
 
-export const NORM_DOCUMENTS: NormDocument[] = [
+/**
+ * Официальные PDF, действительно лежащие в `docs/norms`.
+ *
+ * Список пуст, и это не упущение, а состояние дел: ни одной официальной
+ * редакции в репозитории нет, `git log` по `*.pdf` пуст — их там не было
+ * никогда. Между тем 47 пунктов объявляли себя `verified`, то есть «текст
+ * сверен с документом на такой-то странице», и сверить это было нечем.
+ * Собственное правило проекта (`docs/norms/README.md`) называет такой пункт
+ * равносильным выдуманному, но код правило не исполнял.
+ *
+ * Отсюда статус считается, а не объявляется: см. `withCheckableStatus`.
+ * Владелец кладёт PDF, дописывает сюда путь — и пункты сами возвращаются в
+ * `verified`, без правки семидесяти пяти записей.
+ *
+ * Список сверяется с диском тестом `normregistry.test.ts`: путь отсюда обязан
+ * существовать, а PDF с диска — быть здесь.
+ */
+export const NORM_FILES_PRESENT: ReadonlySet<string> = new Set<string>([])
+
+/** Есть ли документ, которым пункт можно проверить. */
+function checkable(sourceFile: string | undefined): boolean {
+  return sourceFile !== undefined && NORM_FILES_PRESENT.has(sourceFile)
+}
+
+const NO_DOCUMENT_NOTE = 'Официальной редакции нет в docs/norms: сверить пункт нечем, '
+  + 'поэтому статус понижен до неподтверждённого. Формулировка и страница '
+  + 'сохранены — это запись о том, откуда текст переписан, а не подтверждение.'
+
+/**
+ * Понижает `verified` до `unverified`, когда документа нет.
+ *
+ * Величины при этом не меняются ни на йоту: расчёт как считал по таблицам, так
+ * и считает. Меняется только то, что проект о них утверждает.
+ */
+function withCheckableStatus<T extends { status: NormStatus; sourceFile?: string; note?: string }>(
+  entries: T[],
+): T[] {
+  return entries.map((entry) => (entry.status === 'verified' && !checkable(entry.sourceFile)
+    ? { ...entry, status: 'unverified' as NormStatus, note: entry.note ? `${entry.note} ${NO_DOCUMENT_NOTE}` : NO_DOCUMENT_NOTE }
+    : entry))
+}
+
+const NORM_DOCUMENTS_DECLARED: NormDocument[] = [
   {
     code: 'СН РК 4.01-03-2013*',
     title: 'Водоотведение. Наружные сети и сооружения',
@@ -173,11 +215,13 @@ export const NORM_DOCUMENTS: NormDocument[] = [
   { code: 'ТЗ на проектирование', title: 'Задание на проектирование объекта (утверждается заказчиком, реквизиты — в проекте)', edition: 'по проекту', status: 'unverified' },
 ]
 
+export const NORM_DOCUMENTS: NormDocument[] = withCheckableStatus(NORM_DOCUMENTS_DECLARED)
+
 /**
  * An entry is 'unverified' until confirmed against the official text
  * (docs/norms PDF, sourceFile + sourcePage). clause: null means TODO_NORM_REF.
  */
-export const NORM_REGISTRY: NormClause[] = [
+const NORM_REGISTRY_DECLARED: NormClause[] = [
   {
     id: 'freeHead.base',
     documentCode: 'СНиП 2.04.02-84*',
@@ -1171,6 +1215,8 @@ export const NORM_REGISTRY: NormClause[] = [
     sourcePage: 176,
   },
 ]
+
+export const NORM_REGISTRY: NormClause[] = withCheckableStatus(NORM_REGISTRY_DECLARED)
 
 const CLAUSE_BY_ID = new Map(NORM_REGISTRY.map((c) => [c.id, c]))
 

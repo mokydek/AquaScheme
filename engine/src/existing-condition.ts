@@ -365,7 +365,10 @@ export function agreeWithDocument(input: {
   if (document.diameterMm && input.surveyLabel) {
     const agrees = input.surveyLabel.diameterMm === document.diameterMm.value
     checks.push({
-      quantity: 'Диаметр, мм',
+      // Обе стороны описывают СУЩЕСТВУЮЩУЮ трубу: подписи вдоль трассы и
+      // раздел характеристик обследуемой сети. С проектным диаметром, который
+      // назначают технические условия, эта строка не связана.
+      quantity: 'Диаметр существующей, мм',
       fromSurvey: String(input.surveyLabel.diameterMm),
       fromDocument: String(document.diameterMm.value),
       agrees,

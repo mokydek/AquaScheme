@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { getClause } from './normregistry'
 import type { NormClause, NormDocument } from './normregistry'
 import {
   auditClauseHierarchy,
@@ -106,11 +107,18 @@ describe('аудит правил реестра', () => {
   })
 
   it('известен ровно один случай опоры на российский образец', () => {
-    // `drawing.stamp` подтверждён по ГОСТ Р 21.101-2020, а тот зарегистрирован
+    // `drawing.stamp` переписан по ГОСТ Р 21.101-2020, а тот зарегистрирован
     // как методический образец. Вопрос вынесен в docs/norms/CONFLICTS.md и
     // решается пользователем; тест фиксирует состояние, чтобы новый такой
     // случай не появился незаметно.
+    //
+    // Предупреждение относится только к ПОДТВЕРЖДЁННЫМ правилам: неподтверждённое
+    // и так уходит инженеру на сверку, и второе сообщение о нём было бы шумом.
+    // Пока в docs/norms нет ни одного PDF, подтверждённых правил нет вовсе, и
+    // список пуст — это исход того же правила, а не его отказ. Единственный
+    // ожидаемый случай остаётся зафиксированным по имени.
     const methodological = auditClauseHierarchy().filter((issue) => issue.code === 'METHODOLOGICAL_ONLY')
-    expect(methodological.map((issue) => issue.clauseId)).toEqual(['drawing.stamp'])
+    const stampIsVerified = getClause('drawing.stamp')?.status === 'verified'
+    expect(methodological.map((issue) => issue.clauseId)).toEqual(stampIsVerified ? ['drawing.stamp'] : [])
   })
 })

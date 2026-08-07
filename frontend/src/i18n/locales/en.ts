@@ -717,7 +717,7 @@ export const en = {
         thRead: 'Read from the document',
         thValue: 'Value',
         thQuote: 'Taken from',
-        readDiameter: 'Pipe diameter, mm',
+        readDiameter: 'Existing pipe diameter, mm',
         readLength: 'Length, m',
         readChambers: 'Manholes',
         readMaterial: 'Material',

@@ -1,8 +1,12 @@
+import { existsSync, readdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   getClause,
   justified,
   NORM_DOCUMENTS,
+  NORM_FILES_PRESENT,
   NORM_REGISTRY,
   isCompleteConfirmation,
   unverifiedClauses,
@@ -24,20 +28,24 @@ describe('norm registry', () => {
         expect(clause.clause, clause.id).not.toBeNull()
       }
     }
-    expect(unverifiedClauses().length).toBeLessThan(NORM_REGISTRY.length)
+    // Пока в docs/norms нет ни одного PDF, подтверждённых пунктов нет тоже, и
+    // на сверку инженеру уходят все. Строгое «меньше, чем всего» стояло здесь
+    // раньше и проходило только потому, что статус объявлялся, а не считался.
+    expect(unverifiedClauses().length).toBeLessThanOrEqual(NORM_REGISTRY.length)
   })
 
-  it('verified sewer clauses carry the values transcribed from СН РК 4.01-03-2013*', () => {
-    expect(getClause('sewer.minDiameter')?.status).toBe('verified')
+  it('sewer clauses carry the values transcribed from СН РК 4.01-03-2013*', () => {
+    // Проверяется запись о переписывании, а не статус: статус зависит от того,
+    // лежит ли документ в репозитории, и подтверждать текст сам по себе не может.
+    expect(getClause('sewer.minDiameter')?.sourceFile).toContain('sn-rk-4-01-03-2013')
     expect(getClause('sewer.minDiameter')?.sourcePage).toBe(39)
     expect(getClause('sewer.slope.min')?.valueText).toContain('0.008')
-    expect(getClause('drainage.equalsWater')?.status).toBe('verified')
     expect(getClause('drainage.equalsWater')?.clause).toBe('5.5.1')
   })
 
-  it('НБ3: GOST drawing/spec clauses and RK code clauses are verified with pages', () => {
+  it('НБ3: GOST drawing/spec clauses and RK code clauses carry pages', () => {
     for (const id of ['spec.form', 'drawing.generalData', 'drawing.plan', 'drawing.profile', 'drawing.stamp']) {
-      expect(getClause(id)?.status, id).toBe('verified')
+      expect(getClause(id)?.sourcePage, id).toBeGreaterThan(0)
       expect(getClause(id)?.sourceFile, id).toMatch(/gost/)
     }
     expect(getClause('spec.form')?.documentCode).toBe('ГОСТ 21.110-2013')
@@ -114,9 +122,65 @@ describe('сверка пункта инженером проекта', () => {
 
   it('подтверждённый в реестре пункт повторной сверки не требует', () => {
     // Список неподтверждённых и так его не содержит, а лишняя запись не должна
-    // ни на что влиять.
-    const verified = NORM_REGISTRY.find((c) => c.status === 'verified')!
+    // ни на что влиять. Пока ни одного PDF в репозитории нет, подтверждённых
+    // пунктов не остаётся вовсе — тогда проверять нечего, и это правильный
+    // исход, а не пропуск: см. соседний блок про сторожа документов.
+    const verified = NORM_REGISTRY.find((c) => c.status === 'verified')
+    if (!verified) {
+      expect(NORM_FILES_PRESENT.size).toBe(0)
+      return
+    }
     const before = unverifiedClauses().length
     expect(unverifiedClauses([{ ...full, clauseId: verified.id }]).length).toBe(before)
+  })
+})
+
+describe('подтверждать нечем — значит не подтверждено', () => {
+  const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..')
+  const onDisk = (repoPath: string) => existsSync(join(root, ...repoPath.split('/')))
+
+  it('каждый файл из списка присутствующих действительно лежит на диске', () => {
+    for (const file of NORM_FILES_PRESENT) {
+      expect(onDisk(file), file).toBe(true)
+    }
+  })
+
+  it('каждый PDF с диска перечислен в списке присутствующих', () => {
+    const dir = join(root, 'docs', 'norms')
+    const pdfs = existsSync(dir) ? readdirSync(dir).filter((name) => name.toLowerCase().endsWith('.pdf')) : []
+    for (const name of pdfs) {
+      expect(NORM_FILES_PRESENT.has(`docs/norms/${name}`), name).toBe(true)
+    }
+  })
+
+  it('пункт не может быть подтверждённым без документа на диске', () => {
+    // Сторож, которого не было: прежний тест сверял только ФОРМУ пути
+    // (`/^docs\/norms\/.+\.pdf$/`) и пропускал 47 пунктов, ссылавшихся на
+    // файлы, которых в репозитории не было никогда.
+    for (const clause of NORM_REGISTRY) {
+      if (clause.status !== 'verified') continue
+      expect(clause.sourceFile, clause.id).toMatch(/^docs\/norms\/.+\.pdf$/)
+      expect(onDisk(clause.sourceFile!), clause.id).toBe(true)
+      expect(clause.sourcePage, clause.id).toBeGreaterThan(0)
+    }
+  })
+
+  it('документ не может быть подтверждённым без файла на диске', () => {
+    for (const document of NORM_DOCUMENTS) {
+      if (document.status !== 'verified') continue
+      expect(document.sourceFile, document.code).toBeTruthy()
+      expect(onDisk(document.sourceFile!), document.code).toBe(true)
+    }
+  })
+
+  it('запись о том, откуда текст переписан, при понижении статуса не теряется', () => {
+    const sewerMinDiameter = NORM_REGISTRY.find((clause) => clause.id === 'sewer.minDiameter')!
+    expect(sewerMinDiameter.sourceFile).toBe('docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf')
+    expect(sewerMinDiameter.sourcePage).toBe(39)
+    expect(sewerMinDiameter.note).toContain('сверить пункт нечем')
+  })
+
+  it('все пункты доходят до инженера на сверку, пока документов нет', () => {
+    expect(unverifiedClauses().length).toBe(NORM_REGISTRY.length)
   })
 })

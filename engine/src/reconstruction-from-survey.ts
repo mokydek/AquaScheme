@@ -335,7 +335,12 @@ export function buildReconstructionFromSurvey(
       chain.map((chamber) => ({ x: chamber.x, y: chamber.y })),
       constraints,
       data,
-      { ownChamberStationsM: chainageM, designInvertAtM: invertAt },
+      {
+        ownChamberStationsM: chainageM,
+        designInvertAtM: invertAt,
+        // Без диаметра просвет считался до лотка и завышался ровно на него.
+        designDiameterMm: options.designDiameterMm,
+      },
     )
     : []
   // Шаг колодцев по норме против фактического: реконструкция идёт по
