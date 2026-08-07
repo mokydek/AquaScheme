@@ -236,3 +236,14 @@ describe('reconstruction assembled from a survey', () => {
     expect(result.blockers.some((message) => message.includes('футляра'))).toBe(false)
   })
 })
+
+describe('расход, которого из съёмки не выводится', () => {
+  it('назван стоп-фактором самим модулем, а не только гидравликой', () => {
+    const result = buildReconstructionFromSurvey(streetSurvey(), { designDiameterMm: 450 })
+    const flow = result.blockers.find((blocker) => blocker.includes('Расчётный расход'))
+    expect(flow).toBeDefined()
+    // Названа и причина невыводимости, и источник величины.
+    expect(flow).toContain('за границами чертежа')
+    expect(flow).toContain('технических условий')
+  })
+})
