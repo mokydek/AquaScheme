@@ -59,7 +59,7 @@ describe('словарь покрывает оба исхода', () => {
 
   it('сообщение о деградации выгрузки называет, что DXF всё равно получен', async () => {
     const { ru } = await import('../i18n/locales/ru')
-    const notice = (ru.translation.project as Record<string, Record<string, string>>)
+    const notice = (ru.translation.project as unknown as Record<string, Record<string, string>>)
       .export.converterError
     expect(notice).toContain('DXF')
   })

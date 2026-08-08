@@ -18,6 +18,7 @@
     "test:converter": "npm test --prefix converter",
     "test:benchmark": "node --test scripts/visual-score.test.mjs",
     "test:db": "node --test scripts/build-bootstrap.test.mjs scripts/db-contract.test.mjs",
+    "test:e2e": "playwright test",
     "db:bootstrap": "node scripts/build-bootstrap.mjs",
     "db:check": "node scripts/build-bootstrap.mjs --check",
     "db:verify:live": "node scripts/db-verify-live.mjs",
@@ -31,6 +32,7 @@
     "audit:i18n": "node scripts/i18n-debt.mjs"
   },
   "devDependencies": {
-    "@napi-rs/canvas": "0.1.100"
+    "@napi-rs/canvas": "0.1.100",
+    "@playwright/test": "^1.62.1"
   }
 }

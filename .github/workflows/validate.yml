@@ -105,3 +105,47 @@ jobs:
           ODA_ROUNDTRIP: '1'
           ODA_CONVERTER_PATH: xvfb-run -a ODAFileConverter
         run: npm run test:converter
+
+  # Браузерный смоук. Требует тестового пользователя и работающего Supabase,
+  # поэтому включается только при заданных секретах: без них задание печатает,
+  # что путь не проверялся, — это видно, в отличие от зелёного прогона, в
+  # котором ничего не запускалось.
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ github.event_name == 'push' }}
+    env:
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Skip without test credentials
+        if: ${{ env.E2E_EMAIL == '' || env.E2E_PASSWORD == '' }}
+        run: |
+          echo "E2E_EMAIL / E2E_PASSWORD не заданы: браузерный смоук не выполнялся."
+          echo "Это пропуск, а не успех — путь пользователя остался непроверенным."
+
+      - name: Install dependencies
+        if: ${{ env.E2E_EMAIL != '' && env.E2E_PASSWORD != '' }}
+        run: npm ci
+
+      - name: Install the browser
+        if: ${{ env.E2E_EMAIL != '' && env.E2E_PASSWORD != '' }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Build the frontend
+        if: ${{ env.E2E_EMAIL != '' && env.E2E_PASSWORD != '' }}
+        run: npm run build
+
+      - name: Run the browser smoke
+        if: ${{ env.E2E_EMAIL != '' && env.E2E_PASSWORD != '' }}
+        run: npm run test:e2e

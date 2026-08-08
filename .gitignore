@@ -43,3 +43,7 @@ tmp/
 # Real-object benchmark data (confidential: sources and the etalon album).
 # The whole folder stays local; only generic product code goes to git.
 docs/benchmark/
+
+# Отчёты браузерного смоука: артефакты прогона, не исходники.
+/playwright-report/
+/test-results/
