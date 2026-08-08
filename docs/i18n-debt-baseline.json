@@ -1,35 +1,7 @@
 {
   "_comment": "Текст интерфейса мимо словарей. Может только снижаться; обновляется через npm run audit:i18n -- --write-baseline. Приложение заявляет три языка, и зашитая по-русски строка двум из них показывается неверно.",
-  "total": 86,
+  "total": 25,
   "files": [
-    {
-      "file": "frontend/src/app/project/WorkingDrawingPreview.tsx",
-      "count": 16
-    },
-    {
-      "file": "frontend/src/app/project/LiveSituationMap.tsx",
-      "count": 12
-    },
-    {
-      "file": "frontend/src/app/project/ManholeCatalogSection.tsx",
-      "count": 11
-    },
-    {
-      "file": "frontend/src/app/project/PipeCalculationsView.tsx",
-      "count": 9
-    },
-    {
-      "file": "frontend/src/app/project/BasisSection.tsx",
-      "count": 5
-    },
-    {
-      "file": "frontend/src/app/project/HydraulicsSection.tsx",
-      "count": 5
-    },
-    {
-      "file": "frontend/src/app/project/SchemeView.tsx",
-      "count": 5
-    },
     {
       "file": "frontend/src/landing/NetworkFigure.tsx",
       "count": 5
@@ -60,6 +32,14 @@
     },
     {
       "file": "frontend/src/app/project/ExportSection.tsx",
+      "count": 1
+    },
+    {
+      "file": "frontend/src/app/project/HydraulicsSection.tsx",
+      "count": 1
+    },
+    {
+      "file": "frontend/src/app/project/LiveSituationMap.tsx",
       "count": 1
     },
     {

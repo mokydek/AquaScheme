@@ -34,6 +34,7 @@ function statusText(status: WorkingDrawingSheet['status']): string {
 }
 
 function DrawingFrame({ sheet, children, showFrame = true }: { sheet: WorkingDrawingSheet; children: ReactNode; showFrame?: boolean }) {
+  const { t } = useTranslation()
   return (
     <svg className="working-drawing-preview" viewBox="0 0 1180 820" role="img" aria-label={`Предпросмотр: ${sheet.title}`}>
       <rect width="1180" height="820" fill="#fff" />
@@ -43,11 +44,11 @@ function DrawingFrame({ sheet, children, showFrame = true }: { sheet: WorkingDra
         <line x1="790" y1="736" x2="1162" y2="736" stroke="#111" />
         <line x1="1020" y1="700" x2="1020" y2="802" stroke="#111" />
         <line x1="1090" y1="700" x2="1090" y2="802" stroke="#111" />
-        <text x="804" y="721" fontSize="12">Наружные сети канализации</text>
+        <text x="804" y="721" fontSize="12">{t('project.preview.sewerNetworks')}</text>
         <text x="804" y="756" fontSize="12" fontWeight="700">{sheet.title}</text>
         <text x="1055" y="721" textAnchor="middle" fontSize="10">{sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}</text>
         <text x="1055" y="764" textAnchor="middle" fontSize="18">{sheet.sheetNumber}</text>
-        <text x="1126" y="721" textAnchor="middle" fontSize="10">Статус</text>
+        <text x="1126" y="721" textAnchor="middle" fontSize="10">{t('project.preview.status')}</text>
         <text x="1126" y="758" textAnchor="middle" fontSize="9">{sheet.status}</text>
       </>}
       {children}
@@ -170,9 +171,10 @@ function PlanPreview({
   showFrame: boolean
   constraints?: RouteConstraintInput | null
 }) {
+  const { t } = useTranslation()
   const window = sheet.window
   if (!window) {
-    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии плана</text></DrawingFrame>
+    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">{t('project.preview.noPlanGeometry')}</text></DrawingFrame>
   }
   const topo = surveyPoints.filter((point) =>
     point.x >= window.minX && point.x <= window.maxX && point.y >= window.minY && point.y <= window.maxY)
@@ -188,7 +190,7 @@ function PlanPreview({
     surveyPointCountInWindow: topo.length,
   })
   if (!scene) {
-    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии плана</text></DrawingFrame>
+    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">{t('project.preview.noPlanGeometry')}</text></DrawingFrame>
   }
   const sourcePath = scene.sourcePath
   const path = scene.selectedPath
@@ -357,14 +359,14 @@ function PlanPreview({
       <rect x={content.x} y={content.y} width={content.width} height={content.height} fill="none" stroke="#222" />
       {!scene.hasPlanContext && <g data-plan-context-missing="true">
         <rect x="370" y="76" width="440" height="40" fill="#fff4dc" stroke="#c07800" strokeWidth="1.5" />
-        <text x="590" y="92" textAnchor="middle" fontSize="11" fontWeight="700" fill="#8a4c00">НЕПОЛНЫЙ ПЛАН: топографическая/CAD-подоснова отсутствует</text>
-        <text x="590" y="107" textAnchor="middle" fontSize="9" fill="#8a4c00">Показана расчётная сеть; финальный выпуск остаётся заблокированным</text>
+        <text x="590" y="92" textAnchor="middle" fontSize="11" fontWeight="700" fill="#8a4c00">{t('project.preview.incompletePlan')}</text>
+        <text x="590" y="107" textAnchor="middle" fontSize="9" fill="#8a4c00">{t('project.preview.incompletePlanHint')}</text>
       </g>}
       <g>
         <rect x="940" y="32" width="185" height="112" fill="#fff" stroke="#222" />
         <polyline points={overview.map((point) => `${ox(point.x)},${oy(point.y)}`).join(' ')} fill="none" stroke="#999" strokeWidth="1.5" />
         <polyline points={path.map((point) => `${ox(point.x)},${oy(point.y)}`).join(' ')} fill="none" stroke="#1746b5" strokeWidth="4" />
-        <text x="947" y="140" fontSize="8">Положение текущего листа</text>
+        <text x="947" y="140" fontSize="8">{t('project.preview.sheetPosition')}</text>
       </g>
       <g transform="translate(78 105)">
         <line x1="0" y1="28" x2="0" y2="0" stroke="#111" />
@@ -373,9 +375,9 @@ function PlanPreview({
       </g>
       <g transform="translate(62 610)" fontSize="8">
         <rect x="0" y="0" width="300" height="45" fill="#fff" stroke="#aaa" />
-        <line x1="10" y1="12" x2="38" y2="12" stroke="#1746b5" strokeWidth="4" /><text x="45" y="15">проектная ось</text>
-        <line x1="120" y1="12" x2="148" y2="12" stroke="#9b2c8c" strokeDasharray="6 4" /><text x="155" y="15">коммуникации</text>
-        <line x1="10" y1="31" x2="38" y2="31" stroke="#d22" /><text x="45" y="34">красные линии / коридор</text>
+        <line x1="10" y1="12" x2="38" y2="12" stroke="#1746b5" strokeWidth="4" /><text x="45" y="15">{t('project.preview.legendAxis')}</text>
+        <line x1="120" y1="12" x2="148" y2="12" stroke="#9b2c8c" strokeDasharray="6 4" /><text x="155" y="15">{t('project.preview.legendUtilities')}</text>
+        <line x1="10" y1="31" x2="38" y2="31" stroke="#d22" /><text x="45" y="34">{t('project.preview.legendRedLines')}</text>
       </g>
       {/*
         Пояснение под чертежом разбито на две строки: одной оно дотягивалось до
@@ -409,9 +411,10 @@ function NetworkPlanPreview({
   showFrame: boolean
   constraints?: RouteConstraintInput | null
 }) {
+  const { t } = useTranslation()
   const networkPoints = drawingSet.networkPaths.flatMap((path) => path.points)
   if (networkPoints.length < 2) {
-    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённой геометрии сети</text></DrawingFrame>
+    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">{t('project.preview.noNetworkGeometry')}</text></DrawingFrame>
   }
   const rawMinX = Math.min(...networkPoints.map((point) => point.x))
   const rawMaxX = Math.max(...networkPoints.map((point) => point.x))
@@ -476,7 +479,7 @@ function ProfilePreview({ sheet, profile, schedule, showFrame }: {
   const stations = (profile?.stations ?? []).filter((station) => !sheet.interval
     || (station.chainageM >= sheet.interval.fromM - 1e-9 && station.chainageM <= sheet.interval.toM + 1e-9))
   if (stations.length < 2) {
-    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">Нет подтверждённых станций профиля</text></DrawingFrame>
+    return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="60" y="90" fontSize="20">{t('project.preview.noProfileStations')}</text></DrawingFrame>
   }
   const from = stations[0].chainageM
   const to = stations[stations.length - 1].chainageM
@@ -592,13 +595,14 @@ function ProfilePreview({ sheet, profile, schedule, showFrame }: {
 }
 
 function MaterialPreview({ sheet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
+  const { t } = useTranslation()
   const range = sheet.dataRange ?? { start: 0, end: schedule?.manholes.length ?? 0, total: schedule?.manholes.length ?? 0 }
   const rows = schedule?.manholes.slice(range.start, range.end) ?? []
   const constructionByLabel = new Map(manholeConstructions.map((item) => [item.manholeLabel, item]))
   return (
     <DrawingFrame sheet={sheet} showFrame={showFrame}>
       <text x="55" y="55" fontSize="17" fontWeight="700">{sheet.title}</text>
-      <text x="55" y="82" fontSize="10">Количества конструктивных элементов выпускаются только после выбора подтверждённого каталога колодцев.</text>
+      <text x="55" y="82" fontSize="10">{t('project.preview.needManholeCatalog')}</text>
       <g transform="translate(55 105)">
         {['Марка', 'Пикет', 'Глубина, м', 'Диаметр, мм', 'Конструкция'].map((label, index) => (
           <g key={label}><rect x={index * 205} y="0" width="205" height="34" fill="#f2f2f2" stroke="#111" /><text x={index * 205 + 8} y="21" fontSize="10" fontWeight="700">{label}</text></g>
@@ -612,10 +616,11 @@ function MaterialPreview({ sheet, schedule, manholeConstructions, showFrame }: {
 }
 
 function DetailPreview({ sheet, drawingSet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; drawingSet: WorkingDrawingSet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
+  const { t } = useTranslation()
   if (sheet.variant === 'protective_grid') {
     const design = drawingSet.protectiveGridDesign
     if (!design) {
-      return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="55" y="80" fontSize="18">Нет подтверждённых параметров защитной сетки.</text></DrawingFrame>
+      return <DrawingFrame sheet={sheet} showFrame={showFrame}><text x="55" y="80" fontSize="18">{t('project.preview.noGridParams')}</text></DrawingFrame>
     }
     const drawingWidth = Math.min(620, 340 * design.overallWidthMm / Math.max(design.overallHeightMm, 1))
     const drawingHeight = Math.min(340, 620 * design.overallHeightMm / Math.max(design.overallWidthMm, 1))
@@ -626,7 +631,7 @@ function DetailPreview({ sheet, drawingSet, schedule, manholeConstructions, show
     return (
       <DrawingFrame sheet={sheet} showFrame={showFrame}>
         <text x="55" y="55" fontSize="17" fontWeight="700">{sheet.title}</text>
-        <text x="55" y="82" fontSize="10">Чертёж сформирован из подтверждённой карточки изделия; размеры эталонного проекта не используются.</text>
+        <text x="55" y="82" fontSize="10">{t('project.preview.gridFromCard')}</text>
         <rect x={x0} y={y0} width={drawingWidth} height={drawingHeight} fill="none" stroke="#111" strokeWidth="4" />
         {Array.from({ length: verticalBars }, (_, index) => {
           const x = x0 + (index + 1) * design.barSpacingMm / design.overallWidthMm * drawingWidth
@@ -673,6 +678,7 @@ function DetailPreview({ sheet, drawingSet, schedule, manholeConstructions, show
 }
 
 function SpecificationPreview({ sheet, schedule, manholeConstructions, showFrame }: { sheet: WorkingDrawingSheet; schedule: SewerSchedule | null; manholeConstructions: SelectedManholeConstruction[]; showFrame: boolean }) {
+  const { t } = useTranslation()
   const componentTotals = new Map<string, { name: string; code: string; unit: string; quantity: number }>()
   for (const construction of manholeConstructions) {
     for (const component of construction.components) {
@@ -695,7 +701,7 @@ function SpecificationPreview({ sheet, schedule, manholeConstructions, showFrame
   return (
     <DrawingFrame sheet={sheet} showFrame={showFrame}>
       <text x="55" y="55" fontSize="17" fontWeight="700">{sheet.title}</text>
-      <text x="55" y="82" fontSize="10">Ведомость пересчитывается из геометрии сети, гидравлики и активных параметрических каталогов.</text>
+      <text x="55" y="82" fontSize="10">{t('project.preview.billRecomputed')}</text>
       <g transform="translate(55 110)">
         {['Позиция', 'Наименование', 'Код', 'Ед. / количество'].map((label, index) => (
           <g key={label}><rect x={index * 255} y="0" width="255" height="34" fill="#f2f2f2" stroke="#111" /><text x={index * 255 + 8} y="22" fontSize="10" fontWeight="700">{label}</text></g>

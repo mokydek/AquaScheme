@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { TracedNetwork } from '@aquascheme/engine'
 import { ZoomPanSurface } from './ZoomPanSurface'
 
@@ -35,6 +36,7 @@ export interface SchemeViewProps {
 }
 
 export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFlowLps, outletLabel, corridorRings, visibleSteps }: SchemeViewProps) {
+  const { t } = useTranslation()
   const model = useMemo(() => {
     const ringPts = (corridorRings ?? []).flat()
     const pts = [...network.nodes.map((n) => ({ x: n.x, y: n.y })), ...buildings, ...ringPts]
@@ -173,15 +175,15 @@ export function SchemeView({ title, network, buildings, pipeDiameterMm, outletFl
 
       {/* Legend */}
       <g transform={`translate(${PAD - 20},${H - 64})`} fontSize={11} fill={INK} style={layerStyle('legend')}>
-        <text x={0} y={0} fontWeight={600}>Условные обозначения</text>
+        <text x={0} y={0} fontWeight={600}>{t('project.scheme.legend')}</text>
         <line x1={0} y1={14} x2={34} y2={14} stroke={CONTEXT} strokeWidth={1} />
-        <text x={42} y={18}>подоснова (здания, красные линии)</text>
+        <text x={42} y={18}>{t('project.scheme.legendBase')}</text>
         <line x1={0} y1={30} x2={34} y2={30} stroke={ROUTE} strokeWidth={4} />
-        <text x={42} y={34}>коридор сетей (проектируемая трасса)</text>
+        <text x={42} y={34}>{t('project.scheme.legendCorridor')}</text>
         <rect x={11} y={40} width={12} height={10} fill={ROUTE} opacity={0.85} />
-        <text x={42} y={49}>выпуск / очистные сооружения</text>
+        <text x={42} y={49}>{t('project.scheme.legendOutlet')}</text>
         <line x1={0} y1={60} x2={34} y2={60} stroke={ROUTE} strokeWidth={1} strokeDasharray="6 4" />
-        <text x={42} y={64}>полоса отвода (красные линии)</text>
+        <text x={42} y={64}>{t('project.scheme.legendRightOfWay')}</text>
       </g>
       </svg>
     </ZoomPanSurface>

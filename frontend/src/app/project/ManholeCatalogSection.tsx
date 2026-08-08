@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
 import {
   MANHOLE_CATALOG_EXAMPLE,
@@ -25,6 +26,7 @@ export function ManholeCatalogSection({
   dataset?: DatasetRow
   onSaved: () => Promise<void>
 }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const content = (dataset?.content ?? {}) as ManholeCatalogContent
@@ -74,17 +76,17 @@ export function ManholeCatalogSection({
   }
 
   return (
-    <Panel title="Параметрический каталог колодцев и камер" status={verified > 0 ? 'filled' : entries.length > 0 ? 'default' : 'empty'}>
-      <p className="hint">Каталог задаёт диапазоны глубин и диаметров, состав элементов и точный источник. Неподтверждённые строки не разрешают выпуск ведомости.</p>
+    <Panel title={t('project.manholeCatalog.title')} status={verified > 0 ? 'filled' : entries.length > 0 ? 'default' : 'empty'}>
+      <p className="hint">{t('project.manholeCatalog.hint')}</p>
       <div className="section-actions">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>Скачать шаблон</button>
-        <input id={`manhole-catalog-${projectId}-file`} name={`manhole-catalog-${projectId}-file`} className="file-input" type="file" accept=".xlsx,.xls,.csv" aria-label="Каталог колодцев: XLSX/CSV" disabled={busy} onChange={(event) => void onFile(event)} />
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>{t('project.manholeCatalog.template')}</button>
+        <input id={`manhole-catalog-${projectId}-file`} name={`manhole-catalog-${projectId}-file`} className="file-input" type="file" accept=".xlsx,.xls,.csv" aria-label={t('project.manholeCatalog.fileLabel')} disabled={busy} onChange={(event) => void onFile(event)} />
       </div>
       <p className="stat-line">Конструкций: {entries.length} · подтверждено источником: {verified}</p>
       {entries.length > 0 && (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Тип</th><th>Диапазон труб</th><th>Глубина</th><th>Камера</th><th>Источник</th><th>Статус</th></tr></thead>
+            <thead><tr><th>{t('project.manholeCatalog.thType')}</th><th>{t('project.manholeCatalog.thPipeRange')}</th><th>{t('project.manholeCatalog.thDepth')}</th><th>{t('project.manholeCatalog.thChamber')}</th><th>{t('project.manholeCatalog.thSource')}</th><th>{t('project.manholeCatalog.thStatus')}</th></tr></thead>
             <tbody>{entries.map((entry) => (
               <tr key={entry.typeCode} className={entry.verified ? undefined : 'row-warn'}>
                 <td>{entry.typeCode}</td><td>Ø{entry.minPipeDiameterMm}–{entry.maxPipeDiameterMm}</td>
@@ -96,7 +98,7 @@ export function ManholeCatalogSection({
         </div>
       )}
       {notice && <p className="notice">{notice}</p>}
-      <p className="hint">Если Supabase сообщает об ограничении kind, примените миграцию backend/migrations/0013_manhole_catalog.sql.</p>
+      <p className="hint">{t('project.manholeCatalog.migrationHint')}</p>
     </Panel>
   )
 }

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { GravityPipeResult } from '@aquascheme/engine'
 
 export function PipeCalculationsView({
@@ -7,19 +8,20 @@ export function PipeCalculationsView({
   pipes: GravityPipeResult[]
   nodeLabel: (nodeId: string) => string
 }) {
+  const { t } = useTranslation()
   return (
     <div className="pipe-calculations-view">
       <div className="pipe-calculations-summary">
-        <strong>Гидравлический расчёт всех участков</strong>
-        <span>{pipes.length} участков · диаметры выбираются по расходу, уклону, наполнению и скорости</span>
+        <strong>{t('project.pipeCalc.title')}</strong>
+        <span>{t('project.pipeCalc.summary', { count: pipes.length })}</span>
       </div>
       <div className="table-wrap">
         <table className="data-table">
           <thead>
             <tr>
-              <th>№</th><th>Участок</th><th className="num">Длина, м</th><th className="num">Расход, л/с</th>
-              <th className="num">Ø, мм</th><th className="num">Уклон, ‰</th><th className="num">h/D</th>
-              <th className="num">Скорость, м/с</th><th>Проверка</th>
+              <th>№</th><th>{t('project.pipeCalc.thPipe')}</th><th className="num">{t('project.pipeCalc.thLength')}</th><th className="num">{t('project.pipeCalc.thFlow')}</th>
+              <th className="num">{t('project.pipeCalc.thDiameter')}</th><th className="num">{t('project.pipeCalc.thSlope')}</th><th className="num">h/D</th>
+              <th className="num">{t('project.pipeCalc.thVelocity')}</th><th>{t('project.pipeCalc.thCheck')}</th>
             </tr>
           </thead>
           <tbody>
@@ -40,7 +42,7 @@ export function PipeCalculationsView({
         </table>
       </div>
       <p className="reference-source-note">
-        Расчётная таблица и спецификация строятся только из текущей инженерной модели. Локальный benchmark не является источником проектных значений.
+        {t('project.pipeCalc.note')}
       </p>
     </div>
   )

@@ -178,11 +178,11 @@ export function BasisSection({
       )}
       {content.project && (
         <div className="kv-list" style={{ marginTop: 12 }}>
-          <div className="kv"><span className="kv-label">Объект</span><span className="kv-value">{content.project.name}</span></div>
-          <div className="kv"><span className="kv-label">Шифр / стадия</span><span className="kv-value">{content.project.code} · {content.project.stage}</span></div>
-          <div className="kv"><span className="kv-label">Заказчик</span><span className="kv-value">{content.project.customer} · БИН {content.project.customerBin}</span></div>
-          <div className="kv"><span className="kv-label">АПЗ</span><span className="kv-value">№{content.project.apzNumber} от {content.project.apzDate}</span></div>
-          <div className="kv"><span className="kv-label">Адрес</span><span className="kv-value">{content.project.address}</span></div>
+          <div className="kv"><span className="kv-label">{t('project.basis.object')}</span><span className="kv-value">{content.project.name}</span></div>
+          <div className="kv"><span className="kv-label">{t('project.basis.code')}</span><span className="kv-value">{content.project.code} · {content.project.stage}</span></div>
+          <div className="kv"><span className="kv-label">{t('project.basis.client')}</span><span className="kv-value">{content.project.customer} · БИН {content.project.customerBin}</span></div>
+          <div className="kv"><span className="kv-label">{t('project.basis.apz')}</span><span className="kv-value">№{content.project.apzNumber} от {content.project.apzDate}</span></div>
+          <div className="kv"><span className="kv-label">{t('project.basis.address')}</span><span className="kv-value">{content.project.address}</span></div>
         </div>
       )}
       <div className="table-wrap" style={{ marginTop: 8 }}>

@@ -124,13 +124,13 @@ export function HydraulicsSection({
           <div className="table-wrap">
             <table className="data-table">
               <tbody>
-                <tr><th>Уровень источника в расчёте</th><td className="num">{headAssessment.sourceHeadM} м</td></tr>
-                <tr><th>Требуемый уровень источника</th><td className="num">{headAssessment.requiredSourceHeadM} м</td></tr>
+                <tr><th>{t('project.hydraulics.sourceLevel')}</th><td className="num">{headAssessment.sourceHeadM} м</td></tr>
+                <tr><th>{t('project.hydraulics.requiredLevel')}</th><td className="num">{headAssessment.requiredSourceHeadM} м</td></tr>
                 <tr className={headAssessment.reserveM < 0 ? 'row-warn' : undefined}>
-                  <th>Наименьший запас свободного напора</th>
+                  <th>{t('project.hydraulics.minReserve')}</th>
                   <td className="num">{headAssessment.reserveM} м</td>
                 </tr>
-                <tr><th>Определяющий узел</th><td>{headAssessment.governingNodeId ?? '—'}</td></tr>
+                <tr><th>{t('project.hydraulics.governingNode')}</th><td>{headAssessment.governingNodeId ?? '—'}</td></tr>
               </tbody>
             </table>
           </div>

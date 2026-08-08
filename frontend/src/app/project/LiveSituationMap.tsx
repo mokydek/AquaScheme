@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { contoursFromSurvey, localToLonLat } from '@aquascheme/engine'
@@ -51,7 +52,7 @@ function diameterColor(diameter: number | undefined): string {
   return '#8a35b5'
 }
 
-function routingExplanationHtml(dataSource: string | undefined): string {
+function routingExplanationHtml(dataSource: string | undefined, t: (key: string) => string): string {
   if (!dataSource?.startsWith('derived:constrained-route')) return ''
   const facts = new Map(dataSource.split('|').slice(1).map((token) => {
     const separator = token.indexOf('=')
@@ -66,7 +67,7 @@ function routingExplanationHtml(dataSource: string | undefined): string {
       ? 'соединение инженерного коридора с заданным выпуском'
       : 'участок минимальной суммарной стоимости внутри инженерного коридора'
   return [
-    '<hr><strong>Почему выбран участок</strong>',
+    `<hr><strong>${t('project.liveMap.whySegment')}</strong>`,
     `<br>${choice}.`,
     '<br>Альтернативы: соседние допустимые ячейки инженерного графа, проверенные детерминированным A*.',
     `<br>До направляющей оси: ${safe(facts.get('guideDistanceM'))} м.`,
@@ -99,6 +100,7 @@ export function LiveSituationMap({
   surveyPoints?: SurveyPoint[]
   outletFlowLps?: number
 }) {
+  const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapControlScope = `situation-map-${useId()}`
   const [ready, setReady] = useState(false)
@@ -238,7 +240,7 @@ export function LiveSituationMap({
         `<strong>${isPressure ? 'Напорный водовод от ЛНС' : isService ? 'Подключение ОС' : 'Самотёчный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м`,
         { sticky: true },
       )
-      const explanation = routingExplanationHtml(pipe.dataSource)
+      const explanation = routingExplanationHtml(pipe.dataSource, t)
       if (explanation) {
         line.bindPopup(
           `<strong>${isPressure ? 'Напорный водовод от ЛНС' : isService ? 'Подключение ОС' : 'Самотёчный коллектор'}</strong><br>${diameterLabel} мм<br>${pipe.lengthM.toFixed(1)} м${explanation}`,
@@ -286,7 +288,7 @@ export function LiveSituationMap({
     const lns = network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'lns_outlet' || node.kind === 'pumping_station')
     if (lns) {
       const position = toMapPoint(lns)
-      L.marker(position, { icon: L.divIcon({ className: 'source-map-label', html: '<strong>ЛНС</strong>', iconSize: [54, 24], iconAnchor: [27, 12] }) })
+      L.marker(position, { icon: L.divIcon({ className: 'source-map-label', html: `<strong>${t('project.liveMap.lns')}</strong>`, iconSize: [54, 24], iconAnchor: [27, 12] }) })
         .bindTooltip(`ЛНС${lns.designFlowLps == null ? '' : `<br>${lns.designFlowLps.toFixed(1)} л/с`}`)
         .addTo(map)
       bounds.extend(position)
@@ -295,7 +297,7 @@ export function LiveSituationMap({
     const legend = new L.Control({ position: 'bottomleft' })
     legend.onAdd = () => {
       const element = L.DomUtil.create('div', 'situation-map-legend')
-      element.innerHTML = '<strong>Проектная сеть</strong><span><i class="main"></i>самотёчный коллектор</span><span><i class="service"></i>подключение ОС</span><span style="color:#e17b16">━━ напорный водовод</span><span><i class="corridor"></i>полоса отвода</span>'
+      element.innerHTML = `<strong>${t('project.liveMap.designNetwork')}</strong><span><i class="main"></i>${t('project.liveMap.gravityCollector')}</span><span><i class="service"></i>${t('project.liveMap.outletConnection')}</span><span style="color:#e17b16">${t('project.liveMap.pressureMain')}</span><span><i class="corridor"></i>${t('project.liveMap.rightOfWay')}</span>`
       return element
     }
     legend.addTo(map)
@@ -350,8 +352,8 @@ export function LiveSituationMap({
 
   return (
     <div className="live-situation-map-wrap">
-      {!ready && <div className="live-map-loading"><span className="export-progress-spinner" />Загрузка настоящей карты…</div>}
-      <div ref={containerRef} className="live-situation-map" aria-label="Интерактивная карта с проектной трассой коллектора" />
+      {!ready && <div className="live-map-loading"><span className="export-progress-spinner" />{t('project.liveMap.loadingMap')}</div>}
+      <div ref={containerRef} className="live-situation-map" aria-label={t('project.liveMap.mapLabel')} />
       <p className="reference-source-note">
         {constraints?.georeference && constraints.georeference.kind !== 'unreferenced'
           ? 'OSM, спутник и OpenTopoMap — только ориентировочные подложки. '
@@ -370,11 +372,11 @@ export function LiveSituationMap({
         )
       )}
       {constraints?.georeference?.kind === 'survey_grid' ? (
-        <p className="notice">Координаты подтверждены координатной сеткой чертежа: масштаб, разворот и начало координат известны, поэтому планы и профили выпускать можно. Датум из сетки не следует, и подложка OSM не подкладывается — иначе объект встал бы не на своё место. Задайте proj4 либо контрольные точки, если нужна карта.</p>
+        <p className="notice">{t('project.liveMap.gridConfirmed')}</p>
       ) : !constraints?.georeference
         || constraints.georeference.kind === 'unreferenced'
         || (constraints.georeference.kind === 'local_anchor' && !constraints.georeference.anchor) ? (
-          <p className="notice error">DWG не геопривязан: показана локальная координатная плоскость без OSM. Задайте proj4 либо контрольные точки, чтобы наложение на реальную карту было достоверным.</p>
+          <p className="notice error">{t('project.liveMap.notGeoreferenced')}</p>
         ) : null}
     </div>
   )

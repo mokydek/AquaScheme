@@ -87,3 +87,48 @@
 - **ЛНС** (`lnsX`, `lnsY`, `lnsFlow`, `lnsHead`) — локальная насосная станция;
 - **врезка**, **перепадный колодец**, **футляр** — встречаются в текстах
   движка, которые в словари пока не вынесены вовсе.
+
+## Пополнение от 07.08.2026 (второй заход, 86 → 25)
+
+### project.preview (15 ключей)
+
+Предпросмотр рабочего листа: `sewerNetworks`, `status`, `noPlanGeometry`,
+`incompletePlan`, `incompletePlanHint`, `sheetPosition`, `legendAxis`,
+`legendUtilities`, `legendRedLines`, `noNetworkGeometry`, `noProfileStations`,
+`needManholeCatalog`, `noGridParams`, `gridFromCard`, `billRecomputed`
+
+### project.liveMap (11 ключей)
+
+Карта ситуации: `mapLabel`, `whySegment`, `lns`, `designNetwork`,
+`gravityCollector`, `outletConnection`, `pressureMain`, `rightOfWay`,
+`loadingMap`, `gridConfirmed`, `notGeoreferenced`
+
+### project.manholeCatalog (11 ключей)
+
+`title`, `fileLabel`, `hint`, `template`, `thType`, `thPipeRange`, `thDepth`,
+`thChamber`, `thSource`, `thStatus`, `migrationHint`
+
+### project.pipeCalc (10 ключей)
+
+`title`, `summary`, `thPipe`, `thLength`, `thFlow`, `thDiameter`, `thSlope`,
+`thVelocity`, `thCheck`, `note`
+
+### project.scheme (5), project.basis (5), project.hydraulics (4)
+
+`legend`, `legendBase`, `legendCorridor`, `legendOutlet`, `legendRightOfWay`;
+`object`, `code`, `client`, `apz`, `address`; `sourceLevel`, `requiredLevel`,
+`minReserve`, `governingNode`
+
+### project.deliverables (7) и project.gravity (7) — из задач 1 и 2
+
+`basinLayout`, `basinLayoutPerBasin`, `basinLayoutContinuous`, `pressureLink`,
+`pressureLinkSame`, `pressureLinkSeparate`, `notChosen`, `basinHint`;
+`linksTitle`, `thLift`, `thLiftHeight`, `thHeadloss`, `thRequiredHead`,
+`thPump`, `pumpPicked`
+
+### Ещё термины на решение владельца
+
+К прежнему списку добавляются: **АПЗ** (`basis.apz`) — архитектурно-плановое
+задание; **условный горизонт** и **боковик** профиля; **полоса отвода**
+(`liveMap.rightOfWay`); **перемычка** в значении напорного участка между
+бассейнами (`gravity.linksTitle`).
