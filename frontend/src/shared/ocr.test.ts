@@ -37,8 +37,12 @@ describe('распознавание скана', () => {
       context.fillText('Д=450 мм', 40, 120)
 
       const { createWorker } = await import('tesseract.js')
+      // `cachePath` задан явно: без него tesseract.js распаковывает словарь в
+      // ТЕКУЩУЮ папку процесса, и 5 МБ уже однажды ушли в коммит из корня
+      // репозитория. Папка под node_modules игнорируется целиком.
       const worker = await createWorker('rus', 1, {
         langPath: join(ROOT, 'frontend', 'public', 'tessdata'),
+        cachePath: join(ROOT, 'node_modules', '.cache', 'tessdata'),
         gzip: true,
       })
       try {
