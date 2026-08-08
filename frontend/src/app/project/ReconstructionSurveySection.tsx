@@ -312,6 +312,45 @@ export function ReconstructionSurveySection({
           }}
         />
       </div>
+      {/*
+        Измеренная ширина — предложение, а не решение: подтверждает инженер.
+        Пусто — измерить не по чему, и остаётся прежний ручной ввод.
+      */}
+      {result?.roadWidths && result.roadWidths.measurements.length > 0 && (
+        <>
+          <p className="stat-line ok">{result.roadWidths.reason}</p>
+          <div className="section-actions">
+            {result.roadWidths.measurements.map((item) => (
+              <button
+                key={`${item.roadId}-${item.stationM}`}
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={busy}
+                onClick={() => {
+                  setRoadWidthM(String(item.widthM))
+                  void saveTechnicalCondition(projectId, conditionsDataset, 'roadWidthM', {
+                    value: item.widthM,
+                    origin: 'measured',
+                    source: t('project.reconstruction.widthSource', {
+                      layers: item.layers.join(', '),
+                      station: item.stationM.toFixed(0),
+                    }),
+                  }).then(() => onSaved())
+                  if (parsed) void rebuild(parsed)
+                }}
+              >
+                {t('project.reconstruction.widthConfirm', {
+                  value: item.widthM.toFixed(1),
+                  station: item.stationM.toFixed(0),
+                })}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {result?.roadWidths && result.roadWidths.measurements.length === 0 && (
+        <p className="stat-line warn">{result.roadWidths.reason}</p>
+      )}
       <p className="hint">
         Нужна для длины футляра на переходе под дорогой: ширина плюс запас 5 м с каждой стороны.
         В топосъёмке ширины нет, поэтому без неё переход выявляется, но длина футляра не заполняется

@@ -1127,6 +1127,8 @@ export const en = {
         surfaceDesign: 'Design surface (vertical planning)',
       },
       reconstruction: {
+        widthConfirm: 'Accept {{value}} m (ch. {{station}})',
+        widthSource: 'measured between kerbs of layers {{layers}} at chainage {{station}} m',
         title: 'Reconstruction from the survey',
         hint: 'A DXF/DWG survey of the site. The run follows the existing chambers: paired rim and invert labels give the profile, captions such as «кер.300» give the material and bore of the line in service, and the drawn utilities give the crossings',
         diameter: 'Design bore from the technical conditions, mm',

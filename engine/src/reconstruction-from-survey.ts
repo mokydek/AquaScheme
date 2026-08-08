@@ -27,6 +27,7 @@ import { detectSurveyGrid, type SurveyGridFinding } from './surveygrid'
 import { picketLabelExact } from './norms/sheetset'
 import { manholeSpacingM } from './norms/sewer'
 import { findRoadCrossings } from './norms/structures'
+import { measureRoadWidths, type RoadWidthResult } from './road-width'
 import type { GravityProfile, SewerSchedule } from './norms/gravity'
 import type { SurveyPoint } from './types'
 import type { TracedNetwork } from './trace'
@@ -156,6 +157,13 @@ export interface ReconstructionFromSurvey {
    * требуемый просвет: без него исход не оценивается.
    */
   crossingTriage: CrossingTriage | null
+  /**
+   * Ширина проезжей части, измеренная по кромкам съёмки.
+   *
+   * Предложение, а не решение: подтверждает инженер. Пусто — измерить не по
+   * чему, и ширина остаётся ручным вводом с прежним объяснением.
+   */
+  roadWidths: RoadWidthResult
   /** Reasons the result is not yet a releasable project. */
   blockers: string[]
   reason: string
@@ -381,6 +389,18 @@ export function buildReconstructionFromSurvey(
   // вовсе — подставленное умолчание было бы догадкой в проектном документе.
   // Требование футляра к тому же из ТЗ, а не из норматива, и в реестре оно не
   // подтверждено.
+  // Ширина измеряется по самой съёмке: дорога нарисована двумя кромками, и
+  // расстояние между ними — величина, а не догадка. Инженер подтверждает её,
+  // и подтверждённая приходит через `roadWidthM` тем же путём, что введённая.
+  const roadEdges = constraints.roadLines.map((line, index) => ({
+    id: line.layer ? `${line.layer}-${index + 1}` : `дорога-${index + 1}`,
+    layer: line.layer,
+    points: line.points,
+  }))
+  const roadWidths = chain.length >= 2
+    ? measureRoadWidths(chain.map((chamber) => ({ x: chamber.x, y: chamber.y })), roadEdges)
+    : { measurements: [], reason: 'Цепочка колодцев не собрана: пересечений с дорогами нет.' }
+
   const roadCrossings: CrossingRecord[] = chain.length >= 2
     ? findRoadCrossings(
       chain.map((chamber) => ({ x: chamber.x, y: chamber.y })),
@@ -467,6 +487,7 @@ export function buildReconstructionFromSurvey(
     roadCrossings,
     depthBands,
     crossingTriage,
+    roadWidths,
     blockers,
     reason: chain.length < 2
       ? 'Реконструкция по съёмке не собрана: нет цепочки колодцев.'
