@@ -1,4 +1,4 @@
-import { buildSpecification, specificationToCsv } from '@aquascheme/engine'
+import { selectSpecificationSource, specificationToCsv } from '@aquascheme/engine'
 import type { ExportInput, GravityProfile, WorkingDrawingSheet } from '@aquascheme/engine'
 import { convertDrawing } from './upload'
 import { buildProjectAlbumDoc, buildProjectSheetDoc, crossingBelongsToProfile } from './projectAlbum'
@@ -100,11 +100,18 @@ export async function generatePlanSheetSetDxf(input: {
   projectName: string
   network: import('@aquascheme/engine').TracedNetwork
   pipeDiameterMm: Map<string, number>
-  mainPath: Array<{ x: number; y: number }>
+  mainPath: Array<{ x: number; y: number; chainageM?: number }>
   buildingLabels?: Map<string, string>
   constraints?: import('@aquascheme/engine').RouteConstraintInput | null
   surveyPoints?: readonly import('@aquascheme/engine').SurveyPoint[]
   system?: 'sewer' | 'storm'
+  /**
+   * Пикеты колодцев: единственные допустимые места разреза листа.
+   * Без них набор режется равными кусками, и разрез попадает между колодцами —
+   * лист, который так не выпускают.
+   */
+  stationChainagesM?: number[]
+  targetPerSheetM?: number
 }): Promise<Array<{ title: string; dxf: string }>> {
   const { buildPlanSheetSetDxf } = await import('@aquascheme/engine/dxf')
   return buildPlanSheetSetDxf(input)
@@ -322,10 +329,17 @@ export async function generateSewerScheduleXlsx(
   return xlsxBytes(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
 }
 
-/** Bill of materials as an XLSX byte array (SheetJS), ГОСТ 21.110 form 1. */
-export async function generateSpecXlsx(input: ExportInput): Promise<Uint8Array> {
+/**
+ * Bill of materials as an XLSX byte array (SheetJS), ГОСТ 21.110 form 1.
+ *
+ * Позиции берутся у ВЫБРАННОГО источника, а не у одной зашитой функции:
+ * архитектура источников спецификации существовала, но выгрузка звала
+ * `buildSpecification` напрямую, и подключить внешнюю базу было некуда.
+ * Неизвестный или ненастроенный источник откатывается на встроенный каталог.
+ */
+export async function generateSpecXlsx(input: ExportInput, sourceId?: string): Promise<Uint8Array> {
   const XLSX = await import('xlsx')
-  const rows = buildSpecification(input).map((i) => ({
+  const rows = selectSpecificationSource(sourceId).build(input).map((i) => ({
     'Поз.': i.pos,
     'Наименование и техническая характеристика': i.name,
     'Тип, марка, обозначение документа, опросного листа': i.spec,
@@ -613,10 +627,10 @@ export { CONVERTER_URL } from './upload'
  *
  * XLSX открывается не везде — сметные и складские программы обычно принимают
  * разделённый текст. Состав строк тот же, что и в XLSX: обе выгрузки берут
- * `buildSpecification`, поэтому разойтись они не могут.
+ * позиции у одного выбранного источника, поэтому разойтись они не могут.
  */
-export function generateSpecificationCsv(input: ExportInput): Blob {
-  return new Blob([specificationToCsv(buildSpecification(input))], {
+export function generateSpecificationCsv(input: ExportInput, sourceId?: string): Blob {
+  return new Blob([specificationToCsv(selectSpecificationSource(sourceId).build(input))], {
     type: 'text/csv;charset=utf-8',
   })
 }

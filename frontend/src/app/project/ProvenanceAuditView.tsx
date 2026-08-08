@@ -23,6 +23,19 @@ export function ProvenanceAuditView({ provenance }: { provenance: ProjectProvena
           total: provenance.total,
         })}
       </p>
+      {/*
+        Доля подтверждённого говорит, сколько всего готово, но не отвечает на
+        главный вопрос — чем упирается проект. Ограничивает его самое слабое
+        происхождение: подтвердить остальное и не тронуть его бесполезно.
+      */}
+      {provenance.limitedBy && (
+        <p className={`stat-line${provenance.limitedBy.verified ? ' ok' : ' warn'}`}>
+          {t('project.provenanceAudit.limitedBy', {
+            kind: provenanceLabel(provenance.limitedBy.kind),
+            source: provenance.limitedBy.source,
+          })}
+        </p>
+      )}
       <p className="hint">{t('project.provenanceAudit.hint')}</p>
       <div className="table-wrap" style={{ maxHeight: 300 }}>
         <table className="data-table">

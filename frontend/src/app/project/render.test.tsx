@@ -40,6 +40,9 @@ const { DxfLayerRoleTable } = await import('./DxfLayerRoleTable')
 const { MasterPlanView } = await import('./MasterPlanView')
 const { SourceBundleRunSection } = await import('./SourceBundleRunSection')
 const { StankevichaDemoView } = await import('./StankevichaDemoView')
+const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
+const { TopographySection } = await import('./TopographySection')
+const { maxFilling, auditProjectProvenance } = await import('@aquascheme/engine')
 const { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } = await import('../../shared/stankevichaDemo')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
@@ -362,5 +365,46 @@ describe('демонстрация на настоящем объекте', () =
     expect(markup).toContain('project.stankevicha.lengthGap')
     expect(markup).toContain('project.stankevicha.decisions')
     expect(markup).toMatch(/\+\d+\.\d\d \(\+\d+\.\d%\)/)
+  })
+})
+
+describe('слабейшее звено в аудите происхождения', () => {
+  it('называется на экране, а не только считается', () => {
+    const provenance = auditProjectProvenance({
+      surveyPointCount: 120,
+      surveyPointSource: 'geometry',
+      catalogReady: true,
+      requiredClearanceM: null,
+    })
+    expect(provenance.limitedBy?.kind).toBe('absent')
+    const markup = html(createElement(ProvenanceAuditView, { provenance }))
+    expect(markup).toContain('project.provenanceAudit.limitedBy')
+  })
+
+  it('нормативные величины расчёта попадают в аудит через своё основание', () => {
+    const provenance = auditProjectProvenance({
+      surveyPointCount: 10,
+      surveyPointSource: 'geometry',
+      catalogReady: true,
+      normativeValues: [{ label: 'Предельное наполнение', value: maxFilling('sewer') }],
+    })
+    expect(provenance.fields['Предельное наполнение'].provenance.kind).toBe('normative')
+    const markup = html(createElement(ProvenanceAuditView, { provenance }))
+    expect(markup).toContain('Предельное наполнение')
+  })
+})
+
+describe('поверхность топосъёмки выбирается явно', () => {
+  it('обе поверхности предложены, и по умолчанию — измеренная', () => {
+    const markup = html(createElement(TopographySection, {
+      projectId: 'p1',
+      dataset: undefined,
+      onSaved: async () => {},
+    }))
+    expect(markup).toContain('project.topo.surfaceExisting')
+    expect(markup).toContain('project.topo.surfaceDesign')
+    // Выбрана существующая: подставлять проектную поверхность по умолчанию
+    // значило бы считать глубины от того, чего в проекте может не быть.
+    expect(markup).toMatch(/<option value="existing"[^>]*selected|value="existing"/)
   })
 })

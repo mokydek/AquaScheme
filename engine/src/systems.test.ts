@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createGravitySolver, SOLVER_AVAILABILITY } from './systems'
+import { SOLVER_AVAILABILITY } from './systems'
+import { solveGravityNetwork } from './norms/gravity'
 import { waterPressureSolver } from './hydraulics'
 import type { TracedNetwork } from './trace'
 
@@ -11,7 +12,14 @@ describe('solver architecture (requirements update 1)', () => {
     expect(SOLVER_AVAILABILITY.storm).toBe('ready')
   })
 
-  it('the gravity solver designs the network by Chezy-Manning (НБ4)', async () => {
+  /**
+   * Самотёк проверяется на том входе, которым пользуется приложение.
+   *
+   * Раньше здесь стоял адаптер `createGravitySolver`, но его результат беднее:
+   * замечания труб в него не проходили. Тест проверяет и то, ради чего адаптер
+   * убран, — что полный вход эти замечания отдаёт.
+   */
+  it('the gravity design runs by Chezy-Manning and keeps its issues (НБ4)', () => {
     const network: TracedNetwork = {
       nodes: [
         { id: 'S', kind: 'source', x: 0, y: 0, groundElevation: 100 },
@@ -20,15 +28,31 @@ describe('solver architecture (requirements update 1)', () => {
       pipes: [{ id: 'p1', kind: 'main', fromNode: 'S', toNode: 'B1', lengthM: 30 }],
       totalLengthM: 30,
     }
-    const result = await createGravitySolver('sewer').solve({
+    const result = solveGravityNetwork({
       network,
       buildingFlowLps: new Map([['b1', 8]]),
+      system: 'sewer',
     })
     expect(result.kind).toBe('gravity')
     expect(result.systemType).toBe('sewer')
     expect(result.pipes[0].diameterMm).toBeGreaterThanOrEqual(200)
     expect(result.pipes[0].fillRatio).toBeLessThanOrEqual(0.8)
     expect(result.outletFlowLps).toBeCloseTo(8, 6)
+    // Признак непригодности, терявшийся в адаптере.
+    expect(Array.isArray(result.pipes[0].issues)).toBe(true)
+  })
+
+  it('сеть без расхода честно сообщает об этом, а не выдаёт нулевой проект', () => {
+    const network: TracedNetwork = {
+      nodes: [
+        { id: 'MH-1', kind: 'manhole', x: 0, y: 0, groundElevation: 100 },
+        { id: 'OUT', kind: 'outlet', x: 30, y: 0, groundElevation: 99 },
+      ],
+      pipes: [{ id: 'p1', kind: 'gravity_collector', fromNode: 'MH-1', toNode: 'OUT', lengthM: 30 }],
+      totalLengthM: 30,
+    }
+    const result = solveGravityNetwork({ network, buildingFlowLps: new Map(), system: 'sewer' })
+    expect(result.pipes[0].issues.some((issue) => issue.code === 'noDesignFlow')).toBe(true)
   })
 
   it('the water solver wraps EPANET and returns a pressure result', async () => {

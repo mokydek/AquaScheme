@@ -11,6 +11,9 @@ import {
   DEFAULT_FREEZING_DEPTH_M,
   NORMATIVE_DEFAULTS,
   ringFromGeoJsonGeometry,
+  manholeSpacingM,
+  maxFilling,
+  plannedSurfaceAlong,
   selectManholeConstructions,
   solveGravityNetwork,
   assessGravityFeasibility,
@@ -47,6 +50,7 @@ import {
   generateWorkingDrawingSheetDxf,
   generateWorkingDrawingSetDxfs,
   generateSewerNotePdf,
+  generatePlanSheetSetDxf,
   generateSewerPlanDxf,
   generateSewerProfileDxf,
   generateManholeSheetsDxf,
@@ -142,6 +146,7 @@ export function GravitySection({
   geologyDataset,
   drainageDataset,
   topographyDataset,
+  verticalPlanDataset,
   constraintsDataset,
   routeAuditDataset,
   manholeCatalogDataset,
@@ -166,6 +171,8 @@ export function GravitySection({
   geologyDataset?: DatasetRow
   drainageDataset?: DatasetRow
   topographyDataset?: DatasetRow
+  /** Проектные отметки вертикальной планировки. */
+  verticalPlanDataset?: DatasetRow
   constraintsDataset?: DatasetRow
   routeAuditDataset?: DatasetRow
   manholeCatalogDataset?: DatasetRow
@@ -462,6 +469,28 @@ export function GravitySection({
     const topography = (topographyDataset?.content ?? null) as { points?: SurveyPoint[] } | null
     return constraints?.surveyPoints?.length ? constraints.surveyPoints : topography?.points ?? []
   }, [constraints, topographyDataset])
+  /**
+   * Проектная поверхность вдоль трассы.
+   *
+   * Городской объект проектируется от планируемой поверхности, а не от
+   * существующего рельефа: глубина заложения считается от неё. Модуль
+   * совмещения двух поверхностей в движке был, а показать его результат было
+   * негде — профиль строился по одной съёмке.
+   *
+   * Пусто, пока вертикальная планировка не загружена: подставлять сюда съёмку
+   * значило бы выдать измеренное за проектное.
+   */
+  const plannedSurface = useMemo(() => {
+    const design = ((verticalPlanDataset?.content ?? null) as { points?: SurveyPoint[] } | null)?.points ?? []
+    if (design.length === 0 || !result?.profile) return null
+    const path = result.profile.stations.map((station) => {
+      const node = network.nodes.find((item) => item.id === station.nodeId)
+      return { x: node?.x ?? 0, y: node?.y ?? 0 }
+    })
+    const along = plannedSurfaceAlong(path, design, surveyPoints)
+    return new Map(result.profile.stations.map((station, index) => [station.nodeId, along[index]?.elevation ?? null]))
+  }, [verticalPlanDataset, result, network, surveyPoints])
+
   const unresolvedLayerCount = useMemo(() => {
     const audit = (routeAuditDataset?.content ?? null) as { unresolved?: { layers?: number } } | null
     return audit?.unresolved?.layers ?? constraints?.unresolvedLayers?.length ?? 0
@@ -555,6 +584,15 @@ export function GravitySection({
         && manholeSelection.unmatched.length === 0
       : false,
     normsVerified: applicableUnverifiedClauses.length === 0,
+    // Нормативные пределы, которые расчёт действительно применил. Аудит о них
+    // не знал: в сводке были состояния исходных данных, а величин, которыми
+    // ограничен сам расчёт, — ни одной.
+    normativeValues: [
+      { label: 'Предельное наполнение', value: maxFilling(systemType) },
+      ...(schedule?.pipes[0]?.diameterMm
+        ? [{ label: 'Наибольший шаг колодцев', value: manholeSpacingM(schedule.pipes[0].diameterMm) }]
+        : []),
+    ],
     ...(systemType === 'storm' ? { stormRunoff: stormRunoffStatus } : {}),
   }), [
     surveyPoints, constraints, freezingDepth, geologyCoverage, spatialBoreholeCount,
@@ -736,6 +774,64 @@ export function GravitySection({
     }
   }
 
+  /**
+   * Листы плана по пикетам, М1:500.
+   *
+   * Сводный план на весь объект годится для обзора, но строителю выдаётся не
+   * он: лист режется по пикетажу, и разрез допускается только на колодце. Такой
+   * набор движок собирал давно, а пути к нему с экрана не было — функция
+   * числилась в долге достижимости.
+   *
+   * Границы листов берутся из пикетажа профиля, а не назначаются равными
+   * кусками: `stationChainagesM` — это станции колодцев, и резать между ними
+   * нельзя.
+   */
+  const planSheetSet = async () => {
+    if (!result?.profile) return []
+    return generatePlanSheetSetDxf({
+      projectName,
+      network,
+      pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
+      mainPath: workingDrawingSet.mainPath,
+      buildingLabels: new Map(buildings.map((building) => [building.id, building.label ?? ''])),
+      constraints,
+      surveyPoints,
+      system: systemType,
+      stationChainagesM: result.profile.stations.map((station) => station.chainageM),
+    })
+  }
+
+  const exportPlanSheets = async () => {
+    if (!result?.profile) return
+    setExporting(true)
+    setBundleError(null)
+    try {
+      const sheets = await planSheetSet()
+      if (sheets.length === 0) {
+        setBundleError(t('project.gravity.planSheetsEmpty'))
+        return
+      }
+      const files: Record<string, string> = {}
+      sheets.forEach((sheet, index) => {
+        const safe = sheet.title.replace(/\.\s*М1:500$/, '').replace(/[\s.()]+/g, '_')
+        files[`${slug}_план_${String(index + 1).padStart(2, '0')}_${safe}.dxf`] = sheet.dxf
+      })
+      const zip = await zipBundle(files)
+      const url = URL.createObjectURL(zip)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slug}_листы_плана_${systemType === 'storm' ? 'К2' : 'К1'}.zip`
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+      setBundleError(formatAppError(error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const exportBundle = async () => {
     if (!result?.profile || !schedule) return
     if (!finalOutputAllowed) {
@@ -756,7 +852,7 @@ export function GravitySection({
         liftStation: assessLiftStationNeed(result.profile.stations.map((s) => s.depthM)).needed.value,
         highGroundwater: groundwaterDepthM !== undefined && groundwaterDepthM < result.profile.maxDepthM,
       })
-      const [general, situation, plan, profile, xlsx, manholeSheets, specSheet, specXlsx, drawingFiles] = await Promise.all([
+      const [general, situation, plan, profile, planSheets, xlsx, manholeSheets, specSheet, specXlsx, drawingFiles] = await Promise.all([
         generateSewerGeneralDataDxf({
           projectName,
           schedule,
@@ -772,6 +868,7 @@ export function GravitySection({
         }),
         generateSewerPlanDxf({ projectName, network, pipeDiameterMm, buildingLabels }),
         generateSewerProfileDxf({ projectName, profile: result.profile, crossings: constraints?.crossings ?? [] }),
+        planSheetSet(),
         generateSewerScheduleXlsx(schedule, manholeSelection.selected),
         generateManholeSheetsDxf(projectName, schedule, manholeSelection.selected),
         generateSewerSpecSheetDxf(projectName, specItems),
@@ -792,6 +889,11 @@ export function GravitySection({
         [`${slug}_06_спецификация_НК.xlsx`]: specXlsx,
       }
       const fileSafe = (title: string) => title.replace(/\.\s*М1:500$/, '').replace(/[\s.()]+/g, '_')
+      // Полистовой план по пикетам рядом со сводным: сводный годится для
+      // обзора, а строителю выдаётся лист, разрезанный по колодцам.
+      planSheets.forEach((sheet, index) => {
+        files[`${slug}_03a_${String(index + 1).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
+      })
       manholeSheets.tables.forEach((sheet, index) => {
         files[`${slug}_05b_${String(index + 1).padStart(2, '0')}_${fileSafe(sheet.title)}.dxf`] = sheet.dxf
       })
@@ -1231,6 +1333,16 @@ export function GravitySection({
             <button type="button" className="btn btn-sm" disabled={exporting || !finalOutputAllowed} onClick={() => void exportSituation()}>
               {exporting ? t('project.gravity.exporting') : t('project.gravity.exportSituation')}
             </button>
+            {/* Полистовой план по пикетам: сводный лист выдают для обзора, а
+                строителю — разрезанный по колодцам набор М1:500. */}
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={exporting || !result.profile || !finalOutputAllowed}
+              onClick={() => void exportPlanSheets()}
+            >
+              {exporting ? t('project.gravity.exporting') : t('project.gravity.exportPlanSheets')}
+            </button>
             <button type="button" className="btn btn-sm" disabled={!result.profile} onClick={runCorridorCheck}>
               {t('project.gravity.corridorRun')}
             </button>
@@ -1418,6 +1530,7 @@ export function GravitySection({
                       <th>{t('project.gravity.thNode')}</th>
                       <th className="num">{t('project.gravity.thChainage')}</th>
                       <th className="num">{t('project.gravity.thGround')}</th>
+                      {plannedSurface && <th className="num">{t('project.gravity.thPlanned')}</th>}
                       <th className="num">{t('project.gravity.thInvert')}</th>
                       <th className="num">{t('project.gravity.thDepth')}</th>
                     </tr>
@@ -1428,6 +1541,11 @@ export function GravitySection({
                         <td>{labelOfNode(s.nodeId)}</td>
                         <td className="num mono">{s.chainageM.toFixed(0)}</td>
                         <td className="num mono">{s.groundElevationM.toFixed(2)}</td>
+                        {plannedSurface && (
+                          <td className="num mono">
+                            {plannedSurface.get(s.nodeId)?.z.toFixed(2) ?? '—'}
+                          </td>
+                        )}
                         <td className="num mono">{s.invertElevationM.toFixed(2)}</td>
                         <td className="num mono">{s.depthM.toFixed(2)}</td>
                       </tr>

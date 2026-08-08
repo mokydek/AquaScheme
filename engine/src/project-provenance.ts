@@ -1,4 +1,18 @@
-import { auditProvenance, traced, type ProvenanceAudit, type Traced } from './provenance'
+import {
+  absent,
+  assumed,
+  auditProvenance,
+  derived,
+  fromCatalogue,
+  fromJustified,
+  measured,
+  traced,
+  weakest,
+  type Provenance,
+  type ProvenanceAudit,
+  type Traced,
+} from './provenance'
+import type { Justified } from './normregistry'
 
 /**
  * Происхождение ключевых величин проекта.
@@ -53,13 +67,27 @@ export interface ProjectProvenanceInput {
   normsVerified?: boolean
   /** Расчёт дождевого стока для К2. */
   stormRunoff?: { available?: boolean; verified?: boolean; source?: string } | null
+  /**
+   * Нормативные величины, применённые в расчёте, как их отдаёт движок.
+   *
+   * `Justified` уже несёт ссылки на пункты реестра и основание, и переводит их
+   * в общий язык происхождения `fromJustified`: нормативное основание даёт
+   * подтверждённую величину, инженерное или экономическое — принятую. До этого
+   * аудит о нормативных величинах расчёта не знал вовсе, хотя именно на них
+   * держится половина решений.
+   */
+  normativeValues?: Array<{ label: string; value: Justified<unknown> }>
 }
 
 export interface ProjectProvenance extends ProvenanceAudit {
   fields: Record<string, Traced<unknown>>
+  /**
+   * Наименее достоверное происхождение среди всех полей — им и ограничен
+   * проект. Сводка по разрядам показывала, сколько чего, но не отвечала на
+   * главный вопрос: чем всё упирается.
+   */
+  limitedBy: Provenance | null
 }
-
-const absent = (source: string) => traced(null, { kind: 'absent' as const, source, verified: false })
 
 /** Переводит состояния исходных данных проекта в единый язык происхождения. */
 export function auditProjectProvenance(input: ProjectProvenanceInput): ProjectProvenance {
@@ -68,23 +96,14 @@ export function auditProjectProvenance(input: ProjectProvenanceInput): ProjectPr
   const surveyCount = input.surveyPointCount ?? 0
   fields['Отметки съёмки'] = surveyCount === 0 || input.surveyPointSource === 'none'
     ? absent('топосъёмка не загружена')
-    : traced(surveyCount, {
-      kind: 'measured',
-      source: input.surveyPointSource === 'elevation_labels'
-        ? `${surveyCount} отметок из подписей чертежа`
-        : `${surveyCount} отметок из геометрии чертежа`,
-      verified: true,
-    })
+    : measured(surveyCount, input.surveyPointSource === 'elevation_labels'
+      ? `${surveyCount} отметок из подписей чертежа`
+      : `${surveyCount} отметок из геометрии чертежа`)
 
   const georeference = input.georeference
   fields['Геопривязка'] = !georeference || georeference.kind === 'unreferenced'
     ? absent(georeference?.source ?? 'система координат не подтверждена')
-    : traced(georeference.kind, {
-      kind: 'derived',
-      source: georeference.source ?? georeference.kind,
-      derivedFrom: ['чертёж'],
-      verified: true,
-    })
+    : derived(georeference.kind, georeference.source ?? georeference.kind, ['чертёж'])
 
   const frost = input.freezingDepth
   fields['Глубина промерзания'] = frost?.valueM == null || !Number.isFinite(frost.valueM)
@@ -92,18 +111,18 @@ export function auditProjectProvenance(input: ProjectProvenanceInput): ProjectPr
     : frost.status === 'verified' && (frost.source ?? '').trim() !== ''
       ? traced(frost.valueM, { kind: 'normative', source: frost.source as string, verified: true })
       // Величина есть, но источник не подтверждён: к выпуску не пригодна.
-      : traced(frost.valueM, { kind: 'assumed', source: frost.source || 'источник не указан', verified: false })
+      : assumed(frost.valueM, frost.source || 'источник не указан')
 
   const coverage = input.geologyCoverage
   fields['Допустимое удаление скважин'] = coverage?.maxOffsetM == null || !(coverage.maxOffsetM > 0)
     ? absent('правило покрытия геологией не задано')
     : coverage.status === 'verified' && (coverage.source ?? '').trim() !== ''
       ? traced(coverage.maxOffsetM, { kind: 'normative', source: coverage.source as string, verified: true })
-      : traced(coverage.maxOffsetM, { kind: 'assumed', source: coverage.source || 'источник не указан', verified: false })
+      : assumed(coverage.maxOffsetM, coverage.source || 'источник не указан')
 
   const boreholes = input.spatialBoreholeCount ?? 0
   fields['Скважины с координатами'] = boreholes > 0
-    ? traced(boreholes, { kind: 'measured', source: `${boreholes} скважин изысканий`, verified: true })
+    ? measured(boreholes, `${boreholes} скважин изысканий`)
     : absent('скважин с координатами нет')
 
   if (input.designDiameterMm !== undefined) {
@@ -131,19 +150,19 @@ export function auditProjectProvenance(input: ProjectProvenanceInput): ProjectPr
     })
 
   fields['Каталог труб и материалов'] = input.catalogReady
-    ? traced(true, { kind: 'catalogue', source: 'активный каталог проекта', verified: true })
+    ? fromCatalogue(true, 'активный каталог проекта')
     : absent('каталог не подтверждён')
 
   if (input.manholeCatalogReady !== undefined) {
     fields['Каталог конструкций колодцев'] = input.manholeCatalogReady
-      ? traced(true, { kind: 'catalogue', source: 'каталог конструкций проекта', verified: true })
+      ? fromCatalogue(true, 'каталог конструкций проекта')
       : absent('каталог конструкций не покрывает ведомость')
   }
 
   if (input.normsVerified !== undefined) {
     fields['Нормативные пункты'] = input.normsVerified
       ? traced(true, { kind: 'normative', source: 'все применённые пункты подтверждены', verified: true })
-      : traced(false, { kind: 'assumed', source: 'есть неподтверждённые пункты', verified: false })
+      : assumed(false, 'есть неподтверждённые пункты')
   }
 
   if (input.stormRunoff !== undefined) {
@@ -154,9 +173,19 @@ export function auditProjectProvenance(input: ProjectProvenanceInput): ProjectPr
         kind: 'derived',
         source: runoff.source ?? 'расчёт по водосборам',
         derivedFrom: ['площади водосборов', 'параметры дождя'],
+        // Не `derived(...)`: тот всегда подтверждает, а подтверждённость
+        // расчёта стока зависит от того, принят ли метод инженером.
         verified: runoff.verified === true,
       })
   }
 
-  return { ...auditProvenance(fields), fields }
+  for (const item of input.normativeValues ?? []) {
+    fields[item.label] = fromJustified(item.value)
+  }
+
+  return {
+    ...auditProvenance(fields),
+    fields,
+    limitedBy: weakest(Object.values(fields).map((field) => field.provenance)),
+  }
 }

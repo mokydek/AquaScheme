@@ -761,6 +761,7 @@ export function ProjectPage() {
                 geologyDataset={datasets.geology}
                 drainageDataset={datasets.drainage}
                 topographyDataset={datasets.topography}
+              verticalPlanDataset={datasets.vertical_plan}
                 constraintsDataset={datasets.route_constraints}
                 routeAuditDataset={datasets.route_audit}
                 manholeCatalogDataset={datasets.manhole_catalog}
@@ -789,6 +790,7 @@ export function ProjectPage() {
               geologyDataset={datasets.geology}
               drainageDataset={datasets.drainage}
               topographyDataset={datasets.topography}
+              verticalPlanDataset={datasets.vertical_plan}
               constraintsDataset={datasets.route_constraints}
               routeAuditDataset={datasets.route_audit}
               manholeCatalogDataset={datasets.manhole_catalog}
@@ -897,7 +899,7 @@ export function ProjectPage() {
               />
             </>
           )}
-          <TopographySection projectId={project.id} dataset={datasets.topography} onSaved={load} />
+          <TopographySection projectId={project.id} dataset={datasets.topography} verticalPlanDataset={datasets.vertical_plan} onSaved={load} />
           {!isWater && (
             <>
               <CatalogSection

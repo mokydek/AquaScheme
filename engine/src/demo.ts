@@ -52,7 +52,8 @@ function round2(value: number): number {
 }
 
 /** Smooth synthetic terrain, range roughly 95..103 m. */
-export function demoElevation(x: number, y: number): number {
+/** Рельеф демо-площадки. Помощник `createDemoDataset`, наружу не выдаётся. */
+function demoElevation(x: number, y: number): number {
   const slope = 95 + x * 0.008
   const waves = 2.2 * Math.sin(x / 170) * Math.cos(y / 130)
   const hill = 1.5 * Math.exp(-((x - 480) ** 2 + (y - 320) ** 2) / (2 * 120 ** 2))

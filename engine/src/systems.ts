@@ -1,6 +1,5 @@
 import type { SystemType } from './types'
 import type { TracedNetwork } from './trace'
-import { solveGravityNetwork } from './norms/gravity'
 
 /**
  * Solver architecture for the three engineering systems (requirements
@@ -76,34 +75,17 @@ export const SOLVER_AVAILABILITY: Record<SystemType, 'ready' | 'planned'> = {
 }
 
 /**
- * Gravity solver (К1 sewer, К2 storm): free-surface Chezy-Manning design per
- * СН РК 4.01-03-2013*, implemented in ./norms/gravity.
+ * Самотёчного адаптера `NetworkSolver` здесь нет намеренно.
+ *
+ * Он был: `createGravitySolver` заворачивал `solveGravityNetwork` в общий
+ * интерфейс. Но заворачивал с потерями — в `GravitySolveResult` не проходят ни
+ * замечания труб (`issues`, среди них `noDesignFlow`), ни продольный профиль,
+ * а именно на них держатся шлюз выпуска и весь набор рабочих чертежей.
+ * Приложение поэтому вызывало `solveGravityNetwork` напрямую, а адаптер стоял
+ * вторым входом в тот же расчёт — входом, тихо теряющим признаки непригодности.
+ *
+ * Двух входов с разной полнотой результата у одного расчёта быть не должно:
+ * рано или поздно вызовут тот, что короче. Напорная сеть остаётся на
+ * `waterPressureSolver` (./hydraulics), где потерь нет.
  */
-export function createGravitySolver(
-  systemType: 'sewer' | 'storm',
-): NetworkSolver<GravitySolveInput, GravitySolveResult> {
-  return {
-    systemType,
-    solve(input: GravitySolveInput): Promise<GravitySolveResult> {
-      const result = solveGravityNetwork({
-        network: input.network,
-        buildingFlowLps: input.buildingFlowLps,
-        system: systemType,
-        roughness: input.roughness,
-      })
-      return Promise.resolve({
-        kind: 'gravity',
-        systemType,
-        pipes: result.pipes.map((p) => ({
-          id: p.id,
-          flowLps: p.flowLps,
-          diameterMm: p.diameterMm,
-          fillRatio: p.fillRatio,
-          velocityMs: p.velocityMs,
-          slope: p.slope,
-        })),
-        outletFlowLps: result.outletFlowLps,
-      })
-    },
-  }
-}
+

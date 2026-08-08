@@ -1,45 +1,8 @@
 {
   "_comment": "Возможности движка без пути с экрана. Может только снижаться; обновляется через npm run audit:reachability -- --write-baseline. Список internal — намеренно экспортированные внутренности, проверяемые тестом напрямую: в долг не идут.",
-  "capabilities": 9,
-  "internalCount": 12,
-  "functions": [
-    {
-      "name": "demoElevation",
-      "file": "engine/src/demo.ts"
-    },
-    {
-      "name": "buildPlanSheetSetDxf",
-      "file": "engine/src/dxf.ts"
-    },
-    {
-      "name": "plannedElevationAt",
-      "file": "engine/src/norms/vertplan.ts"
-    },
-    {
-      "name": "plannedSurfaceAlong",
-      "file": "engine/src/norms/vertplan.ts"
-    },
-    {
-      "name": "fromCatalogue",
-      "file": "engine/src/provenance.ts"
-    },
-    {
-      "name": "fromJustified",
-      "file": "engine/src/provenance.ts"
-    },
-    {
-      "name": "weakest",
-      "file": "engine/src/provenance.ts"
-    },
-    {
-      "name": "selectSpecificationSource",
-      "file": "engine/src/specsource.ts"
-    },
-    {
-      "name": "createGravitySolver",
-      "file": "engine/src/systems.ts"
-    }
-  ],
+  "capabilities": 0,
+  "internalCount": 11,
+  "functions": [],
   "internal": [
     "accumulateGravityFlows",
     "betaMaxForResidents",

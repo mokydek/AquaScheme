@@ -15,13 +15,25 @@ interface TopoMeta {
   zMax?: number
 }
 
+/**
+ * Какую поверхность описывает загружаемый файл.
+ *
+ * Разбор у обеих одинаковый — точки x, y, z, — а смысл разный: съёмка
+ * измерена, планировка назначена проектом, и глубины заложения считаются от
+ * второй. Поэтому выбор явный, а не по имени файла.
+ */
+type Surface = 'existing' | 'design'
+
 export function TopographySection({
   projectId,
   dataset,
+  verticalPlanDataset,
   onSaved,
 }: {
   projectId: string
   dataset: DatasetRow | undefined
+  /** Проектные отметки вертикальной планировки, если загружены. */
+  verticalPlanDataset?: DatasetRow | undefined
   onSaved: () => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -30,8 +42,9 @@ export function TopographySection({
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'saved' | 'saveError' | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  const [surface, setSurface] = useState<Surface>('existing')
 
-  const meta = (dataset?.meta ?? null) as TopoMeta | null
+  const meta = ((surface === 'design' ? verticalPlanDataset : dataset)?.meta ?? null) as TopoMeta | null
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -72,7 +85,7 @@ export function TopographySection({
       const zs = result.points.map((p) => p.z)
       await saveDataset(
         projectId,
-        'topography',
+        surface === 'design' ? 'vertical_plan' : 'topography',
         { points: result.points },
         {
           total: result.total,
@@ -104,6 +117,26 @@ export function TopographySection({
           })}
         </p>
       )}
+      {/*
+        Разбор у съёмки и у вертикальной планировки один, а поверхности разные:
+        первая измерена, вторая назначена проектом. Определять её по имени файла
+        нельзя — от выбора зависит, от чего считаются глубины заложения.
+      */}
+      <div className="form-grid">
+        <label className="field" htmlFor={`topography-${projectId}-surface`}>
+          <span className="field-label">{t('project.topo.surfaceLabel')}</span>
+          <select
+            id={`topography-${projectId}-surface`}
+            name={`topography-${projectId}-surface`}
+            className="input"
+            value={surface}
+            onChange={(event) => setSurface(event.target.value as Surface)}
+          >
+            <option value="existing">{t('project.topo.surfaceExisting')}</option>
+            <option value="design">{t('project.topo.surfaceDesign')}</option>
+          </select>
+        </label>
+      </div>
       <div className="section-actions">
         <input
           id={`topography-${projectId}-file`}
