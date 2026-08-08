@@ -92,6 +92,68 @@ describe('распознавание скана', () => {
   })
 })
 
+describe('таблица скважин со скана', () => {
+  it.skipIf(!hasLanguageData || !canDrawCyrillic)(
+    'нарисованный на холсте буровой журнал доходит до экрана сопоставления колонок',
+    async () => {
+      const { createCanvas } = await import('@napi-rs/canvas')
+      const width = 1400
+      const height = 560
+      const canvas = createCanvas(width, height)
+      const context = canvas.getContext('2d')
+      context.fillStyle = '#fff'
+      context.fillRect(0, 0, width, height)
+      context.fillStyle = '#000'
+      context.font = `34px "${CYRILLIC_FONT}"`
+      const rows = [
+        ['Скважина', 'Кровля', 'Подошва', 'ИГЭ', 'Грунт'],
+        ['С-1', '0.0', '1.2', '1', 'Суглинок'],
+        ['С-1', '1.2', '3.4', '2', 'Песок'],
+        ['С-2', '0.0', '2.0', '1', 'Суглинок'],
+        ['С-2', '2.0', '5.6', '3', 'Глина'],
+      ]
+      const columns = [60, 420, 700, 1000, 1130]
+      rows.forEach((row, line) => row.forEach((cell, column) => {
+        context.fillText(cell, columns[column], 80 + line * 90)
+      }))
+
+      const { createWorker } = await import('tesseract.js')
+      const worker = await createWorker('rus', 1, {
+        langPath: join(ROOT, 'frontend', 'public', 'tessdata'),
+        cachePath: join(ROOT, 'node_modules', '.cache', 'tessdata'),
+        gzip: true,
+      })
+      let recognized
+      try {
+        recognized = await worker.recognize(canvas.toBuffer('image/png'), {}, { text: true, blocks: true })
+      } finally {
+        await worker.terminate()
+      }
+
+      const lines = (recognized.data.blocks ?? [])
+        .flatMap((block) => block.paragraphs ?? [])
+        .flatMap((paragraph) => paragraph.lines ?? [])
+        .map((line) => ({
+          words: (line.words ?? [])
+            .filter((word) => word.text.trim() !== '')
+            .map((word) => ({ text: word.text.trim(), x0: word.bbox.x0, x1: word.bbox.x1 })),
+        }))
+
+      const { recoverTableFromScan, guessGeologyField } = await import('@aquascheme/engine')
+      const table = recoverTableFromScan([{ page: 1, lines }])
+      expect(table.refusal).toBeNull()
+      expect(table.columnCount).toBe(5)
+      expect(table.rows).toHaveLength(5)
+
+      // Условие входа на экран сопоставления — то же, что у цифрового PDF:
+      // заголовок должен опознаться хотя бы по двум полям модели.
+      const known = table.rows[0].filter((cell) => guessGeologyField(cell) !== null).length
+      expect(known).toBeGreaterThanOrEqual(2)
+    },
+    180_000,
+  )
+})
+
 describe('уверенность строки доходит до находки', () => {
   const pages: OcrPage[] = [{
     page: 1,

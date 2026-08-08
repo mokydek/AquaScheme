@@ -12,12 +12,14 @@ import {
   summarizeGeology,
 } from '@aquascheme/engine'
 import type {
-  Aggressiveness, Borehole, GeologyIssue, GeologyReportSummary, SurveyPoint, TextItem,
+  Aggressiveness, Borehole, DiscardedScanRow, GeologyIssue, GeologyReportSummary,
+  ScanTableRefusal, SurveyPoint, TextItem,
 } from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
 import { replaceGeology } from '../../shared/geology'
 import { loadPdfTextByPage } from '../../shared/pdfText'
+import type { OcrProgress } from '../../shared/ocr'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { GeologyPdfImport } from './GeologyPdfImport'
 import { Panel } from './Panel'
@@ -83,6 +85,18 @@ export function GeologySection({
   } | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [pdfTable, setPdfTable] = useState<{ grid: string[][]; columnCount: number } | null>(null)
+  /**
+   * Скан, у которого нет текстового слоя.
+   *
+   * Файл держится, чтобы инженер мог запустить распознавание, не выбирая его
+   * заново. Само распознавание не запускается автоматически: это минуты работы
+   * и 2,6 МБ языковых данных, и решает инженер.
+   */
+  const [scanFile, setScanFile] = useState<File | null>(null)
+  const [scanProgress, setScanProgress] = useState<OcrProgress | null>(null)
+  const [scanRefusal, setScanRefusal] = useState<ScanTableRefusal | null>(null)
+  const [scanDiscarded, setScanDiscarded] = useState<DiscardedScanRow[]>([])
+  const [scanRecognized, setScanRecognized] = useState(false)
   const [pdfReport, setPdfReport] = useState<GeologyReportSummary | null>(null)
 
   // Summary form (GeologyInput + project attributes) persisted to the dataset.
@@ -176,6 +190,46 @@ export function GeologySection({
    * без слоёв прошла бы шлюз выпуска, а рисовать по ней было бы нечего — это
    * обход проверки, а не данные.
    */
+  /**
+   * Распознавание скана геологического отчёта.
+   *
+   * Результат идёт на ТОТ ЖЕ экран сопоставления колонок и обязательной сверки,
+   * что и цифровой PDF: ни одно распознанное значение не попадает в проект
+   * мимо подтверждения инженером.
+   */
+  const onRecognizeScan = async () => {
+    if (!scanFile) return
+    setBusy(true)
+    setScanProgress(null)
+    setScanRefusal(null)
+    setScanDiscarded([])
+    try {
+      const { recognizeScan } = await import('../../shared/ocr')
+      const { recoverTableFromScan } = await import('@aquascheme/engine')
+      const pages = await recognizeScan(scanFile, setScanProgress)
+      const table = recoverTableFromScan(pages.map((page) => ({
+        page: page.page,
+        lines: page.lines.map((line) => ({ words: line.words })),
+      })))
+      setScanRecognized(true)
+      setScanDiscarded(table.discarded)
+      if (table.refusal !== null) {
+        // Честный отказ с причиной вместо таблицы-догадки.
+        setScanRefusal(table.refusal)
+        return
+      }
+      setNotice(null)
+      setPdfTable({ grid: table.rows, columnCount: table.columnCount })
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('pdfError')
+    } finally {
+      setBusy(false)
+      setScanProgress(null)
+    }
+  }
+
   const onGeologyDrawing = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -246,6 +300,10 @@ export function GeologySection({
     setPdfReport(null)
     try {
       const routed = await routeUpload(file, ['pdf'])
+      setScanFile(routed.file)
+      setScanRefusal(null)
+      setScanDiscarded([])
+      setScanRecognized(false)
       setFreezingSource(file.name)
       setFreezingVerified(false)
       const pages = await loadPdfTextByPage(routed.file)
@@ -391,7 +449,39 @@ export function GeologySection({
       {notice === 'imported' && <span className="stat-line ok">{t('project.geology.imported')}</span>}
       {notice === 'empty' && <p className="notice error">{t('project.geology.empty')}</p>}
       {notice === 'migrationNeeded' && <p className="notice error">{t('project.geology.migrationNeeded')}</p>}
-      {notice === 'scan' && <p className="notice error">{t('project.geology.pdf.scan')}</p>}
+      {notice === 'scan' && (
+        <>
+          <p className="notice error">{t('project.geology.pdf.scan')}</p>
+          <div className="section-actions">
+            <button type="button" className="btn btn-sm" disabled={busy || !scanFile} onClick={() => void onRecognizeScan()}>
+              {t('project.geology.pdf.recognize')}
+            </button>
+          </div>
+          <p className="hint">{t('project.geology.pdf.recognizeHint')}</p>
+        </>
+      )}
+      {scanProgress && (
+        <p className="stat-line">
+          {t('project.geology.pdf.recognizeProgress', {
+            page: scanProgress.page, total: scanProgress.totalPages,
+          })}
+        </p>
+      )}
+      {scanRefusal && (
+        <p className="notice error">{t(`project.geology.pdf.refusal.${scanRefusal}`)}</p>
+      )}
+      {scanRecognized && scanDiscarded.length > 0 && (
+        <>
+          <p className="stat-line warn">
+            {t('project.geology.pdf.discardedTitle', { count: scanDiscarded.length })}
+          </p>
+          <ul className="hint">
+            {scanDiscarded.slice(0, 20).map((row, index) => (
+              <li key={index}>{t('project.geology.pdf.discardedRow', { page: row.page, text: row.text })}</li>
+            ))}
+          </ul>
+        </>
+      )}
       {notice === 'pdfError' && <p className="notice error">{t('project.geology.pdf.error')}</p>}
       {notice === 'prose' && <p className="notice warn">{t('project.geology.pdf.prose')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
@@ -501,6 +591,7 @@ export function GeologySection({
           projectId={projectId}
           grid={pdfTable.grid}
           columnCount={pdfTable.columnCount}
+          discardedCount={scanDiscarded.length}
           onCancel={() => setPdfTable(null)}
           onDone={async () => {
             setPdfTable(null)

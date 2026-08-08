@@ -209,8 +209,25 @@ export interface GeologyIssue {
   code: GeologyIssueCode
 }
 
+/**
+ * Скважина, чьи слои не укладываются в глубину монотонно.
+ *
+ * Пласты идут сверху вниз: кровля следующего не может лежать выше подошвы
+ * предыдущего. Нарушение значит, что строки перепутаны местами, слиты от двух
+ * скважин или прочитаны с ошибкой. Молча пересортировать их — значит выдать
+ * испорченные данные за исправные: порядок станет правильным, а разрез —
+ * выдуманным. Поэтому скважина помечается сомнительной и остаётся как есть.
+ */
+export interface DoubtfulBorehole {
+  label: string
+  code: 'depthsNotMonotonic'
+  /** Пара глубин, на которой порядок сломался: подошва выше кровли следующего. */
+  atDepthM: number
+}
+
 export interface GeologyParseResult {
   boreholes: Borehole[]
+  doubtful: DoubtfulBorehole[]
   issues: GeologyIssue[]
   total: number
 }
@@ -320,12 +337,28 @@ export function parseGeologyRows(rows: Array<Record<string, unknown>>): GeologyP
     }
   })
 
-  // Sort each borehole's layers by depth for a stable presentation.
+  // Проверка монотонности идёт ДО сортировки: после неё нарушение исчезло бы
+  // вместе с уликой. Сомнительная скважина не сортируется вовсе — инженер
+  // должен увидеть данные ровно такими, какими они пришли из документа.
+  const doubtful: DoubtfulBorehole[] = []
   for (const borehole of byLabel.values()) {
-    borehole.layers.sort((a, b) => a.topDepthM - b.topDepthM)
+    let broken: number | null = null
+    for (let index = 1; index < borehole.layers.length; index++) {
+      if (borehole.layers[index].topDepthM < borehole.layers[index - 1].bottomDepthM) {
+        broken = borehole.layers[index - 1].bottomDepthM
+        break
+      }
+    }
+    if (broken === null) borehole.layers.sort((a, b) => a.topDepthM - b.topDepthM)
+    else doubtful.push({ label: borehole.label, code: 'depthsNotMonotonic', atDepthM: broken })
   }
 
-  return { boreholes: order.map((label) => byLabel.get(label) as Borehole), issues, total: rows.length }
+  return {
+    boreholes: order.map((label) => byLabel.get(label) as Borehole),
+    doubtful,
+    issues,
+    total: rows.length,
+  }
 }
 
 /**

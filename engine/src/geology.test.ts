@@ -162,3 +162,36 @@ describe('summarizeGeology', () => {
     expect(summary.maxAggressiveness).toBeNull()
   })
 })
+
+describe('глубины по скважине обязаны расти', () => {
+  const row = (label: string, top: string, bottom: string) => ({
+    'Скважина': label, 'Кровля, м': top, 'Подошва, м': bottom,
+  })
+
+  it('нормальная скважина сомнительной не считается', () => {
+    const parsed = parseGeologyRows([row('С-1', '0.0', '1.2'), row('С-1', '1.2', '3.4')])
+    expect(parsed.doubtful).toEqual([])
+    expect(parsed.boreholes[0].layers).toHaveLength(2)
+  })
+
+  it('перекрытие пластов помечает скважину, а не чинится сортировкой', () => {
+    const parsed = parseGeologyRows([row('С-1', '0.0', '2.0'), row('С-1', '1.0', '3.0')])
+    expect(parsed.doubtful).toEqual([{ label: 'С-1', code: 'depthsNotMonotonic', atDepthM: 2 }])
+    // Слои остались в том порядке, в каком пришли: улика не стёрта.
+    expect(parsed.boreholes[0].layers.map((layer) => layer.topDepthM)).toEqual([0, 1])
+  })
+
+  it('переставленные местами строки не пересортировываются молча', () => {
+    const parsed = parseGeologyRows([row('С-1', '1.2', '3.4'), row('С-1', '0.0', '1.2')])
+    expect(parsed.doubtful[0].label).toBe('С-1')
+    expect(parsed.boreholes[0].layers.map((layer) => layer.topDepthM)).toEqual([1.2, 0])
+  })
+
+  it('сомнительной становится вся скважина, соседняя не страдает', () => {
+    const parsed = parseGeologyRows([
+      row('С-1', '0.0', '2.0'), row('С-1', '1.0', '3.0'),
+      row('С-2', '0.0', '1.0'), row('С-2', '1.0', '2.0'),
+    ])
+    expect(parsed.doubtful.map((item) => item.label)).toEqual(['С-1'])
+  })
+})

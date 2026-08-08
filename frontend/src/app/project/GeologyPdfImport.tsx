@@ -28,12 +28,15 @@ export function GeologyPdfImport({
   projectId,
   grid,
   columnCount,
+  discardedCount = 0,
   onCancel,
   onDone,
 }: {
   projectId: string
   grid: string[][]
   columnCount: number
+  /** Сколько строк отброшено при восстановлении таблицы со скана. */
+  discardedCount?: number
   onCancel: () => void
   onDone: () => Promise<void>
 }) {
@@ -238,6 +241,28 @@ export function GeologyPdfImport({
           </div>
           {parsed.issues.length > 0 && (
             <p className="stat-line warn">{t('project.geology.pdf.reviewIssues', { count: parsed.issues.length })}</p>
+          )}
+          {discardedCount > 0 && (
+            <p className="stat-line warn">{t('project.geology.pdf.discardedInReview', { count: discardedCount })}</p>
+          )}
+          {/*
+            Скважина с непоследовательными глубинами показывается сомнительной,
+            а её слои не пересортированы: порядок стал бы правильным на вид,
+            а разрез — выдуманным.
+          */}
+          {parsed.doubtful.length > 0 && (
+            <>
+              <p className="stat-line warn">
+                {t('project.geology.pdf.doubtfulTitle', { count: parsed.doubtful.length })}
+              </p>
+              <ul className="hint">
+                {parsed.doubtful.map((item) => (
+                  <li key={item.label}>
+                    {t('project.geology.pdf.doubtfulRow', { label: item.label, depth: item.atDepthM })}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
 
           {error === 'noFields' && <p className="notice error">{t('project.geology.pdf.noRows')}</p>}
