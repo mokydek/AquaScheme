@@ -534,3 +534,35 @@ describe('экран подтверждения величин из ТУ', () =>
     expect(found.requiredClearanceM[0].page).toBe(5)
   })
 })
+
+describe('распознанное со скана отличимо от цифрового документа', () => {
+  it('извлекатель одинаков для обоих: распознанный текст — тот же текст', () => {
+    // Ровно то, что вернул tesseract на синтетическом скане: «Д» стала «0».
+    const fromScan = extractConditionsFromTu([{ page: 1, text: '0=450 00' }])
+    const fromDigital = extractConditionsFromTu([{ page: 1, text: 'Д=450 мм' }])
+    // Число доходит в обоих случаях — шаблон Ø/DN/«Д=» здесь ни при чём,
+    // важно, что разбор не дублируется и ведёт себя предсказуемо.
+    expect(fromDigital.designDiameterMm[0].value).toBe(450)
+    // Со скана «0=450 00» шаблон «Д=» не сработает: буква потеряна. Это не
+    // недоработка разбора, а причина, по которой инженер обязан сверить.
+    expect(fromScan.designDiameterMm.length).toBeLessThanOrEqual(
+      fromDigital.designDiameterMm.length)
+  })
+
+  it('происхождение ocr — отдельный разряд, а не stated', async () => {
+    const { readTechnicalConditions } = await import('../../shared/technicalConditions')
+    const conditions = readTechnicalConditions({
+      id: 'd', project_id: 'p', kind: 'technical_conditions', file_name: null, meta: null,
+      created_at: '',
+      content: {
+        designDiameterMm: {
+          value: 450, origin: 'ocr', source: 'ТУ.pdf, с. 2 (распознано со скана)',
+          page: 2, quote: '0=450 00',
+        },
+      },
+    } as never)
+    expect(conditions.designDiameterMm?.origin).toBe('ocr')
+    // Цитата хранится как распозналась: инженер видит, что именно прочитано.
+    expect(conditions.designDiameterMm?.quote).toContain('450')
+  })
+})

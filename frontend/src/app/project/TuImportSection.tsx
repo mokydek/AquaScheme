@@ -5,6 +5,8 @@ import type { ConditionsFromTu } from '@aquascheme/engine'
 import { Panel } from './Panel'
 import { saveTechnicalCondition } from '../../shared/technicalConditions'
 import type { DatasetRow } from '../../shared/datasets'
+import { LOW_CONFIDENCE, confidenceOfQuote } from '../../shared/ocr'
+import type { OcrPage, OcrProgress } from '../../shared/ocr'
 
 /**
  * Разбор документа технических условий.
@@ -39,6 +41,15 @@ export function TuImportSection({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState<string[]>([])
+  /**
+   * Скан, отложенный до нажатия «Распознать».
+   *
+   * Распознавание — секунды на страницу и 2,6 МБ языковых данных, поэтому оно
+   * не запускается само: инженер видит, что текстового слоя нет, и решает.
+   */
+  const [scan, setScan] = useState<File | null>(null)
+  const [ocrPages, setOcrPages] = useState<OcrPage[] | null>(null)
+  const [progress, setProgress] = useState<OcrProgress | null>(null)
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -55,7 +66,12 @@ export function TuImportSection({
         }))
         : [{ page: 1, text: await file.text() }]
       if (pages.every((page) => page.text.trim() === '')) {
-        setMessage(t('project.tu.noTextLayer'))
+        // Текстового слоя нет — но это больше не тупик: предлагается
+        // распознавание. Само оно не запускается: секунды на страницу и
+        // 2,6 МБ словаря — решение инженера, а не побочный эффект загрузки.
+        setScan(file)
+        setFileName(file.name)
+        setMessage(t('project.tu.noTextLayerOffer'))
         return
       }
       const { extractConditionsFromTu } = await import('@aquascheme/engine')
@@ -66,6 +82,31 @@ export function TuImportSection({
     } finally {
       setBusy(false)
       event.target.value = ''
+    }
+  }
+
+  /** Распознаёт отложенный скан и прогоняет через ТОТ ЖЕ извлекатель. */
+  const recognize = async () => {
+    if (!scan) return
+    setBusy(true)
+    setMessage(null)
+    setProgress(null)
+    try {
+      const { recognizeScan } = await import('../../shared/ocr')
+      const pages = await recognizeScan(scan, setProgress)
+      const { extractConditionsFromTu } = await import('@aquascheme/engine')
+      // Шаблоны, ограничения и экран подтверждения переиспользуются целиком:
+      // распознанный текст — это тот же текст, только худшего качества.
+      setFound(extractConditionsFromTu(pages.map((page) => ({ page: page.page, text: page.text }))))
+      setOcrPages(pages)
+      if (pages.every((page) => page.text.trim() === '')) {
+        setMessage(t('project.tu.ocrEmpty'))
+      }
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -80,8 +121,11 @@ export function TuImportSection({
     try {
       await saveTechnicalCondition(projectId, conditionsDataset, key, {
         value: value as never,
-        origin: 'stated',
-        source: t('project.tu.source', { file: fileName ?? '', page }),
+        // Скан не должен быть неотличим от цифрового документа в аудите.
+        origin: ocrPages ? 'ocr' : 'stated',
+        source: ocrPages
+          ? t('project.tu.ocrSource', { file: fileName ?? '', page })
+          : t('project.tu.source', { file: fileName ?? '', page }),
         page,
         quote,
       })
@@ -100,19 +144,24 @@ export function TuImportSection({
     value: number | number[]
     page: number
     quote: string
+    /** Уверенность строки-источника: `null` для цифрового документа. */
+    confidence: number | null
   }> = found
     ? [
       ...found.designDiameterMm.map((item, index) => ({
         id: `d${index}`, key: 'designDiameterMm' as const, label: t('project.tu.diameter'),
         shown: String(item.value), value: item.value, page: item.page, quote: item.quote,
+        confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
       })),
       ...found.allowedDiametersMm.map((item, index) => ({
         id: `a${index}`, key: 'allowedDiametersMm' as const, label: t('project.tu.allowed'),
         shown: item.value.join(', '), value: item.value, page: item.page, quote: item.quote,
+        confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
       })),
       ...found.requiredClearanceM.map((item, index) => ({
         id: `c${index}`, key: 'requiredClearanceM' as const, label: t('project.tu.clearance'),
         shown: String(item.value), value: item.value, page: item.page, quote: item.quote,
+        confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
       })),
     ]
     : []
@@ -134,6 +183,35 @@ export function TuImportSection({
         />
       </div>
       {message && <p className="notice error">{message}</p>}
+
+      {/*
+        Распознавание не запускается само: секунды на страницу и 2,6 МБ
+        словаря — решение инженера, а не побочный эффект загрузки файла.
+      */}
+      {scan && !found && (
+        <div className="section-actions">
+          <button
+            type="button"
+            className={`btn btn-sm${busy ? ' is-loading' : ''}`}
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void recognize()}
+          >
+            {busy ? t('project.tu.recognizing') : t('project.tu.recognize')}
+          </button>
+        </div>
+      )}
+      {progress && (
+        <p className="stat-line">
+          {t('project.tu.progress', { page: progress.page, total: progress.totalPages })}
+        </p>
+      )}
+      {ocrPages && (
+        <p className="stat-line warn">
+          {t('project.tu.ocrWarning', { confidence: Math.round(
+            ocrPages.reduce((sum, page) => sum + page.confidence, 0) / Math.max(ocrPages.length, 1)) })}
+        </p>
+      )}
       {fileName && <p className="stat-line">{t('project.tu.file', { name: fileName })}</p>}
 
       {found && rows.length === 0 && <p className="stat-line warn">{t('project.tu.nothingFound')}</p>}
@@ -156,7 +234,17 @@ export function TuImportSection({
                   <td>{row.label}</td>
                   <td className="num mono">{row.shown}</td>
                   <td className="num mono">{row.page}</td>
-                  <td className="hint">«{row.quote}»</td>
+                  <td className="hint">
+                    «{row.quote}»
+                    {row.confidence !== null && (
+                      <span className={row.confidence < LOW_CONFIDENCE ? ' warn' : ' ok'}>
+                        {' '}
+                        {t(row.confidence < LOW_CONFIDENCE
+                          ? 'project.tu.doubtful'
+                          : 'project.tu.recognisedOk', { confidence: Math.round(row.confidence) })}
+                      </span>
+                    )}
+                  </td>
                   <td>
                     {confirmed.includes(row.id)
                       ? <span className="ok">{t('project.tu.confirmed')}</span>
