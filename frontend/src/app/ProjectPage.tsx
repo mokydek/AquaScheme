@@ -557,9 +557,9 @@ export function ProjectPage() {
     return (
       <section className="page">
         <div className="container">
-          <h1>Не удалось загрузить проект</h1>
+          <h1>{t('project.page.loadFailed')}</h1>
           <p className="notice error" role="alert">{coreLoadError ?? 'Сервис данных временно недоступен.'}</p>
-          <button type="button" className="btn btn-sm" onClick={() => void load()}>Повторить загрузку</button>
+          <button type="button" className="btn btn-sm" onClick={() => void load()}>{t('project.page.retry')}</button>
         </div>
       </section>
     )
@@ -676,9 +676,9 @@ export function ProjectPage() {
             <span className="export-progress-spinner" aria-hidden="true" />
             <div className="export-progress-copy">
               <strong>{demoStage ?? 'Загружается синтетическая учебная модель'}</strong>
-              <span>Полный набор отметок DWG, ограничения, ОС, ЛНС, геология, каталог и расчётная трасса</span>
+              <span>{t('project.page.fullSet')}</span>
             </div>
-            {demoCanCancel && <button type="button" className="btn btn-ghost btn-sm" onClick={() => demoCancelRef.current?.()}>Отменить расчёт</button>}
+            {demoCanCancel && <button type="button" className="btn btn-ghost btn-sm" onClick={() => demoCancelRef.current?.()}>{t('project.page.cancelRun')}</button>}
             <span className="export-progress-bar" aria-hidden="true"><i /></span>
           </div>
         )}

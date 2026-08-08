@@ -113,6 +113,12 @@ export const en = {
         button: 'Get started',
       },
     },
+    errorBoundary: {
+      badge: 'ERROR',
+      title: 'Something went wrong',
+      text: 'The application hit an unexpected error. Project data is saved. Refresh the page to continue.',
+      reload: 'Refresh the page',
+    },
     auth: {
       signIn: 'Sign in',
       signUp: 'Sign up',
@@ -1410,6 +1416,17 @@ export const en = {
         thAction: 'Decision',
         confirm: 'Confirm',
         confirmed: 'confirmed',
+      },
+      page: {
+        loadFailed: 'The project could not be loaded',
+        retry: 'Load again',
+        fullSet: 'Full set of DWG elevations, constraints, treatment works, lift station, geology, catalog and the computed route',
+        cancelRun: 'Cancel the run',
+      },
+      zoom: {
+        reset: 'Reset',
+        zoomIn: 'Zoom in',
+        zoomOut: 'Zoom out',
       },
       conditions: {
         manualSource: 'entered by the engineer',

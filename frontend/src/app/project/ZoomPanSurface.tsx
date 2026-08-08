@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react'
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 5
 
 export function ZoomPanSurface({ children, label }: { children: ReactNode; label: string }) {
+  const { t } = useTranslation()
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const drag = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null)
@@ -55,10 +57,10 @@ export function ZoomPanSurface({ children, label }: { children: ReactNode; label
         {children}
       </div>
       <div className="zoom-pan-controls" onPointerDown={(event) => event.stopPropagation()}>
-        <button type="button" onClick={() => setClampedZoom(zoom * 1.3)} disabled={zoom >= MAX_ZOOM} aria-label="Приблизить">+</button>
+        <button type="button" onClick={() => setClampedZoom(zoom * 1.3)} disabled={zoom >= MAX_ZOOM} aria-label={t('project.zoom.zoomIn')}>+</button>
         <span className="mono">{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={() => setClampedZoom(zoom / 1.3)} disabled={zoom <= MIN_ZOOM} aria-label="Отдалить">−</button>
-        <button type="button" onClick={reset} disabled={zoom === 1 && pan.x === 0 && pan.y === 0}>Сбросить</button>
+        <button type="button" onClick={() => setClampedZoom(zoom / 1.3)} disabled={zoom <= MIN_ZOOM} aria-label={t('project.zoom.zoomOut')}>−</button>
+        <button type="button" onClick={reset} disabled={zoom === 1 && pan.x === 0 && pan.y === 0}>{t('project.zoom.reset')}</button>
       </div>
     </div>
   )
