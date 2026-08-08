@@ -106,6 +106,18 @@ export interface NetworkNode {
   x: number
   y: number
   groundElevation: number
+  /**
+   * Отметка земли не определена, а поле заполнено нулём.
+   *
+   * Ноль — законная отметка (уровень моря), поэтому «не определено» нельзя
+   * выразить значением: только отдельным признаком. Без него профиль по
+   * ул. Станкевича считал уклон местности, нехватку падения и глубину
+   * заложения от нулевой земли — и каждое из этих чисел было ложью,
+   * неотличимой от расчёта.
+   *
+   * Ставится там, где съёмки нет или узел лежит за её контуром.
+   */
+  groundElevationMissing?: boolean
   buildingId?: string
   /** Design inflow entering the system at this node, L/s. */
   designFlowLps?: number
@@ -190,8 +202,21 @@ function nearest<T extends Point>(candidates: T[], target: Point): T {
  * survey points. Returns the exact z when the point coincides with a survey
  * point; 0 when there is no survey at all.
  */
-export function interpolateElevation(points: SurveyPoint[], x: number, y: number, k = 4): number {
-  if (points.length === 0) return 0
+/**
+ * Отметка поверхности в точке по ближайшим точкам съёмки.
+ *
+ * Возвращает `null`, когда съёмки нет вовсе. Раньше здесь стоял `return 0`, и
+ * это была тихая подстановка худшего рода: ноль неотличим от вычисленной
+ * отметки, а дальше по конвейеру от него считались уклон местности, нехватка
+ * падения и глубина заложения — три числа, каждое из которых ложь. На проекте
+ * по ул. Станкевича профиль так и рисовал «Земля 0.00» у всех колодцев при
+ * четырнадцати точках съёмки с отметками 685…688 м в том же проекте.
+ *
+ * Ноль как отметка — величина законная (уровень моря), поэтому отличить
+ * «не определено» от «ровно ноль» можно только типом, а не значением.
+ */
+export function interpolateElevation(points: SurveyPoint[], x: number, y: number, k = 4): number | null {
+  if (points.length === 0) return null
   const limit = Math.max(1, k)
   const ranked: Array<{ p: SurveyPoint; d2: number }> = []
   // Keep only the k nearest candidates while scanning. Sorting all 3–5k
@@ -214,6 +239,46 @@ export function interpolateElevation(points: SurveyPoint[], x: number, y: number
     den += w
   }
   return round2(num / den)
+}
+
+/**
+ * Накрывает ли съёмка точку.
+ *
+ * Обратно-взвешенное расстояние даёт число где угодно — хоть в километре от
+ * крайней точки съёмки, — и это число выглядит как отметка. Поэтому запрос вне
+ * контура съёмки обязан получать отказ, а не экстраполяцию: за контуром
+ * поверхности нет, и «примерно 686» там значит «неизвестно».
+ *
+ * Контур — выпуклая оболочка точек, тот же приём, что и у покрытия трассы
+ * геологией.
+ */
+export function surveyCovers(points: SurveyPoint[], x: number, y: number): boolean {
+  if (points.length < 3) return false
+  const hull = convexHull(points.map((point) => ({ x: point.x, y: point.y })))
+  if (hull.length < 3) return false
+  // Точка внутри выпуклого контура, если она с одной стороны от всех рёбер.
+  let sign = 0
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i]
+    const b = hull[(i + 1) % hull.length]
+    const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)
+    if (Math.abs(cross) < 1e-9) continue
+    const current = cross > 0 ? 1 : -1
+    if (sign === 0) sign = current
+    else if (sign !== current) return false
+  }
+  return true
+}
+
+/**
+ * Отметка поверхности только там, где съёмка её действительно описывает.
+ *
+ * Именно эту функцию следует звать, назначая отметку узлу сети: она отвечает
+ * `null` и на отсутствие съёмки, и на точку за её контуром.
+ */
+export function elevationWithinSurvey(points: SurveyPoint[], x: number, y: number): number | null {
+  if (!surveyCovers(points, x, y)) return null
+  return interpolateElevation(points, x, y)
 }
 
 /** Andrew's monotone chain; returns the hull counterclockwise. */
@@ -274,7 +339,14 @@ export function traceNetwork(
   const opt = { ...DEFAULT_OPTIONS, ...options }
   const nodes: NetworkNode[] = []
   const pipes: NetworkPipe[] = []
-  const elevation = (x: number, y: number) => interpolateElevation(surveyPoints, x, y)
+  /** Отметка узла и признак «не определена»: ноль здесь заполнитель, не значение. */
+  const ground = (x: number, y: number) => {
+    const found = elevationWithinSurvey(surveyPoints, x, y)
+    return found === null
+      ? { groundElevation: 0, groundElevationMissing: true }
+      : { groundElevation: found }
+  }
+  const elevation = (x: number, y: number) => elevationWithinSurvey(surveyPoints, x, y) ?? 0
 
   let pipeSeq = 0
   const addPipe = (kind: NetworkPipeKind, from: NetworkNode, to: NetworkNode) => {
@@ -292,7 +364,7 @@ export function traceNetwork(
     kind: 'source',
     x: round2(source.x),
     y: round2(source.y),
-    groundElevation: elevation(source.x, source.y),
+    ...ground(source.x, source.y),
   }
   nodes.push(sourceNode)
 
@@ -301,7 +373,7 @@ export function traceNetwork(
     kind: 'building',
     x: round2(b.x),
     y: round2(b.y),
-    groundElevation: elevation(b.x, b.y),
+    ...ground(b.x, b.y),
     buildingId: b.id,
   }))
 
@@ -386,7 +458,7 @@ export function traceNetwork(
           y: round2(west.y + ((east.y - west.y) * s) / segments),
           groundElevation: 0,
         }
-        node.groundElevation = elevation(node.x, node.y)
+        Object.assign(node, ground(node.x, node.y))
         nodes.push(node)
         mains.push(node)
         addPipe('cross', prev, node)

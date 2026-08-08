@@ -81,6 +81,11 @@ export function networkFromRows(nodes: NodeRow[], pipes: PipeRow[]): TracedNetwo
       x: n.x,
       y: n.y,
       groundElevation: n.ground_elevation ?? 0,
+      // Ноль в базе и отсутствие отметки — разные вещи, и различить их можно
+      // только признаком: ноль сам по себе законная отметка.
+      ...(n.ground_elevation === null || n.ground_elevation === undefined
+        ? { groundElevationMissing: true }
+        : {}),
       buildingId: n.building_id ?? undefined,
       designFlowLps: n.design_flow_lps ?? undefined,
       invertElevationM: n.invert_elevation_m ?? undefined,

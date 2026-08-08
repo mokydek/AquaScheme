@@ -1,7 +1,31 @@
 import { maxOf, minOf } from './units'
 import type { SurveyPoint } from './types'
-import { interpolateElevation } from './trace'
+import { elevationWithinSurvey, interpolateElevation } from './trace'
 import type { NetworkNode, NetworkPipe, TracedNetwork } from './trace'
+
+/**
+ * Отметка внутри маршрутизации, где ветка `survey.length > 0` уже проверена.
+ *
+ * Здесь `null` невозможен по построению, но подменять его нулём нельзя: ноль
+ * неотличим от настоящей отметки. Поэтому — явная ошибка, а не умолчание.
+ */
+function surfaceAt(survey: SurveyPoint[], x: number, y: number): number {
+  const value = interpolateElevation(survey, x, y)
+  if (value === null) throw new Error('Отметка запрошена при пустой съёмке: проверьте ветку survey.length > 0.')
+  return value
+}
+
+/**
+ * Отметка узла трассы и признак «не определена».
+ *
+ * Съёмки может не быть вовсе — трасса приходит из DWG и без высот. Тогда узел
+ * получает заполнитель и пометку, а не ноль, выданный за отметку: дальше по
+ * конвейеру пометка останавливает построение профиля.
+ */
+function nodeGround(survey: SurveyPoint[], x: number, y: number): { groundElevation: number; groundElevationMissing?: boolean } {
+  const value = elevationWithinSurvey(survey, x, y)
+  return value === null ? { groundElevation: 0, groundElevationMissing: true } : { groundElevation: value }
+}
 
 export interface RoutePoint { x: number; y: number }
 export interface RouteSegment {
@@ -447,7 +471,7 @@ export function traceConstrainedNetwork(
       ? points.map((point) => distanceToSegments(point, guides))
       : points.map(() => 0)
     const surfaceElevations = survey.length > 0
-      ? points.map((point) => interpolateElevation(survey, point.x, point.y))
+      ? points.map((point) => surfaceAt(survey, point.x, point.y))
       : points.map(() => 0)
     const touchesWater = points.map((point) => waterRings.some((ring) => pointInRing(point, ring)))
     const result = [points[0]]
@@ -485,7 +509,7 @@ export function traceConstrainedNetwork(
         if (survey.length > 0) {
           const originalUphill = surfaceElevations.slice(anchor, candidateIndex + 1).slice(1)
             .reduce((sum, value, index) => sum + Math.max(0, value - surfaceElevations[anchor + index]), 0)
-          const candidateElevations = candidateSamples.map((point) => interpolateElevation(survey, point.x, point.y))
+          const candidateElevations = candidateSamples.map((point) => surfaceAt(survey, point.x, point.y))
           const candidateUphill = candidateElevations.slice(1)
             .reduce((sum, value, index) => sum + Math.max(0, value - candidateElevations[index]), 0)
           if (candidateUphill > originalUphill + 0.1) break
@@ -514,7 +538,7 @@ export function traceConstrainedNetwork(
         boundaryDistance: distanceToRings(point, rings),
         utilityDistance: utilities.length > 0 ? distanceToSegments(point, utilities) : Number.POSITIVE_INFINITY,
         guideDistance: guides.length > 0 ? distanceToSegments(point, guides) : 0,
-        surfaceElevation: survey.length > 0 ? interpolateElevation(survey, point.x, point.y) : 0,
+        surfaceElevation: survey.length > 0 ? surfaceAt(survey, point.x, point.y) : 0,
         insideWater: waterRings.some((ring) => pointInRing(point, ring)),
       })
     }
@@ -647,7 +671,6 @@ export function traceConstrainedNetwork(
   }
 
   if (survey.length === 0) warnings.push('Нет высотных отметок топосъёмки: план построен, но продольный профиль и глубины требуют исходных данных.')
-  const elevation = (point: RoutePoint) => interpolateElevation(survey, point.x, point.y)
   const routeDecision = (a: RoutePoint, b: RoutePoint, choice: 'main' | 'facility-lead' | 'outlet-lead') => {
     const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
     return [
@@ -660,11 +683,11 @@ export function traceConstrainedNetwork(
       `roadCrossings=${edgeCrossings(a, b, roads)}`,
       `redLineCrossings=${edgeCrossings(a, b, redLines)}`,
       `waterCrossings=${edgeCrossings(a, b, water)}`,
-      `surfaceDeltaM=${survey.length ? round2(elevation(b) - elevation(a)) : 'unknown'}`,
+      `surfaceDeltaM=${survey.length ? round2(surfaceAt(survey, b.x, b.y) - surfaceAt(survey, a.x, a.y)) : 'unknown'}`,
       'simplification=revalidated',
     ].join('|')
   }
-  const nodes: NetworkNode[] = [{ id: 'SRC', kind: 'source', x: round2(source.x), y: round2(source.y), groundElevation: elevation(source) }]
+  const nodes: NetworkNode[] = [{ id: 'SRC', kind: 'source', x: round2(source.x), y: round2(source.y), ...nodeGround(survey, source.x, source.y) }]
   const pipes: NetworkPipe[] = []
   const nodeIdByCoord = new Map<string, string>()
   const coordKey = (point: RoutePoint) => `${round2(point.x)},${round2(point.y)}`
@@ -674,7 +697,7 @@ export function traceConstrainedNetwork(
     if (found) return found
     const id = `J${nodeIdByCoord.size + 1}`
     nodeIdByCoord.set(coordinate, id)
-    nodes.push({ id, kind: 'junction', x: round2(point.x), y: round2(point.y), groundElevation: elevation(point) })
+    nodes.push({ id, kind: 'junction', x: round2(point.x), y: round2(point.y), ...nodeGround(survey, point.x, point.y) })
     return id
   }
   const alignmentForNodes = (fromNode: string, toNode: string): [RoutePoint, RoutePoint] => {
@@ -750,7 +773,7 @@ export function traceConstrainedNetwork(
     if (!terminalCell) continue
     const firstGridPoint = pointByKey.get(terminalCell) ?? sourceCell.point
     const buildingNodeId = `B${nodes.filter((node) => node.kind === 'building').length + 1}`
-    nodes.push({ id: buildingNodeId, kind: 'building', x: round2(terminal.x), y: round2(terminal.y), groundElevation: elevation(terminal), buildingId: terminal.buildingId ?? terminal.id })
+    nodes.push({ id: buildingNodeId, kind: 'building', x: round2(terminal.x), y: round2(terminal.y), ...nodeGround(survey, terminal.x, terminal.y), buildingId: terminal.buildingId ?? terminal.id })
     const firstGridNodeId = getNode(firstGridPoint)
     const serviceAlignment = alignmentForNodes(buildingNodeId, firstGridNodeId)
     pipes.push({ id: `P${++pipeSeq}`, kind: 'service', fromNode: buildingNodeId, toNode: firstGridNodeId, lengthM: round2(distance(serviceAlignment[0], serviceAlignment[1])), alignment: serviceAlignment, dataSource: routeDecision(terminal, firstGridPoint, 'facility-lead') })

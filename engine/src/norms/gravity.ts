@@ -331,6 +331,15 @@ export interface GravityNetworkResult {
   outletFlowLps: number
   /** Longitudinal profile of the main collector (null if no outlet). */
   profile: GravityProfile | null
+  /**
+   * Узлы, у которых отметка земли не определена.
+   *
+   * Непустой список означает, что профиль НЕ построен намеренно: считать от
+   * нулевой земли уклон местности, нехватку падения и глубину заложения —
+   * значит выдать три ложных числа, неотличимых от расчёта. Инженеру нужен не
+   * такой профиль, а имена колодцев, до которых не достаёт съёмка.
+   */
+  surfaceGapNodeIds: string[]
 }
 
 /**
@@ -456,7 +465,20 @@ export function solveGravityNetwork(input: {
     : 0
 
   const design = new Map(pipes.map((p) => [p.id, { diameterMm: p.diameterMm, slope: p.slope }]))
-  const profile = input.freezingDepthM == null
+
+  // Поверхность обязана накрывать каждый узел самотёчной сети. Пока это не
+  // так, профиль не строится вовсе: отказ с именами узлов полезнее профиля,
+  // нарисованного от нуля.
+  const gravityNodeIds = new Set<string>()
+  for (const pipe of input.network.pipes.filter(isGravityPipe)) {
+    gravityNodeIds.add(pipe.fromNode)
+    gravityNodeIds.add(pipe.toNode)
+  }
+  const surfaceGapNodeIds = input.network.nodes
+    .filter((node) => gravityNodeIds.has(node.id) && node.groundElevationMissing === true)
+    .map((node) => node.label ?? node.id)
+
+  const profile = surfaceGapNodeIds.length > 0 || input.freezingDepthM == null
     ? null
     : computeGravityProfile({
       network: {
@@ -468,7 +490,7 @@ export function solveGravityNetwork(input: {
       freezingDepthM: input.freezingDepthM,
     })
 
-  return { kind: 'gravity', systemType: input.system, pipes, outletFlowLps, profile }
+  return { kind: 'gravity', systemType: input.system, pipes, outletFlowLps, profile, surfaceGapNodeIds }
 }
 
 

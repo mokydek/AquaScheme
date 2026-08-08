@@ -10,6 +10,7 @@ const RESULT: GravityNetworkResult = {
   ],
   outletFlowLps: 2300,
   profile: null,
+  surfaceGapNodeIds: [],
 }
 
 describe('buildSewerNoteDoc', () => {

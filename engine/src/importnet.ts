@@ -1,6 +1,6 @@
 import { maxOf, minOf } from './units'
 import type { SurveyPoint } from './types'
-import { interpolateElevation } from './trace'
+import { elevationWithinSurvey } from './trace'
 import type { NetworkNode, NetworkPipe, TracedNetwork } from './trace'
 import { lonLatToLocal } from './geo'
 
@@ -134,7 +134,21 @@ export function importNetwork(
   options: ImportOptions = {},
 ): { network: TracedNetwork; report: ImportReport } {
   const opt = { ...DEFAULT_OPTIONS, ...options }
-  const elevation = (x: number, y: number) => interpolateElevation(surveyPoints, x, y)
+  /**
+   * Отметка узла — только там, где съёмка её описывает.
+   *
+   * Возвращает пару: значение и признак «не определено». Ноль в значении при
+   * `missing: true` — заполнитель, а не отметка, и дальше по конвейеру он
+   * обязан приводить к отказу, а не к расчёту.
+   */
+  const elevation = (x: number, y: number): { value: number; missing: boolean } => {
+    const found = elevationWithinSurvey(surveyPoints, x, y)
+    return found === null ? { value: 0, missing: true } : { value: found, missing: false }
+  }
+  const ground = (x: number, y: number) => {
+    const { value, missing } = elevation(x, y)
+    return missing ? { groundElevation: value, groundElevationMissing: true } : { groundElevation: value }
+  }
 
   let zeroLengthRemoved = 0
   let selfIntersections = 0
@@ -293,7 +307,7 @@ export function importNetwork(
     kind: 'source',
     x: round2(source.x),
     y: round2(source.y),
-    groundElevation: elevation(source.x, source.y),
+    ...ground(source.x, source.y),
   }
   nodes.push(sourceNode)
   nodeById.set(sourceNode.id, sourceNode)
@@ -304,7 +318,7 @@ export function importNetwork(
     kind: 'junction',
     x: round2(c.x),
     y: round2(c.y),
-    groundElevation: elevation(c.x, c.y),
+    ...ground(c.x, c.y),
   }))
 
   const emptyReport: ImportReport = {
@@ -386,7 +400,7 @@ export function importNetwork(
       kind: 'building',
       x: round2(b.x),
       y: round2(b.y),
-      groundElevation: elevation(b.x, b.y),
+      ...ground(b.x, b.y),
       buildingId: b.id,
     }
     let best = keptJunctions[0]
