@@ -8,6 +8,8 @@ import { saveDataset } from '../../shared/datasets'
 import { replaceNetwork } from '../../shared/network'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
+import { readTechnicalConditions, saveTechnicalCondition } from '../../shared/technicalConditions'
+import type { DatasetRow } from '../../shared/datasets'
 
 /**
  * Reconstruction laid out from a topographic survey. Replacing a street sewer
@@ -20,16 +22,25 @@ import { Panel } from './Panel'
 export function ReconstructionSurveySection({
   projectId,
   system,
+  conditionsDataset,
   onSaved,
 }: {
   projectId: string
   system: 'sewer' | 'storm'
+  /** Контрактные величины проекта — одно место на весь проект. */
+  conditionsDataset?: DatasetRow
   onSaved: () => Promise<void>
 }) {
   const { t } = useTranslation()
-  const [diameterMm, setDiameterMm] = useState('')
-  const [clearanceM, setClearanceM] = useState('')
-  const [roadWidthM, setRoadWidthM] = useState('')
+  const conditions = readTechnicalConditions(conditionsDataset)
+  // Начальные значения — из общего набора: до этого каждая секция держала своё
+  // поле, и одна и та же величина расходилась между ними молча.
+  const [diameterMm, setDiameterMm] = useState(
+    conditions.designDiameterMm ? String(conditions.designDiameterMm.value) : '')
+  const [clearanceM, setClearanceM] = useState(
+    conditions.requiredClearanceM ? String(conditions.requiredClearanceM.value) : '')
+  const [roadWidthM, setRoadWidthM] = useState(
+    conditions.roadWidthM ? String(conditions.roadWidthM.value) : '')
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
   // Разобранный чертёж держится отдельно, чтобы просвет можно было уточнить
   // без повторной загрузки файла: разбор дороже пересборки в несколько раз.
@@ -50,6 +61,21 @@ export function ReconstructionSurveySection({
   const clearanceReady = clearanceM.trim() !== '' && Number.isFinite(clearance) && clearance > 0
   const roadWidth = Number(roadWidthM)
   const roadWidthReady = roadWidthM.trim() !== '' && Number.isFinite(roadWidth) && roadWidth > 0
+
+  /**
+   * Правка величины пишется в общий набор проекта.
+   *
+   * Ручной ввод — запасной путь, поэтому происхождение `manual`: в аудите он
+   * не должен выглядеть как величина из документа.
+   */
+  const commit = async (key: 'designDiameterMm' | 'requiredClearanceM' | 'roadWidthM', raw: string) => {
+    const parsedValue = Number(raw)
+    await saveTechnicalCondition(projectId, conditionsDataset, key,
+      raw.trim() !== '' && Number.isFinite(parsedValue) && parsedValue > 0
+        ? { value: parsedValue, origin: 'manual', source: t('project.conditions.manualSource') }
+        : null)
+    await onSaved()
+  }
 
   const rebuild = async (
     data: DxfNetworkData,
@@ -242,6 +268,7 @@ export function ReconstructionSurveySection({
           inputMode="numeric"
           value={diameterMm}
           onChange={(event) => setDiameterMm(event.target.value)}
+          onBlur={(event) => void commit('designDiameterMm', event.target.value)}
         />
       </div>
 
@@ -258,7 +285,10 @@ export function ReconstructionSurveySection({
           inputMode="decimal"
           value={clearanceM}
           onChange={(event) => setClearanceM(event.target.value)}
-          onBlur={() => void onClearanceCommitted()}
+          onBlur={(event) => {
+            void commit('requiredClearanceM', event.target.value)
+            void onClearanceCommitted()
+          }}
         />
       </div>
       <p className="hint">{t('project.reconstruction.clearanceHint')}</p>
@@ -276,7 +306,10 @@ export function ReconstructionSurveySection({
           inputMode="decimal"
           value={roadWidthM}
           onChange={(event) => setRoadWidthM(event.target.value)}
-          onBlur={() => { if (parsed) void rebuild(parsed) }}
+          onBlur={(event) => {
+            void commit('roadWidthM', event.target.value)
+            if (parsed) void rebuild(parsed)
+          }}
         />
       </div>
       <p className="hint">

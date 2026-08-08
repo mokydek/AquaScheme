@@ -43,6 +43,7 @@ const { StankevichaDemoView } = await import('./StankevichaDemoView')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
 const { DeliverablesSection } = await import('./DeliverablesSection')
+const { ReconstructionSurveySection } = await import('./ReconstructionSurveySection')
 const { maxFilling, auditProjectProvenance, planBasinPressureLinks } = await import('@aquascheme/engine')
 const { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } = await import('../../shared/stankevichaDemo')
 
@@ -481,5 +482,32 @@ describe('напорные перемычки между бассейнами н
     expect(plan.missing).toEqual([])
     expect(plan.links[0].requiredHeadM!).toBeGreaterThan(4.2)
     expect(plan.links[0].pumps?.pump?.designation).toBe('НС-2')
+  })
+})
+
+describe('одна величина — одно место ввода', () => {
+  const conditions = {
+    id: 'd1', project_id: 'p1', kind: 'technical_conditions',
+    file_name: null, meta: null, created_at: '',
+    content: { designDiameterMm: { value: 450, origin: 'stated', source: 'ТУ, с. 2' } },
+  } as never
+
+  it('обе секции показывают одно и то же значение из общего набора', () => {
+    const reconstruction = html(createElement(ReconstructionSurveySection, {
+      projectId: 'p1', system: 'sewer', conditionsDataset: conditions, onSaved: async () => {},
+    }))
+    const bundle = html(createElement(SourceBundleRunSection, {
+      projectId: 'p1', conditionsDataset: conditions, onSaved: async () => {},
+    }))
+    // Диаметр спрашивался двумя независимыми полями и расходился молча.
+    expect(reconstruction).toContain('value="450"')
+    expect(bundle).toContain('value="450"')
+  })
+
+  it('без набора обе секции показывают пустое поле, а не подставленное число', () => {
+    const reconstruction = html(createElement(ReconstructionSurveySection, {
+      projectId: 'p1', system: 'sewer', onSaved: async () => {},
+    }))
+    expect(reconstruction).not.toMatch(/name="[^"]*diameter[^"]*"[^>]*value="[1-9]/)
   })
 })

@@ -1386,6 +1386,14 @@ export const ru = {
         method: 'Способ работ',
         approved: 'Согласовано',
       },
+      conditions: {
+        manualSource: 'введено инженером вручную',
+        origin: {
+          stated: 'из документа',
+          measured: 'измерено по чертежу',
+          manual: 'введено вручную',
+        },
+      },
       deliverables: {
         basinLayout: 'Профиль при разбивке на бассейны',
         basinLayoutPerBasin: 'Отдельный профиль на каждый бассейн',

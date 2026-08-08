@@ -724,7 +724,7 @@ export function ProjectPage() {
             восстановить из съёмки, а что нет.
           */}
           {(isSewer || isStorm) && (
-            <div id="source-bundle-run"><SourceBundleRunSection projectId={project.id} /></div>
+            <div id="source-bundle-run"><SourceBundleRunSection conditionsDataset={datasets.technical_conditions} onSaved={load} projectId={project.id} /></div>
           )}
           {(isSewer || isStorm) && (
             <>

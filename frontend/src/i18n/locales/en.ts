@@ -1386,6 +1386,14 @@ export const en = {
         method: 'Construction method',
         approved: 'Approved',
       },
+      conditions: {
+        manualSource: 'entered by the engineer',
+        origin: {
+          stated: 'from a document',
+          measured: 'measured on the drawing',
+          manual: 'entered manually',
+        },
+      },
       deliverables: {
         basinLayout: 'Profile when the route is split into basins',
         basinLayoutPerBasin: 'A separate profile for each basin',

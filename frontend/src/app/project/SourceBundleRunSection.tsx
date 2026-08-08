@@ -5,6 +5,8 @@ import { buildReconstructionFromSurvey } from '@aquascheme/engine'
 import type { ConditionsFromText, ReconstructionFromSurvey } from '@aquascheme/engine'
 import { routeUpload } from '../../shared/upload'
 import { Panel } from './Panel'
+import { readTechnicalConditions, saveTechnicalCondition } from '../../shared/technicalConditions'
+import type { DatasetRow } from '../../shared/datasets'
 
 /**
  * Прогон комплекта исходных данных объекта.
@@ -26,13 +28,23 @@ import { Panel } from './Panel'
  * нечему.
  */
 
-export function SourceBundleRunSection({ projectId }: { projectId: string }) {
+export function SourceBundleRunSection({
+  projectId,
+  conditionsDataset,
+  onSaved,
+}: {
+  projectId: string
+  /** Контрактные величины проекта: тот же набор, что читает секция реконструкции. */
+  conditionsDataset?: DatasetRow
+  onSaved?: () => Promise<void>
+}) {
   const { t } = useTranslation()
+  const projectConditions = readTechnicalConditions(conditionsDataset)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ReconstructionFromSurvey | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
-  const [diameterMm, setDiameterMm] = useState<number | null>(null)
+  const [diameterMm, setDiameterMm] = useState<number | null>(projectConditions.designDiameterMm?.value ?? null)
   const [conditions, setConditions] = useState<ConditionsFromText | null>(null)
   const [conditionsFile, setConditionsFile] = useState<string | null>(null)
 
@@ -174,6 +186,15 @@ export function SourceBundleRunSection({ projectId }: { projectId: string }) {
             onChange={(event) => {
               const value = Number(event.target.value)
               setDiameterMm(Number.isFinite(value) && value > 0 ? value : null)
+            }}
+            onBlur={(event) => {
+              // Правка пишется в ОБЩИЙ набор проекта: то же поле в секции
+              // реконструкции читает эту же запись, и разойтись они не могут.
+              const value = Number(event.target.value)
+              void saveTechnicalCondition(projectId, conditionsDataset, 'designDiameterMm',
+                Number.isFinite(value) && value > 0
+                  ? { value, origin: 'manual', source: t('project.conditions.manualSource') }
+                  : null).then(() => onSaved?.())
             }}
           />
         </label>
