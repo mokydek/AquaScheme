@@ -43,7 +43,7 @@ const { StankevichaDemoView } = await import('./StankevichaDemoView')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
 const { DeliverablesSection } = await import('./DeliverablesSection')
-const { maxFilling, auditProjectProvenance } = await import('@aquascheme/engine')
+const { maxFilling, auditProjectProvenance, planBasinPressureLinks } = await import('@aquascheme/engine')
 const { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } = await import('../../shared/stankevichaDemo')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
@@ -453,5 +453,33 @@ describe('представление профиля по бассейнам сп
     // Значение select отражается атрибутом selected на выбранном варианте.
     expect(markup).toMatch(/value="per_basin"[^>]*selected|selected[^>]*value="per_basin"/)
     expect(markup).toMatch(/value="separate"[^>]*selected|selected[^>]*value="separate"/)
+  })
+})
+
+describe('напорные перемычки между бассейнами на экране', () => {
+  it('без данных подъём показан, а напор и агрегат — нет, с перечнем недостающего', () => {
+    const plan = planBasinPressureLinks({
+      lifts: [{ nodeId: 'К-9', chainageM: 540, incomingDepthM: 6, liftHeightM: 4.2 }],
+    })
+    expect(plan.links[0].geometricLiftM).toBe(4.2)
+    expect(plan.links[0].requiredHeadM).toBeNull()
+    // Недостающее названо поимённо, а не «недостаточно данных».
+    expect(plan.missing.length).toBeGreaterThan(3)
+    expect(plan.reason).toContain('каталог насосов')
+  })
+
+  it('при полных данных напор и агрегат посчитаны', () => {
+    const plan = planBasinPressureLinks({
+      lifts: [{ nodeId: 'К-9', chainageM: 540, incomingDepthM: 6, liftHeightM: 4.2 }],
+      designFlowLps: 35,
+      pressureLengthM: 220,
+      pressureDiameterMm: 200,
+      catalogue: [{ designation: 'НС-2', flowLps: 40, headM: 25, powerKw: 15 }],
+      category: 'first',
+      effluent: 'domestic',
+    })
+    expect(plan.missing).toEqual([])
+    expect(plan.links[0].requiredHeadM!).toBeGreaterThan(4.2)
+    expect(plan.links[0].pumps?.pump?.designation).toBe('НС-2')
   })
 })

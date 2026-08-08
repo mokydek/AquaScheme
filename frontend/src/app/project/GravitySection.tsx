@@ -20,6 +20,7 @@ import {
   auditProjectProvenance,
   summarizeRouteCoverage,
   planDropWells,
+  planBasinPressureLinks,
   planGravityBasins,
   unverifiedClauses,
   workingDrawingSpecificationItemCount,
@@ -148,6 +149,7 @@ export function GravitySection({
   topographyDataset,
   verticalPlanDataset,
   gravityBasinsDataset,
+  pumpCatalogDataset,
   constraintsDataset,
   routeAuditDataset,
   manholeCatalogDataset,
@@ -176,6 +178,8 @@ export function GravitySection({
   verticalPlanDataset?: DatasetRow
   /** Подтверждённая инженером разбивка на самотёчные бассейны. */
   gravityBasinsDataset?: DatasetRow
+  /** Каталог насосов, категория надёжности и характер стоков. */
+  pumpCatalogDataset?: DatasetRow
   constraintsDataset?: DatasetRow
   routeAuditDataset?: DatasetRow
   manholeCatalogDataset?: DatasetRow
@@ -527,19 +531,6 @@ export function GravitySection({
     return new Map(result.profile.stations.map((station, index) => [station.nodeId, along[index]?.elevation ?? null]))
   }, [verticalPlanDataset, result, network, surveyPoints])
 
-  const unresolvedLayerCount = useMemo(() => {
-    const audit = (routeAuditDataset?.content ?? null) as { unresolved?: { layers?: number } } | null
-    return audit?.unresolved?.layers ?? constraints?.unresolvedLayers?.length ?? 0
-  }, [constraints, routeAuditDataset])
-  /**
-   * Обеспечен ли самотёк по трассе и как она делится на бассейны.
-   *
-   * По отдельности каждый участок норме отвечает, поэтому без этой проверки
-   * профиль выпускался при любой глубине. Предел глубины берётся из каталога
-   * конструкций колодцев проекта: глубже самой глубокой позиции колодец не из
-   * чего собрать. Без каталога разбивка не считается — своего предела мы не
-   * вводим.
-   */
   const gravityPlan = useMemo(() => {
     const profile = result?.profile
     if (!profile || profile.stations.length < 2) return null
@@ -557,6 +548,50 @@ export function GravitySection({
       : null
     return { feasibility, basins, catalogMaxDepthM }
   }, [result, manholeCatalog, freezingDepth])
+  /**
+   * Напорные перемычки между бассейнами.
+   *
+   * Разбивка ставит перекачки, а сами напорные участки до сих пор не
+   * считались: у перекачки не было ни требуемого напора, ни агрегата, ни
+   * строки в спецификации. Подъём берётся из разбивки, остальное — из
+   * каталога насосов и полей напорного участка; чего нет, о том сказано.
+   */
+  const pressureLinks = useMemo(() => {
+    const lifts = gravityPlan?.basins?.lifts ?? []
+    if (lifts.length === 0) return null
+    const catalog = (pumpCatalogDataset?.content ?? {}) as {
+      entries?: Parameters<typeof planBasinPressureLinks>[0]['catalogue']
+      category?: Parameters<typeof planBasinPressureLinks>[0]['category']
+      effluent?: Parameters<typeof planBasinPressureLinks>[0]['effluent']
+    }
+    const drainage = (drainageDataset?.content ?? {}) as {
+      basinLinkLengthM?: number
+      basinLinkDiameterMm?: number
+    }
+    return planBasinPressureLinks({
+      lifts,
+      designFlowLps: result?.outletFlowLps ?? null,
+      pressureLengthM: drainage.basinLinkLengthM ?? null,
+      pressureDiameterMm: drainage.basinLinkDiameterMm ?? null,
+      catalogue: catalog.entries,
+      category: catalog.category,
+      effluent: catalog.effluent,
+    })
+  }, [gravityPlan, pumpCatalogDataset, drainageDataset, result])
+
+  const unresolvedLayerCount = useMemo(() => {
+    const audit = (routeAuditDataset?.content ?? null) as { unresolved?: { layers?: number } } | null
+    return audit?.unresolved?.layers ?? constraints?.unresolvedLayers?.length ?? 0
+  }, [constraints, routeAuditDataset])
+  /**
+   * Обеспечен ли самотёк по трассе и как она делится на бассейны.
+   *
+   * По отдельности каждый участок норме отвечает, поэтому без этой проверки
+   * профиль выпускался при любой глубине. Предел глубины берётся из каталога
+   * конструкций колодцев проекта: глубже самой глубокой позиции колодец не из
+   * чего собрать. Без каталога разбивка не считается — своего предела мы не
+   * вводим.
+   */
 
   /**
    * Насколько геология описывает саму трассу.
@@ -1278,6 +1313,51 @@ export function GravitySection({
                     </tbody>
                   </table>
                 </div>
+
+                {/*
+                  Напорные перемычки: у каждой перекачки должен быть требуемый
+                  напор и агрегат, иначе в проекте есть насосная станция, о
+                  которой не сказано ничего.
+                */}
+                {pressureLinks && (
+                  <>
+                    <h5>{t('project.gravity.linksTitle')}</h5>
+                    <p className={`stat-line${pressureLinks.missing.length === 0 ? ' ok' : ' warn'}`}>
+                      {pressureLinks.reason}
+                    </p>
+                    <div className="table-wrap">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">{t('project.gravity.thLift')}</th>
+                            <th scope="col" className="num">{t('project.gravity.thLiftHeight')}</th>
+                            <th scope="col" className="num">{t('project.gravity.thHeadloss')}</th>
+                            <th scope="col" className="num">{t('project.gravity.thRequiredHead')}</th>
+                            <th scope="col">{t('project.gravity.thPump')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pressureLinks.links.map((link) => (
+                            <tr key={link.liftNodeId}>
+                              <td>{link.liftNodeId}</td>
+                              <td className="num mono">{link.geometricLiftM.toFixed(2)}</td>
+                              <td className="num mono">{link.headlossM?.toFixed(2) ?? '—'}</td>
+                              <td className="num mono">{link.requiredHeadM?.toFixed(2) ?? '—'}</td>
+                              <td>
+                                {link.pumps?.pump
+                                  ? t('project.gravity.pumpPicked', {
+                                    designation: link.pumps.pump.designation,
+                                    standby: link.pumps.standbyCount,
+                                  })
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
 
                 {/*
                   Подтверждение разбивки. Программа предлагает, решает инженер:
