@@ -173,14 +173,43 @@ describe('подтверждать нечем — значит не подтве
     }
   })
 
-  it('запись о том, откуда текст переписан, при понижении статуса не теряется', () => {
+  it('пункт с документом на диске подтверждён, и ссылка на страницу цела', () => {
     const sewerMinDiameter = NORM_REGISTRY.find((clause) => clause.id === 'sewer.minDiameter')!
     expect(sewerMinDiameter.sourceFile).toBe('docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf')
     expect(sewerMinDiameter.sourcePage).toBe(39)
-    expect(sewerMinDiameter.note).toContain('сверить пункт нечем')
+    expect(NORM_FILES_PRESENT.has(sewerMinDiameter.sourceFile!)).toBe(true)
+    expect(sewerMinDiameter.status).toBe('verified')
+    // Оговорка «сверить пункт нечем» приписывается ТОЛЬКО при понижении.
+    // Документ на месте — значит и оговорки быть не должно.
+    expect(sewerMinDiameter.note ?? '').not.toContain('сверить пункт нечем')
   })
 
-  it('все пункты доходят до инженера на сверку, пока документов нет', () => {
-    expect(unverifiedClauses().length).toBe(NORM_REGISTRY.length)
+  it('пункт без документа остаётся неподтверждённым и говорит почему', () => {
+    const orphan = NORM_REGISTRY.find((clause) =>
+      clause.sourceFile !== undefined && !NORM_FILES_PRESENT.has(clause.sourceFile))
+    // Если однажды все документы окажутся на месте, эта проверка станет
+    // беспредметной — тогда её и следует убрать осознанно, а не молча.
+    if (orphan === undefined) {
+      expect(NORM_REGISTRY.every((clause) =>
+        clause.sourceFile === undefined || NORM_FILES_PRESENT.has(clause.sourceFile))).toBe(true)
+      return
+    }
+    expect(orphan.status).toBe('unverified')
+    expect(orphan.note ?? '').toContain('сверить пункт нечем')
+  })
+
+  it('без документа на диске подтверждения не бывает — правило, а не число', () => {
+    for (const clause of NORM_REGISTRY) {
+      if (clause.status !== 'verified') continue
+      expect(clause.sourceFile, `пункт ${clause.id} подтверждён без документа`).toBeDefined()
+      expect(NORM_FILES_PRESENT.has(clause.sourceFile!), `нет файла для ${clause.id}`).toBe(true)
+    }
+  })
+
+  it('пункт без документа доходит до инженера на сверку', () => {
+    const withoutDocument = NORM_REGISTRY.filter((clause) =>
+      clause.sourceFile === undefined || !NORM_FILES_PRESENT.has(clause.sourceFile))
+    const unverified = new Set(unverifiedClauses().map((clause) => clause.id))
+    for (const clause of withoutDocument) expect(unverified.has(clause.id), clause.id).toBe(true)
   })
 })

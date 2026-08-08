@@ -89,7 +89,23 @@ const SN_VODOOTVEDENIE_PDF = 'docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf'
  * Список сверяется с диском тестом `normregistry.test.ts`: путь отсюда обязан
  * существовать, а PDF с диска — быть здесь.
  */
-export const NORM_FILES_PRESENT: ReadonlySet<string> = new Set<string>([])
+export const NORM_FILES_PRESENT: ReadonlySet<string> = new Set<string>([
+  // Положены решением владельца от 06.08.2026, подтверждённым повторно
+  // 08.08.2026. Каждый файл сверен по титульному листу: совпадает и документ,
+  // и редакция, объявленная в реестре. Где бы не совпало — файл сюда бы не
+  // попал, и пункт остался бы неподтверждённым.
+  'docs/norms/sn-rk-4-01-03-2013-vodootvedenie.pdf',
+  'docs/norms/sn-rk-4-01-03-2011-vodootvedenie-izm-2021.pdf',
+  'docs/norms/sp-rk-4-01-103-2013-naruzhnye-seti-vik.pdf',
+  'docs/norms/sn-rk-1-02-03-2022-sostav-psd.pdf',
+  'docs/norms/gost-r-21-101-2020-osnovnye-trebovaniya.pdf',
+  'docs/norms/gost-21-110-2013-specifikaciya.pdf',
+  'docs/norms/gost-21-704-2011-rd-nvk.pdf',
+  'docs/norms/vodny-kodeks-rk-2025.pdf',
+  'docs/norms/stroitelny-kodeks-rk-2026.pdf',
+  'docs/norms/ekologichesky-kodeks-rk-2021.pdf',
+  'docs/norms/zemelny-kodeks-rk-2003.pdf',
+])
 
 /** Есть ли документ, которым пункт можно проверить. */
 function checkable(sourceFile: string | undefined): boolean {
