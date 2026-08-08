@@ -47,3 +47,7 @@ docs/benchmark/
 # Отчёты браузерного смоука: артефакты прогона, не исходники.
 /playwright-report/
 /test-results/
+
+# Языковые данные OCR: копируются из node_modules скриптом prepare-tessdata,
+# в истории репозитория 2,7 МБ двоичных данных ничем не оправданы.
+/frontend/public/tessdata/
