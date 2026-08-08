@@ -772,3 +772,42 @@ describe('неосуществимый самотёк блокирует про�
     expect(profileSheet.blockers.map((item) => item.code)).not.toContain('GRAVITY_RUN_INFEASIBLE')
   })
 })
+
+describe('разбивка на бассейны как решение инженера', () => {
+  const infeasible = { feasible: false, shortfallM: 1.4, maxDepthM: 59 }
+
+  it('без подтверждения неосуществимый самотёк остаётся стоп-фактором', () => {
+    const set = buildWorkingDrawingSet({ ...readyInput(), gravityFeasibility: infeasible })
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    expect(profileSheet.blockers.map((item) => item.code)).toContain('GRAVITY_RUN_INFEASIBLE')
+  })
+
+  it('подтверждённая разбивка снимает стоп-фактор и оставляет предупреждение с основанием', () => {
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      gravityFeasibility: infeasible,
+      gravityBasinDecision: { confirmed: true, liftCount: 2, source: 'решение ГИП от 07.08.2026' },
+    })
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    expect(profileSheet.blockers.map((item) => item.code)).not.toContain('GRAVITY_RUN_INFEASIBLE')
+    const warning = profileSheet.warnings.find((item) => item.code === 'GRAVITY_RUN_SPLIT_INTO_BASINS')
+    expect(warning).toBeDefined()
+    expect(warning!.message).toContain('перекачек 2')
+    expect(warning!.message).toContain('решение ГИП')
+  })
+
+  it('подтверждение без основания или без перекачек не считается решением', () => {
+    for (const decision of [
+      { confirmed: true, liftCount: 2, source: '   ' },
+      { confirmed: true, liftCount: 0, source: 'решение ГИП' },
+      { confirmed: false, liftCount: 2, source: 'решение ГИП' },
+    ]) {
+      const set = buildWorkingDrawingSet({
+        ...readyInput(), gravityFeasibility: infeasible, gravityBasinDecision: decision,
+      })
+      const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+      expect(profileSheet.blockers.map((item) => item.code), JSON.stringify(decision))
+        .toContain('GRAVITY_RUN_INFEASIBLE')
+    }
+  })
+})

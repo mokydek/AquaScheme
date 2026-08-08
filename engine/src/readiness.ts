@@ -67,6 +67,7 @@ const SECTION_BY_CODE: Record<string, string> = {
   SPECIFICATION_SOURCE_MISSING: 'Спецификация',
   STORM_RUNOFF_NOT_VERIFIED: 'Дождевая канализация: водосборы',
   GRAVITY_RUN_INFEASIBLE: 'Самотёчный расчёт: осуществимость',
+  GRAVITY_RUN_SPLIT_INTO_BASINS: 'Самотёчный расчёт: разбивка на бассейны подтверждена',
   HYDRAULICS_NOT_VERIFIED: 'Самотёчный расчёт',
   ROUTE_STALE: 'Ситуационная схема: пересчитать трассу',
   ROUTE_BLOCKED: 'Ситуационная схема: стоп-факторы',

@@ -316,6 +316,22 @@ export interface WorkingDrawingInput {
    * выпускался как исправный.
    */
   gravityFeasibility?: { feasible: boolean; shortfallM: number; maxDepthM: number } | null
+  /**
+   * Решение инженера о разбивке трассы на самотёчные бассейны.
+   *
+   * Само по себе `planGravityBasins` даёт ПРЕДЛОЖЕНИЕ: куда поставить
+   * перекачку — вопрос компоновки площадки, стоимости эксплуатации и
+   * согласований, и программа за инженера его не решает. Пока решение не
+   * подтверждено, неосуществимый самотёк остаётся стоп-фактором; умолчания у
+   * подтверждения нет.
+   */
+  gravityBasinDecision?: {
+    confirmed: boolean
+    /** Число перекачек в подтверждённой разбивке. */
+    liftCount: number
+    /** Чем подтверждено: решение, протокол, ответственный. */
+    source: string
+  } | null
   deliverableRequirements?: WorkingDrawingDeliverableRequirements | null
   protectiveGridDesign?: ProtectiveGridDesign | null
   manholeCatalogReady?: boolean
@@ -1234,14 +1250,34 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     // участок норме отвечает, и профиль выпускался при любой глубине. На
     // трассе Талдыколя это давало лоток на 59 м — выпускать такой профиль
     // нельзя, пока трасса не разбита на бассейны или не изменены отметки.
-    if (input.gravityFeasibility && !input.gravityFeasibility.feasible) blockers.push(issue(
-      'GRAVITY_RUN_INFEASIBLE',
-      `Самотёк по трассе не обеспечен: падения местности не хватает на `
-      + `${input.gravityFeasibility.shortfallM} м, наибольшая глубина `
-      + `${input.gravityFeasibility.maxDepthM} м. Требуется разбивка на самотёчные бассейны `
-      + 'с перекачкой, перепадные колодцы или изменение проектных отметок.',
-      'hydraulics',
-    ))
+    const basinDecision = input.gravityBasinDecision
+    const basinsConfirmed = basinDecision?.confirmed === true
+      && basinDecision.liftCount > 0
+      && (basinDecision.source ?? '').trim() !== ''
+    if (input.gravityFeasibility && !input.gravityFeasibility.feasible) {
+      if (basinsConfirmed) {
+        // Разбивка подтверждена инженером: сплошной самотёк по трассе и не
+        // предполагается, поэтому стоп-фактором это больше не является. Но и
+        // молча исчезать не должно — предупреждение остаётся на листе, а
+        // основание названо.
+        warnings.push(issue(
+          'GRAVITY_RUN_SPLIT_INTO_BASINS',
+          `Сплошной самотёк не обеспечен (не хватает ${input.gravityFeasibility.shortfallM} м): `
+          + `трасса разбита на бассейны, перекачек ${basinDecision!.liftCount}. `
+          + `Основание: ${basinDecision!.source}. Гидравлика напорных участков считается отдельно.`,
+          'hydraulics',
+        ))
+      } else {
+        blockers.push(issue(
+          'GRAVITY_RUN_INFEASIBLE',
+          `Самотёк по трассе не обеспечен: падения местности не хватает на `
+          + `${input.gravityFeasibility.shortfallM} м, наибольшая глубина `
+          + `${input.gravityFeasibility.maxDepthM} м. Требуется разбивка на самотёчные бассейны `
+          + 'с перекачкой, перепадные колодцы или изменение проектных отметок.',
+          'hydraulics',
+        ))
+      }
+    }
     blockers.push(...crossingIssues(input))
     if (!input.normsVerified) warnings.push(issue('NORMS_REQUIRE_REVIEW', 'Не все применённые нормативные правила подтверждены инженером.', 'norms'))
     const sources = [

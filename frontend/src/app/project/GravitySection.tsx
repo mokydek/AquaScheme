@@ -147,6 +147,7 @@ export function GravitySection({
   drainageDataset,
   topographyDataset,
   verticalPlanDataset,
+  gravityBasinsDataset,
   constraintsDataset,
   routeAuditDataset,
   manholeCatalogDataset,
@@ -173,6 +174,8 @@ export function GravitySection({
   topographyDataset?: DatasetRow
   /** Проектные отметки вертикальной планировки. */
   verticalPlanDataset?: DatasetRow
+  /** Подтверждённая инженером разбивка на самотёчные бассейны. */
+  gravityBasinsDataset?: DatasetRow
   constraintsDataset?: DatasetRow
   routeAuditDataset?: DatasetRow
   manholeCatalogDataset?: DatasetRow
@@ -190,6 +193,19 @@ export function GravitySection({
   onRunComplete?: (outcome: 'done' | 'needData' | 'error', detail?: string) => void
 }) {
   const { t } = useTranslation()
+  const [basinSource, setBasinSource] = useState('')
+  const [basinSaving, setBasinSaving] = useState(false)
+  /**
+   * Решение, только что сохранённое на этом экране.
+   *
+   * Родитель эту секцию по сохранению набора не перезагружает — так же ведёт
+   * себя и соседнее сохранение ширины проезжей части. Без локального
+   * состояния подтверждение вступало бы в силу лишь после перезагрузки
+   * страницы, и инженер решил бы, что кнопка не работает.
+   */
+  const [savedDecision, setSavedDecision] = useState<
+    { confirmed: true; liftCount: number; source: string } | null | undefined
+  >(undefined)
   const [exporting, setExporting] = useState(false)
   const [albumExporting, setAlbumExporting] = useState(false)
   const [albumError, setAlbumError] = useState<string | null>(null)
@@ -480,6 +496,21 @@ export function GravitySection({
    * Пусто, пока вертикальная планировка не загружена: подставлять сюда съёмку
    * значило бы выдать измеренное за проектное.
    */
+  /**
+   * Подтверждённое решение о разбивке.
+   *
+   * Хранится отдельным набором данных, потому что это решение инженера, а не
+   * производная расчёта: программа предлагает разбивку, а где ставить
+   * перекачку — вопрос компоновки площадки и согласований.
+   */
+  const basinDecision = useMemo(() => {
+    if (savedDecision !== undefined) return savedDecision
+    const stored = (gravityBasinsDataset?.content ?? null) as
+      { confirmed?: boolean; liftCount?: number; source?: string } | null
+    if (!stored?.confirmed || !(stored.liftCount ?? 0) || !(stored.source ?? '').trim()) return null
+    return { confirmed: true as const, liftCount: stored.liftCount!, source: stored.source!.trim() }
+  }, [gravityBasinsDataset, savedDecision])
+
   const plannedSurface = useMemo(() => {
     const design = ((verticalPlanDataset?.content ?? null) as { points?: SurveyPoint[] } | null)?.points ?? []
     if (design.length === 0 || !result?.profile) return null
@@ -638,6 +669,7 @@ export function GravitySection({
       hydraulicsReady: Boolean(result?.profile) && (result?.pipes.every((pipe) => pipe.issues.length === 0) ?? false),
       stormRunoff: stormRunoffStatus,
       gravityFeasibility: gravityPlan?.feasibility ?? null,
+      gravityBasinDecision: basinDecision,
       freezingDepth: {
         valueM: freezingDepth.valueM,
         status: freezingDepth.verified ? 'verified' : freezingDepth.available ? 'unverified' : 'missing',
@@ -829,6 +861,41 @@ export function GravitySection({
       setBundleError(formatAppError(error))
     } finally {
       setExporting(false)
+    }
+  }
+
+  /**
+   * Подтвердить предложенную разбивку.
+   *
+   * Умолчания нет: без основания и без перекачек решение не сохраняется, а
+   * стоп-фактор остаётся. Отменить подтверждение можно тем же способом —
+   * пустым решением, чтобы вернуться к сплошному самотёку.
+   */
+  const confirmBasins = async () => {
+    const proposal = gravityPlan?.basins
+    if (!proposal || proposal.lifts.length === 0 || basinSource.trim() === '') return
+    setBasinSaving(true)
+    try {
+      await saveDataset(projectId, 'gravity_basins', {
+        confirmed: true,
+        liftCount: proposal.lifts.length,
+        source: basinSource.trim(),
+        basins: proposal.basins,
+        lifts: proposal.lifts,
+      }, { liftCount: proposal.lifts.length }, null)
+      setSavedDecision({ confirmed: true, liftCount: proposal.lifts.length, source: basinSource.trim() })
+    } finally {
+      setBasinSaving(false)
+    }
+  }
+
+  const revokeBasins = async () => {
+    setBasinSaving(true)
+    try {
+      await saveDataset(projectId, 'gravity_basins', { confirmed: false }, {}, null)
+      setSavedDecision(null)
+    } finally {
+      setBasinSaving(false)
     }
   }
 
@@ -1197,6 +1264,57 @@ export function GravitySection({
                     </tbody>
                   </table>
                 </div>
+
+                {/*
+                  Подтверждение разбивки. Программа предлагает, решает инженер:
+                  где ставить перекачку — вопрос компоновки площадки, стоимости
+                  эксплуатации и согласований. Пока решение не подтверждено,
+                  неосуществимый самотёк остаётся стоп-фактором выпуска.
+                */}
+                {basinDecision ? (
+                  <>
+                    <p className="stat-line ok">
+                      {t('project.gravity.basinsConfirmed', {
+                        count: basinDecision.liftCount,
+                        source: basinDecision.source,
+                      })}
+                    </p>
+                    <div className="section-actions">
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={basinSaving} onClick={() => void revokeBasins()}>
+                        {t('project.gravity.basinsRevoke')}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="form-grid">
+                      <label className="field" htmlFor={`basins-source-${projectId}`}>
+                        <span className="field-label">{t('project.gravity.basinsSource')}</span>
+                        <input
+                          id={`basins-source-${projectId}`}
+                          name={`basins-source-${projectId}`}
+                          className="input"
+                          type="text"
+                          value={basinSource}
+                          disabled={basinSaving}
+                          placeholder={t('project.gravity.basinsSourceHint')}
+                          onChange={(event) => setBasinSource(event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="section-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={basinSaving || basinSource.trim() === '' || (gravityPlan.basins?.lifts.length ?? 0) === 0}
+                        onClick={() => void confirmBasins()}
+                      >
+                        {t('project.gravity.basinsConfirm', { count: gravityPlan.basins?.lifts.length ?? 0 })}
+                      </button>
+                    </div>
+                    <p className="hint">{t('project.gravity.basinsPending')}</p>
+                  </>
+                )}
               </>
             )}
             {!gravityPlan.feasibility.feasible && !gravityPlan.basins && (
