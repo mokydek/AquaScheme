@@ -544,7 +544,13 @@ export function GravitySection({
       pipe.id,
       { diameterMm: pipe.diameterMm, slope: pipe.slope },
     ]))
-    const feasibility = assessGravityFeasibility(profile, design)
+    // Вывод об осуществимости самотёка невозможен, пока диаметры приняты без
+    // расчётного расхода: потребный уклон вычислен для непобранного диаметра.
+    const adoptedWithoutFlow = (result?.pipes ?? [])
+      .some((pipe) => pipe.issues.some((issue) => issue.code === 'noDesignFlow'))
+    const feasibility = assessGravityFeasibility(profile, design, {
+      diameterAdoptedWithoutFlow: adoptedWithoutFlow,
+    })
     const catalogMaxDepthM = manholeCatalog.reduce((deepest, entry) => Math.max(deepest, entry.maxDepthM), 0)
     const basins = catalogMaxDepthM > 0 && !feasibility.feasible
       ? planGravityBasins(profile, design, {
@@ -1666,6 +1672,7 @@ export function GravitySection({
               id: pipe.id,
               diameterMm: pipe.diameterMm,
               flowLps: pipe.flowLps,
+              diameterAdoptedWithoutFlow: pipe.issues.some((issue) => issue.code === 'noDesignFlow'),
             }))}
             content={masterPlan}
             fieldPrefix={`master-plan-${projectId}`}

@@ -27,9 +27,25 @@ export interface DesignSegmentInput {
   designDiameterMm: number
   parallelLines?: number
   designFlowLps?: number
+  /**
+   * Диаметр принят от безысходности, а не подобран расчётом.
+   *
+   * Ставится там же, где возникает замечание `noDesignFlow`: расчётного
+   * расхода нет, и в план идёт наименьший диаметр ряда. Сравнивать такой
+   * диаметр с генпланом бессмысленно — расхождение говорит не о проекте, а об
+   * отсутствии исходных данных.
+   */
+  diameterAdoptedWithoutFlow?: boolean
 }
 
-export type SchemeVerdict = 'match' | 'stepDiffers' | 'linesDiffer' | 'missingInDesign' | 'extraInDesign'
+export type SchemeVerdict =
+  | 'match'
+  | 'stepDiffers'
+  | 'linesDiffer'
+  | 'missingInDesign'
+  | 'extraInDesign'
+  /** Сравнение не выполнялось: диаметр принят без расчётного расхода. */
+  | 'notComparable'
 
 export interface SchemeComparisonRow {
   id: string
@@ -46,6 +62,14 @@ export interface SchemeComparison {
   rows: SchemeComparisonRow[]
   matched: number
   differing: number
+  /**
+   * Участки, по которым сравнение не выполнялось.
+   *
+   * Считаются отдельно и НЕ входят в расхождения: рапортовать «расхождений 13»
+   * там, где сравнивать было нечем, значит выдать отсутствие данных за вывод о
+   * проекте. На реконструкции по ул. Станкевича без ТУ так и получалось.
+   */
+  notComparable: number
   /** True when every plan segment is present and matches the plan step. */
   agreesWithPlan: Justified<boolean>
 }
@@ -80,8 +104,9 @@ export function compareWithMasterPlan(
     const planLines = p.parallelLines ?? 1
     const designLines = d.parallelLines ?? 1
     const stepDelta = stepIndex(d.designDiameterMm) - stepIndex(p.planDiameterMm)
-    const verdict: SchemeVerdict =
-      designLines !== planLines ? 'linesDiffer' : stepDelta === 0 ? 'match' : 'stepDiffers'
+    const verdict: SchemeVerdict = d.diameterAdoptedWithoutFlow === true
+      ? 'notComparable'
+      : designLines !== planLines ? 'linesDiffer' : stepDelta === 0 ? 'match' : 'stepDiffers'
     rows.push({
       id: p.id,
       planDiameterMm: p.planDiameterMm,
@@ -102,17 +127,22 @@ export function compareWithMasterPlan(
         planLines: 0,
         designLines: d.parallelLines ?? 1,
         stepDelta: null,
-        verdict: 'extraInDesign',
+        verdict: d.diameterAdoptedWithoutFlow === true ? 'notComparable' : 'extraInDesign',
       })
     }
   }
 
   const matched = rows.filter((r) => r.verdict === 'match').length
-  const differing = rows.length - matched
+  const notComparable = rows.filter((r) => r.verdict === 'notComparable').length
+  const differing = rows.length - matched - notComparable
   return {
     rows,
     matched,
     differing,
-    agreesWithPlan: justified(differing === 0, ['scheme.masterPlanBasis']),
+    notComparable,
+    // Согласие с генпланом нельзя объявлять, пока часть участков вообще не
+    // сравнивалась: отсутствие расхождений там, где не сравнивали, — не
+    // согласие, а неведение.
+    agreesWithPlan: justified(differing === 0 && notComparable === 0, ['scheme.masterPlanBasis']),
   }
 }

@@ -975,6 +975,7 @@ export const ru = {
         migrationHint: 'Если Supabase сообщает об ограничении kind, примените миграцию backend/migrations/0018_master_plan.sql.',
         verdict: {
           match: 'совпадает',
+            notComparable: 'сравнение не выполняется: расход не задан, диаметр принят наименьшим из ряда',
           stepDiffers: 'диаметр отличается',
           linesDiffer: 'число ниток отличается',
           missingInDesign: 'в проекте нет',

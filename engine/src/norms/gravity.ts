@@ -669,6 +669,15 @@ export interface GravityFeasibility {
   /** Средний принятый уклон, ‰. */
   designSlopePermille: number
   feasible: boolean
+  /**
+   * Оценка выполнялась.
+   *
+   * `false` означает, что вывод об осуществимости НЕ сделан: не с чем. Так
+   * бывает, когда диаметры приняты без расчётного расхода — тогда потребный
+   * уклон вычислен для непобранного диаметра, и «нехватка 3.38 м» описывает
+   * не трассу, а отсутствие исходных данных.
+   */
+  assessed: boolean
   reason: string
 }
 
@@ -693,12 +702,25 @@ export interface GravityFeasibility {
 export function assessGravityFeasibility(
   profile: GravityProfile,
   design: Map<string, { diameterMm: number; slope: number }>,
+  options: {
+    /** Хотя бы у одного участка диаметр принят без расчётного расхода. */
+    diameterAdoptedWithoutFlow?: boolean
+  } = {},
 ): GravityFeasibility {
   const stations = profile.stations
+  if (options.diameterAdoptedWithoutFlow === true) {
+    return {
+      availableFallM: 0, requiredFallM: 0, shortfallM: 0, maxDepthM: profile.maxDepthM,
+      terrainSlopePermille: 0, designSlopePermille: 0, feasible: false, assessed: false,
+      reason: 'Осуществимость самотёка не оценивалась: расчётного расхода нет, '
+        + 'диаметры приняты наименьшими из ряда. Потребный уклон для непобранного '
+        + 'диаметра ничего не говорит о трассе. Задайте расход или ряд диаметров по ТУ.',
+    }
+  }
   if (stations.length < 2) {
     return {
       availableFallM: 0, requiredFallM: 0, shortfallM: 0, maxDepthM: profile.maxDepthM,
-      terrainSlopePermille: 0, designSlopePermille: 0, feasible: true,
+      terrainSlopePermille: 0, designSlopePermille: 0, feasible: true, assessed: false,
       reason: 'Трасса короче двух станций: осуществимость самотёка не оценивается.',
     }
   }
@@ -727,6 +749,7 @@ export function assessGravityFeasibility(
     terrainSlopePermille: Math.round(terrainSlopePermille * 100) / 100,
     designSlopePermille: Math.round(designSlopePermille * 100) / 100,
     feasible,
+    assessed: true,
     reason: feasible
       ? `Падения местности хватает: ${Math.round(availableFallM * 100) / 100} м при потребных `
         + `${Math.round(requiredFallM * 100) / 100} м на ${lengthM.toFixed(0)} м трассы.`

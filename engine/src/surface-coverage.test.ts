@@ -90,3 +90,43 @@ describe('профиль не строится от нулевой земли', 
     expect(result.profile).not.toBeNull()
   })
 })
+
+describe('каскад нулевого расхода не выдаётся за результат', () => {
+  it('сверка с генпланом не выполняется, когда диаметр принят без расхода', async () => {
+    const { compareWithMasterPlan } = await import('./norms/masterplan')
+    const result = compareWithMasterPlan(
+      [
+        { id: 'У1', designDiameterMm: 200, diameterAdoptedWithoutFlow: true },
+        { id: 'У2', designDiameterMm: 200, diameterAdoptedWithoutFlow: true },
+      ],
+      [{ id: 'У1', planDiameterMm: 450 }, { id: 'У2', planDiameterMm: 450 }],
+    )
+    // Прежде здесь рапортовалось «расхождений 2» — то есть отсутствие исходных
+    // данных выдавалось за вывод о проекте.
+    expect(result.differing).toBe(0)
+    expect(result.notComparable).toBe(2)
+    expect(result.rows.every((row) => row.verdict === 'notComparable')).toBe(true)
+  })
+
+  it('согласие с генпланом не объявляется, пока часть участков не сравнивалась', async () => {
+    const { compareWithMasterPlan } = await import('./norms/masterplan')
+    const result = compareWithMasterPlan(
+      [
+        { id: 'У1', designDiameterMm: 450 },
+        { id: 'У2', designDiameterMm: 200, diameterAdoptedWithoutFlow: true },
+      ],
+      [{ id: 'У1', planDiameterMm: 450 }, { id: 'У2', planDiameterMm: 450 }],
+    )
+    expect(result.matched).toBe(1)
+    expect(result.agreesWithPlan.value).toBe(false)
+  })
+
+  it('осуществимость самотёка не утверждается при принятом диаметре', async () => {
+    const { assessGravityFeasibility } = await import('./norms/gravity')
+    const profile = { stations: [], maxDepthM: 3.24, pipeIds: [] } as never
+    const result = assessGravityFeasibility(profile, new Map(), { diameterAdoptedWithoutFlow: true })
+    expect(result.assessed).toBe(false)
+    expect(result.shortfallM).toBe(0)
+    expect(result.reason).toContain('не оценивалась')
+  })
+})

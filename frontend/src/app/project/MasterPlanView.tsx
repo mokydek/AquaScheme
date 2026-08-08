@@ -25,6 +25,8 @@ export interface MasterPlanPipe {
   diameterMm: number
   parallelLines?: number
   flowLps?: number
+  /** Диаметр принят наименьшим из ряда, потому что расчётного расхода нет. */
+  diameterAdoptedWithoutFlow?: boolean
 }
 
 /** Строки, о которых генплан молчит, отделены от настоящих расхождений. */
@@ -62,6 +64,9 @@ export function MasterPlanView({
         designDiameterMm: pipe.diameterMm,
         parallelLines: pipe.parallelLines,
         designFlowLps: pipe.flowLps,
+        // Диаметр, принятый от безысходности, с генпланом не сравнивается:
+        // расхождение говорило бы не о проекте, а об отсутствии расхода.
+        diameterAdoptedWithoutFlow: pipe.diameterAdoptedWithoutFlow === true,
       })),
       segments,
     ),

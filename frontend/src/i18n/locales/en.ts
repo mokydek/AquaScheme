@@ -975,6 +975,7 @@ export const en = {
         migrationHint: 'If Supabase reports a kind constraint, apply backend/migrations/0018_master_plan.sql.',
         verdict: {
           match: 'matches',
+            notComparable: 'not compared: no design flow, the smallest diameter of the series was adopted',
           stepDiffers: 'diameter differs',
           linesDiffer: 'number of lines differs',
           missingInDesign: 'absent from the design',
