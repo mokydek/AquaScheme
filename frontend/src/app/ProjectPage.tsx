@@ -30,6 +30,7 @@ import type { CatalogRow } from '../shared/catalog'
 import { ExistingNetworkSection } from './project/ExistingNetworkSection'
 import { ReconstructionSurveySection } from './project/ReconstructionSurveySection'
 import { SourceBundleRunSection } from './project/SourceBundleRunSection'
+import { TuImportSection } from './project/TuImportSection'
 import { StankevichaDemoView } from './project/StankevichaDemoView'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
@@ -711,11 +712,21 @@ export function ProjectPage() {
             />
           )}
           {isReconstruction && (isSewer || isStorm) && (
-            <ReconstructionSurveySection
-              projectId={project.id}
-              system={isStorm ? 'storm' : 'sewer'}
-              onSaved={load}
-            />
+            <>
+              {/* Разбор ТУ стоит первым: из него берутся величины, которые
+                  секция реконструкции иначе спрашивает у инженера. */}
+              <TuImportSection
+                projectId={project.id}
+                conditionsDataset={datasets.technical_conditions}
+                onSaved={load}
+              />
+              <ReconstructionSurveySection
+                projectId={project.id}
+                system={isStorm ? 'storm' : 'sewer'}
+                conditionsDataset={datasets.technical_conditions}
+                onSaved={load}
+              />
+            </>
           )}
           {/*
             Прогон комплекта исходных данных: что программа выдаст на съёмке

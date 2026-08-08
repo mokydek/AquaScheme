@@ -44,7 +44,8 @@ const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
 const { DeliverablesSection } = await import('./DeliverablesSection')
 const { ReconstructionSurveySection } = await import('./ReconstructionSurveySection')
-const { maxFilling, auditProjectProvenance, planBasinPressureLinks } = await import('@aquascheme/engine')
+const { TuImportSection } = await import('./TuImportSection')
+const { maxFilling, auditProjectProvenance, planBasinPressureLinks, extractConditionsFromTu } = await import('@aquascheme/engine')
 const { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } = await import('../../shared/stankevichaDemo')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
@@ -509,5 +510,27 @@ describe('одна величина — одно место ввода', () => {
       projectId: 'p1', system: 'sewer', onSaved: async () => {},
     }))
     expect(reconstruction).not.toMatch(/name="[^"]*diameter[^"]*"[^>]*value="[1-9]/)
+  })
+})
+
+describe('экран подтверждения величин из ТУ', () => {
+  it('без загруженного документа предлагает загрузить и ничего не утверждает', () => {
+    const markup = html(createElement(TuImportSection, {
+      projectId: 'p1', onSaved: async () => {},
+    }))
+    expect(markup).toContain('project.tu.fileLabel')
+    expect(markup).not.toContain('project.tu.confirm')
+  })
+
+  it('извлекатель отдаёт всех кандидатов с цитатой и страницей', () => {
+    const found = extractConditionsFromTu([
+      { page: 2, text: 'п. 25. Проложить коллектор Д=450 мм.' },
+      { page: 4, text: 'Участок 2 — DN600.' },
+      { page: 5, text: 'При пересечении обеспечить в свету не менее 0,4 м.' },
+    ])
+    // Выбор не делается: показываются оба диаметра.
+    expect(found.designDiameterMm.map((item) => item.value).sort()).toEqual([450, 600])
+    expect(found.designDiameterMm[0].quote).toContain('п. 25')
+    expect(found.requiredClearanceM[0].page).toBe(5)
   })
 })
