@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { GravityProfile, RouteConstraintInput, SelectedManholeConstruction, SewerSchedule, SurveyPoint, TracedNetwork, WorkingDrawingSet, WorkingDrawingStatus } from '@aquascheme/engine'
 import type { PlanPipeDesign } from '../../shared/planScene'
 import { WorkingDrawingPreview } from './WorkingDrawingPreview'
 
-const STATUS_LABEL: Record<WorkingDrawingStatus, string> = {
-  BLOCKED: 'Заблокирован',
-  PRELIMINARY: 'Предварительный',
-  CALCULATED: 'Рассчитан',
-  VERIFIED: 'Проверен',
-  STALE: 'Устарел',
+/**
+ * Ключи статусов листа, а не готовые подписи.
+ *
+ * Подписи были зашиты по-русски и мимо аудита: он считает текст в разметке, а
+ * этот подставлялся выражением в фигурных скобках. Метрика их не видела, а
+ * казахскому и английскому пользователю они всё равно показывались по-русски.
+ */
+const STATUS_KEY: Record<WorkingDrawingStatus, string> = {
+  BLOCKED: 'blocked',
+  PRELIMINARY: 'preliminary',
+  CALCULATED: 'calculated',
+  VERIFIED: 'verified',
+  STALE: 'stale',
 }
 
 export function AlbumSheetSet({
@@ -48,6 +56,7 @@ export function AlbumSheetSet({
   onZip: () => void
   error?: string | null
 }) {
+  const { t } = useTranslation()
   const [selectedId, setSelectedId] = useState(drawingSet.sheets[0]?.id ?? '')
   const [zoom, setZoom] = useState(1)
   const [showTopography, setShowTopography] = useState(true)
@@ -66,10 +75,10 @@ export function AlbumSheetSet({
     <section className="album-sheet-set" aria-labelledby="album-sheet-set-title">
       <div className="album-sheet-set-head">
         <div>
-          <p className="eyebrow">РАБОЧИЕ ЧЕРТЕЖИ · РЕЕСТР ИСТОЧНИКОВ</p>
+          <p className="eyebrow">{t('project.albumSheets.registryTitle')}</p>
           <h4 id="album-sheet-set-title">Полный альбом — {drawingSet.summary.pdfPages} страниц PDF</h4>
           <p>
-            Состав определяется протяжённостью трассы и объёмом ведомостей. Эталонный альбом используется только для проверки состава и оформления, а не как источник геометрии.
+            {t('project.albumSheets.composition')}
           </p>
           <p className="stat-line">
             Создано расчётных листов: {drawingSet.summary.total}. Основной комплект MAIN: {drawingSet.summary.workingDrawingSheets} листов, спецификация SPEC: {drawingSet.summary.specificationSheets} листов.
@@ -87,7 +96,7 @@ export function AlbumSheetSet({
         </div>
       </div>
 
-      <div className="album-status-summary" aria-label="Статусы листов">
+      <div className="album-status-summary" aria-label={t('project.albumSheets.statusesLabel')}>
         <span className="drawing-status blocked">Заблокировано: {drawingSet.summary.blocked}</span>
         <span className="drawing-status preliminary">Предварительно: {drawingSet.summary.preliminary}</span>
         <span className="drawing-status calculated">Рассчитано: {drawingSet.summary.calculated}</span>
@@ -101,7 +110,7 @@ export function AlbumSheetSet({
           <span className="export-progress-spinner" aria-hidden="true" />
           <div className="export-progress-copy">
             <strong>{pdfBusy ? `Формируем ${drawingSet.summary.pdfPages} страниц PDF` : 'Формируем комплект рабочих файлов'}</strong>
-            <span>Файл начнёт скачиваться автоматически после проверки и сборки.</span>
+            <span>{t('project.albumSheets.autoDownload')}</span>
           </div>
           <span className="export-progress-bar" aria-hidden="true"><i /></span>
         </div>
@@ -109,11 +118,11 @@ export function AlbumSheetSet({
       {error && <p className="stat-line warn" role="alert">{error}</p>}
       {disabled && (
         <p className="notice error">
-          Финальный экспорт заблокирован. Выберите лист ниже: программа показывает точные отсутствующие исходные данные и не подменяет их вымышленной геометрией.
+          {t('project.albumSheets.exportBlocked')}
         </p>
       )}
 
-      <div className="album-service-pages" aria-label="Служебные страницы полного PDF">
+      <div className="album-service-pages" aria-label={t('project.albumSheets.servicePagesLabel')}>
         {drawingSet.manifest.pages.filter((page) => !page.sheetId).map((page) => (
           <span className="drawing-status" key={page.id}>
             PDF {page.pdfPageNumber} · {page.documentSetCode && page.sheetNumber != null ? `${page.documentSetCode}/${page.sheetNumber} · ` : ''}{page.title}
@@ -122,7 +131,7 @@ export function AlbumSheetSet({
       </div>
 
       <div className="drawing-workspace">
-        <nav className="drawing-register" aria-label="Реестр рабочих листов">
+        <nav className="drawing-register" aria-label={t('project.albumSheets.registryLabel')}>
           {drawingSet.sheets.map((sheet) => (
             <button
               type="button"
@@ -133,27 +142,27 @@ export function AlbumSheetSet({
               <span className="drawing-register-number">{sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}/{sheet.sheetNumber}</span>
               <span className="drawing-register-copy">
                 <strong>{sheet.title}</strong>
-                <small>{STATUS_LABEL[sheet.status]} · блокеров {sheet.blockers.length}</small>
+                <small>{t('project.albumSheets.sheetStatus', { status: t(`project.albumSheets.status.${STATUS_KEY[sheet.status]}`), blockers: sheet.blockers.length })}</small>
               </span>
-              <span className={`drawing-status-dot ${sheet.status.toLowerCase()}`} aria-label={STATUS_LABEL[sheet.status]} />
+              <span className={`drawing-status-dot ${sheet.status.toLowerCase()}`} aria-label={t(`project.albumSheets.status.${STATUS_KEY[sheet.status]}`)} />
             </button>
           ))}
         </nav>
 
         {selected && (
           <article className="drawing-sheet-detail">
-            <div className="drawing-preview-toolbar" aria-label="Управление предпросмотром">
+            <div className="drawing-preview-toolbar" aria-label={t('project.albumSheets.previewControls')}>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}>−</button>
               <span>{Math.round(zoom * 100)}%</span>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setZoom((value) => Math.min(3, value + 0.25))}>+</button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setZoom(1)}>Сбросить</button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setZoom(1)}>{t('project.albumSheets.reset')}</button>
               <button
                 type="button"
                 className="btn btn-sm"
                 disabled={busy || (selected.status !== 'CALCULATED' && selected.status !== 'VERIFIED')}
                 onClick={() => onSheetPdf(selected.id)}
               >
-                Скачать лист PDF
+                {t('project.albumSheets.sheetPdf')}
               </button>
               <button
                 type="button"
@@ -161,10 +170,10 @@ export function AlbumSheetSet({
                 disabled={busy || (selected.status !== 'CALCULATED' && selected.status !== 'VERIFIED')}
                 onClick={() => onSheetDxf(selected.id)}
               >
-                Скачать лист DXF
+                {t('project.albumSheets.sheetDxf')}
               </button>
-              <label className="check"><input id={`album-${drawingSet.inputHash}-topography`} name={`album-${drawingSet.inputHash}-topography`} type="checkbox" checked={showTopography} onChange={(event) => setShowTopography(event.target.checked)} /> Топосъёмка</label>
-              <label className="check"><input id={`album-${drawingSet.inputHash}-frame`} name={`album-${drawingSet.inputHash}-frame`} type="checkbox" checked={showFrame} onChange={(event) => setShowFrame(event.target.checked)} /> Рамка</label>
+              <label className="check"><input id={`album-${drawingSet.inputHash}-topography`} name={`album-${drawingSet.inputHash}-topography`} type="checkbox" checked={showTopography} onChange={(event) => setShowTopography(event.target.checked)} /> {t('project.albumSheets.topography')}</label>
+              <label className="check"><input id={`album-${drawingSet.inputHash}-frame`} name={`album-${drawingSet.inputHash}-frame`} type="checkbox" checked={showFrame} onChange={(event) => setShowFrame(event.target.checked)} /> {t('project.albumSheets.frame')}</label>
             </div>
             <div className="drawing-preview-viewport">
               <div style={{ width: `${zoom * 100}%`, minWidth: zoom > 1 ? 820 : undefined }}>
@@ -187,14 +196,14 @@ export function AlbumSheetSet({
             </div>
             <div className="drawing-audit">
               <div>
-                <h5>Стоп-факторы</h5>
+                <h5>{t('project.albumSheets.blockers')}</h5>
                 {selected.blockers.length > 0
                   ? selected.blockers.map((item) => <p className="notice error" key={`${item.code}-${item.elementId ?? ''}`}>{item.code}: {item.message}</p>)
-                  : <p className="stat-line ok">Стоп-факторов листа нет.</p>}
+                  : <p className="stat-line ok">{t('project.albumSheets.noBlockers')}</p>}
                 {selected.warnings.map((item) => <p className="stat-line warn" key={`${item.code}-${item.elementId ?? ''}`}>{item.code}: {item.message}</p>)}
               </div>
               <div>
-                <h5>Исходные данные листа</h5>
+                <h5>{t('project.albumSheets.sheetSources')}</h5>
                 <ul className="drawing-sources">
                   {selected.sources.map((source) => (
                     <li key={source.requirement} className={source.verified ? 'verified' : source.available ? 'available' : 'missing'}>
@@ -203,7 +212,7 @@ export function AlbumSheetSet({
                     </li>
                   ))}
                 </ul>
-                <p className="drawing-hash">Хэш листа: <code>{selected.inputHash}</code></p>
+                <p className="drawing-hash">{t('project.albumSheets.sheetHash')} <code>{selected.inputHash}</code></p>
               </div>
             </div>
           </article>

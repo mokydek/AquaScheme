@@ -434,25 +434,25 @@ export function GeologySection({
           </p>
           <div className="kv-list" style={{ marginTop: 8 }}>
             <div className="kv">
-              <span className="kv-label">УГВ, глубина</span>
+              <span className="kv-label">{t('project.geology.gwDepth')}</span>
               <span className="kv-value">
                 {content.groundwaterRangeM ? `${content.groundwaterRangeM.min}–${content.groundwaterRangeM.max} м` : '—'}
               </span>
             </div>
             <div className="kv">
-              <span className="kv-label">Абсолютные отметки УГВ</span>
+              <span className="kv-label">{t('project.geology.gwAbsolute')}</span>
               <span className="kv-value">
                 {content.groundwaterElevationM ? `${content.groundwaterElevationM.min.toFixed(2)}–${content.groundwaterElevationM.max.toFixed(2)} м` : '—'}
               </span>
             </div>
             <div className="kv">
-              <span className="kv-label">Расчётное повышение</span>
+              <span className="kv-label">{t('project.geology.gwRise')}</span>
               <span className="kv-value">{content.groundwaterDesignRiseM ?? '—'} м</span>
             </div>
           </div>
           <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="data-table">
-              <thead><tr><th>ИГЭ</th><th>Грунт</th><th>Вскрыт с глубины, м</th><th>Мощность, м</th></tr></thead>
+              <thead><tr><th>{t('project.geology.thIge')}</th><th>{t('project.geology.thSoil')}</th><th>{t('project.geology.thFrom')}</th><th>{t('project.geology.thThickness')}</th></tr></thead>
               <tbody>
                 {content.reportIge.map((layer) => (
                   <tr key={layer.code}>
@@ -466,7 +466,7 @@ export function GeologySection({
             </table>
           </div>
           <p className="hint" style={{ marginTop: 8 }}>
-            Скважинные колонки не подменяются строками из XLSX: приложенный XLSX является незаполненным шаблоном с демонстрационными примерами.
+            {t('project.geology.noXlsxColumns')}
           </p>
         </div>
       )}
@@ -672,7 +672,7 @@ export function GeologySection({
             className="input"
             inputMode="decimal"
             value={freezing}
-            placeholder="Укажите по ИГИ или подтверждённому региональному источнику"
+            placeholder={t('project.geology.frostValueHint')}
             onChange={(e) => {
               setFreezing(e.target.value)
               setFreezingVerified(false)
@@ -680,13 +680,13 @@ export function GeologySection({
           />
         </label>
         <label className="field">
-          <span className="field-label">Источник глубины промерзания</span>
+          <span className="field-label">{t('project.geology.frostSource')}</span>
           <input
             id={fieldId('freezing-source')}
             name={fieldName('freezingDepthSource')}
             className="input"
             value={freezingSource}
-            placeholder="Документ, раздел/страница или подтверждённая таблица"
+            placeholder={t('project.geology.frostSourceHint')}
             onChange={(e) => {
               setFreezingSource(e.target.value)
               setFreezingVerified(false)
@@ -694,14 +694,14 @@ export function GeologySection({
           />
         </label>
         <label className="field">
-          <span className="field-label">Допустимое удаление скважины от оси, м</span>
+          <span className="field-label">{t('project.geology.maxOffset')}</span>
           <input
             id={fieldId('profile-max-offset')}
             name={fieldName('profileGeologyMaxOffsetM')}
             className="input"
             inputMode="decimal"
             value={geologyMaxOffset}
-            placeholder="По программе изысканий / инженерному решению"
+            placeholder={t('project.geology.offsetHint')}
             onChange={(e) => {
               setGeologyMaxOffset(e.target.value)
               setGeologyCoverageVerified(false)
@@ -709,13 +709,13 @@ export function GeologySection({
           />
         </label>
         <label className="field">
-          <span className="field-label">Источник критерия геологического покрытия</span>
+          <span className="field-label">{t('project.geology.coverageSource')}</span>
           <input
             id={fieldId('profile-source')}
             name={fieldName('profileGeologySource')}
             className="input"
             value={geologyCoverageSource}
-            placeholder="Программа ИГИ, раздел/страница или подтверждённое решение"
+            placeholder={t('project.geology.coverageSourceHint')}
             onChange={(e) => {
               setGeologyCoverageSource(e.target.value)
               setGeologyCoverageVerified(false)
@@ -765,7 +765,7 @@ export function GeologySection({
             disabled={!freezing.trim() || !freezingSource.trim()}
             onChange={(e) => setFreezingVerified(e.target.checked)}
           />
-          <span>Значение и источник проверены ответственным инженером</span>
+          <span>{t('project.geology.frostConfirmed')}</span>
         </label>
         <label className="check">
           <input
@@ -776,17 +776,17 @@ export function GeologySection({
             disabled={!geologyMaxOffset.trim() || !geologyCoverageSource.trim()}
             onChange={(e) => setGeologyCoverageVerified(e.target.checked)}
           />
-          <span>Критерий привязки скважин к профилю проверен инженером</span>
+          <span>{t('project.geology.coverageConfirmed')}</span>
         </label>
       </div>
       {!freezingVerified && (
         <p className="notice warn">
-          Без значения, источника и явного подтверждения глубины промерзания профиль остаётся черновым, финальный выпуск блокируется.
+          {t('project.geology.frostBlocker')}
         </p>
       )}
       {!geologyCoverageVerified && (
         <p className="notice warn">
-          Без подтверждённого допустимого удаления скважины от оси геологические колонки не включаются в финальный профиль.
+          {t('project.geology.coverageBlocker')}
         </p>
       )}
       <div className="section-actions">

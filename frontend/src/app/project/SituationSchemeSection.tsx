@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   assessRouteSurveyCoverage,
   compareRouteToReference,
@@ -92,6 +93,7 @@ export function SituationSchemeSection({
   routeState: RouteState
   onChanged: () => Promise<void>
 }) {
+  const { t } = useTranslation()
   const [view, setView] = useState<View>('route')
   const [catalogDiameters, setCatalogDiameters] = useState<readonly number[] | undefined>(undefined)
   const [catalogError, setCatalogError] = useState<string | null>(null)
@@ -321,13 +323,13 @@ export function SituationSchemeSection({
   }, [model, surveyPoints])
 
   return (
-    <Panel title="Ситуационная схема и инженерная трасса" status={model ? 'filled' : 'empty'}>
+    <Panel title={t('project.situationScheme.title')} status={model ? 'filled' : 'empty'}>
       <p className="hint">
-        Трасса рассчитывается из структурированных слоёв DWG. Картографическая подложка служит только для визуального контроля и не заменяет топосъёмку.
+        {t('project.situationScheme.hint')}
       </p>
       {catalogResolution.blocker && <p className="notice error">{catalogResolution.blocker}</p>}
       <div className={`notice ${routeState.status === 'calculated' ? 'info' : 'error'}`}>
-        Статус трассы: <strong>{routeState.status}</strong> · алгоритм {routeState.algorithmVersion ?? 'не указан'} · ревизия {routeState.revision}.
+        {t('project.situationScheme.routeStatus', { status: routeState.status, algorithm: routeState.algorithmVersion ?? t('project.situationScheme.algorithmUnknown'), revision: routeState.revision })}
         {' '}Хэш входов: <code>{routeState.inputHash?.slice(0, 16) ?? 'нет'}</code>{routeState.calculatedAt ? ` · расчёт ${new Date(routeState.calculatedAt).toLocaleString('ru-RU')}` : ''}.
         {routeState.algorithmVersion && routeState.algorithmVersion !== ROUTE_ALGORITHM_VERSION && ' Требуется пересчёт новой версией алгоритма.'}
       </div>
@@ -339,20 +341,20 @@ export function SituationSchemeSection({
           {recalculating && <span className="button-spinner" aria-hidden="true" />}
           {recalculating ? 'Пересчёт…' : 'Пересчитать трассу'}
         </button>
-        {recalculating && <button type="button" className="btn btn-ghost btn-sm" onClick={() => cancelRef.current?.()}>Отменить</button>}
+        {recalculating && <button type="button" className="btn btn-ghost btn-sm" onClick={() => cancelRef.current?.()}>{t('project.situationScheme.cancel')}</button>}
       </div>
       {stage && <div className="export-progress" role="status"><span className="export-progress-spinner" /><div className="export-progress-copy"><strong>{stage}</strong><span>Прошло {elapsedSeconds} с. Старая сеть остаётся в базе до успешного атомарного сохранения.</span></div><span className="export-progress-bar"><i /></span></div>}
       {recalcError && <p className="notice error">{recalcError}</p>}
 
-      <div className="scheme-view-tabs" role="tablist" aria-label="Инженерные представления">
+      <div className="scheme-view-tabs" role="tablist" aria-label={t('project.situationScheme.viewsLabel')}>
         {TABS.map((tab) => <button key={tab.id} type="button" className={view === tab.id ? 'active' : ''} onClick={() => setView(tab.id)}>{tab.label}</button>)}
       </div>
 
       {view === 'inputs' && (
-        <div className="table-wrap"><table className="data-table"><thead><tr><th>Точка</th><th className="num">X</th><th className="num">Y</th><th className="num">Расход, л/с</th></tr></thead><tbody>
+        <div className="table-wrap"><table className="data-table"><thead><tr><th>{t('project.situationScheme.thPoint')}</th><th className="num">X</th><th className="num">Y</th><th className="num">{t('project.situationScheme.thFlow')}</th></tr></thead><tbody>
           {buildings.map((building) => <tr key={building.id}><td>{building.label ?? building.id}</td><td className="num">{building.x}</td><td className="num">{building.y}</td><td className="num">{building.design_flow_lps ?? '—'}</td></tr>)}
           {constraints?.lns && <tr><td>{constraints.lns.label ?? 'ЛНС'}</td><td className="num">{constraints.lns.x}</td><td className="num">{constraints.lns.y}</td><td className="num">{constraints.lns.designFlowLps ?? '—'}</td></tr>}
-          {source && <tr><td>Оголовок / выпуск</td><td className="num">{source.x}</td><td className="num">{source.y}</td><td className="num">—</td></tr>}
+          {source && <tr><td>{t('project.situationScheme.outlet')}</td><td className="num">{source.x}</td><td className="num">{source.y}</td><td className="num">—</td></tr>}
         </tbody></table></div>
       )}
 
@@ -361,7 +363,7 @@ export function SituationSchemeSection({
           <p className="stat-line">Коридоры: {corridorRings.length} · красные линии: {crossings.redLines} · коммуникации: {crossings.utilities} · дороги: {crossings.roads} · гидрография: {crossings.water} · сооружения: {constraints?.hardObstacleRings?.length ?? 0} · земельные контуры: {constraints?.parcelRings?.length ?? 0}.</p>
           <p className="stat-line">Полнота: {constraints?.completeness ?? 'нет аудита'}; слоёв в DWG: {sourceAudit.sourceLayerCount ?? sourceAudit.sourceLayers?.length ?? 0}; нераспознано: {sourceAudit.unresolvedLayers ?? '—'}.</p>
           {sourceAudit.unresolvedReason ? <p className="notice error">{sourceAudit.unresolvedReason}</p> : null}
-          <details><summary>Послойный аудит</summary><div className="table-wrap"><table className="data-table"><thead><tr><th>Слой</th><th className="num">Линий</th><th className="num">Точек</th><th>Сущности</th><th>Тексты/блоки (выборка)</th></tr></thead><tbody>{(sourceAudit.sourceLayers ?? []).map((layer) => <tr key={layer.name}><td>{layer.name}</td><td className="num">{layer.segments}</td><td className="num">{layer.points}</td><td>{Object.entries(layer.entityTypes ?? {}).map(([kind, count]) => `${kind}: ${count}`).join(', ') || '—'}</td><td>{layer.textSamples?.slice(0, 4).join(' · ') || '—'}</td></tr>)}</tbody></table></div></details>
+          <details><summary>{t('project.situationScheme.layerAudit')}</summary><div className="table-wrap"><table className="data-table"><thead><tr><th>{t('project.situationScheme.thLayer')}</th><th className="num">{t('project.situationScheme.thLines')}</th><th className="num">{t('project.situationScheme.thPoints')}</th><th>{t('project.situationScheme.thEntities')}</th><th>{t('project.situationScheme.thTexts')}</th></tr></thead><tbody>{(sourceAudit.sourceLayers ?? []).map((layer) => <tr key={layer.name}><td>{layer.name}</td><td className="num">{layer.segments}</td><td className="num">{layer.points}</td><td>{Object.entries(layer.entityTypes ?? {}).map(([kind, count]) => `${kind}: ${count}`).join(', ') || '—'}</td><td>{layer.textSamples?.slice(0, 4).join(' · ') || '—'}</td></tr>)}</tbody></table></div></details>
         </div>
       )}
 
@@ -377,7 +379,7 @@ export function SituationSchemeSection({
           surveyPoints={surveyPoints}
           outletFlowLps={model.outletFlowLps}
         />
-      ) : <p className="notice error">Сеть не рассчитана.</p>)}
+      ) : <p className="notice error">{t('project.situationScheme.noNetwork')}</p>)}
 
       {view === 'calculations' && model && <PipeCalculationsView pipes={model.gravity.pipes} nodeLabel={nodeLabel} />}
       {view === 'pressure' && (model
@@ -386,13 +388,13 @@ export function SituationSchemeSection({
             designFlowLps={model.outletFlowLps}
             catalog={(pumpCatalogDataset?.content ?? {}) as PumpCatalogContent}
           />
-        : <p className="notice error">Сеть не рассчитана.</p>)}
+        : <p className="notice error">{t('project.situationScheme.noNetwork')}</p>)}
       {view === 'profile' && (
-        model?.gravity.profile ? <div>{surveyCoverage && <p className={surveyCoverage.gapPoints > 0 ? 'notice error' : 'stat-line ok'}>Покрытие топосъёмкой: медиана {surveyCoverage.medianNearestM} м, P95 {surveyCoverage.p95NearestM} м, максимум {surveyCoverage.maximumNearestM} м; пробелов более {surveyCoverage.gapThresholdM} м — {surveyCoverage.gapPoints}.</p>}<div className="table-wrap"><table className="data-table"><thead><tr><th>Узел</th><th className="num">Пикетаж, м</th><th className="num">Земля, м</th><th className="num">Лоток, м</th><th className="num">Глубина, м</th></tr></thead><tbody>{model.gravity.profile.stations.map((station) => <tr key={station.nodeId}><td>{nodeLabel(station.nodeId)}</td><td className="num">{station.chainageM.toFixed(1)}</td><td className="num">{station.groundElevationM.toFixed(2)}</td><td className="num">{station.invertElevationM.toFixed(2)}</td><td className="num">{station.depthM.toFixed(2)}</td></tr>)}</tbody></table></div></div> : <p className="notice error">Профиль заблокирован: нет связной самотёчной ветви до ЛНС или отметок рельефа.</p>
+        model?.gravity.profile ? <div>{surveyCoverage && <p className={surveyCoverage.gapPoints > 0 ? 'notice error' : 'stat-line ok'}>Покрытие топосъёмкой: медиана {surveyCoverage.medianNearestM} м, P95 {surveyCoverage.p95NearestM} м, максимум {surveyCoverage.maximumNearestM} м; пробелов более {surveyCoverage.gapThresholdM} м — {surveyCoverage.gapPoints}.</p>}<div className="table-wrap"><table className="data-table"><thead><tr><th>{t('project.situationScheme.thNode')}</th><th className="num">{t('project.situationScheme.thChainage')}</th><th className="num">{t('project.situationScheme.thGround')}</th><th className="num">{t('project.situationScheme.thInvert')}</th><th className="num">{t('project.situationScheme.thDepth')}</th></tr></thead><tbody>{model.gravity.profile.stations.map((station) => <tr key={station.nodeId}><td>{nodeLabel(station.nodeId)}</td><td className="num">{station.chainageM.toFixed(1)}</td><td className="num">{station.groundElevationM.toFixed(2)}</td><td className="num">{station.invertElevationM.toFixed(2)}</td><td className="num">{station.depthM.toFixed(2)}</td></tr>)}</tbody></table></div></div> : <p className="notice error">{t('project.situationScheme.profileBlocked')}</p>
       )}
-      {view === 'crossings' && <div><p className="stat-line">Исходные объекты: красные линии — {crossings.redLines}; коммуникации — {crossings.utilities}; дороги — {crossings.roads}; водные объекты — {crossings.water}.</p><div className="table-wrap"><table className="data-table"><thead><tr><th>Система</th><th className="num">Красные линии</th><th className="num">Коммуникации</th><th className="num">Дороги</th><th className="num">Вода</th><th className="num">Вне коридора</th></tr></thead><tbody>{(['gravity', 'pressure'] as const).map((kind) => { const report = routeState.report?.[kind]; return <tr key={kind}><td>{kind === 'gravity' ? 'Самотёк до ЛНС' : 'Напор от ЛНС'}</td><td className="num">{report?.redLineCrossings ?? '—'}</td><td className="num">{report?.utilityCrossings ?? '—'}</td><td className="num">{report?.roadCrossings ?? '—'}</td><td className="num">{report?.waterCrossings ?? '—'}</td><td className="num">{report?.outsideCorridorSegments ?? '—'}</td></tr> })}</tbody></table></div></div>}
-      {view === 'blockers' && <div>{allBlockers.length ? [...new Set(allBlockers)].map((blocker) => <p className="notice error" key={blocker}>{blocker}</p>) : <p className="notice info">Стоп-факторов нет.</p>}{routeState.warnings.map((warning) => <p className="stat-line warn" key={warning}>{warning}</p>)}</div>}
-      {view === 'comparison' && <div><p className="stat-line">Эталонная трасса не участвует в генерации и используется только после расчёта.</p>{benchmark ? <div className="table-wrap"><table className="data-table"><tbody><tr><th>Покрытие эталона в допуске 25 м</th><td className="num">{benchmark.referenceCoveragePct}%</td></tr><tr><th>Покрытие расчётной оси</th><td className="num">{benchmark.routeCoveragePct}%</td></tr><tr><th>Среднее отклонение</th><td className="num">{benchmark.meanDeviationM} м</td></tr><tr><th>Максимальное отклонение</th><td className="num">{benchmark.maximumDeviationM} м</td></tr><tr><th>Симметричное расстояние Хаусдорфа</th><td className="num">{benchmark.hausdorffDeviationM} м</td></tr></tbody></table>{benchmark.referenceCoveragePct < 99 && <p className="notice error">Цель 99% не достигнута. Результат нельзя выдавать как совпадающий с принятым проектом.</p>}</div> : <p className="hint">Независимая принятая ось в структурированном виде не загружена.</p>}</div>}
+      {view === 'crossings' && <div><p className="stat-line">Исходные объекты: красные линии — {crossings.redLines}; коммуникации — {crossings.utilities}; дороги — {crossings.roads}; водные объекты — {crossings.water}.</p><div className="table-wrap"><table className="data-table"><thead><tr><th>{t('project.situationScheme.thSystem')}</th><th className="num">{t('project.situationScheme.redLines')}</th><th className="num">{t('project.situationScheme.utilities')}</th><th className="num">{t('project.situationScheme.roads')}</th><th className="num">{t('project.situationScheme.water')}</th><th className="num">{t('project.situationScheme.outsideCorridor')}</th></tr></thead><tbody>{(['gravity', 'pressure'] as const).map((kind) => { const report = routeState.report?.[kind]; return <tr key={kind}><td>{kind === 'gravity' ? 'Самотёк до ЛНС' : 'Напор от ЛНС'}</td><td className="num">{report?.redLineCrossings ?? '—'}</td><td className="num">{report?.utilityCrossings ?? '—'}</td><td className="num">{report?.roadCrossings ?? '—'}</td><td className="num">{report?.waterCrossings ?? '—'}</td><td className="num">{report?.outsideCorridorSegments ?? '—'}</td></tr> })}</tbody></table></div></div>}
+      {view === 'blockers' && <div>{allBlockers.length ? [...new Set(allBlockers)].map((blocker) => <p className="notice error" key={blocker}>{blocker}</p>) : <p className="notice info">{t('project.situationScheme.noBlockers')}</p>}{routeState.warnings.map((warning) => <p className="stat-line warn" key={warning}>{warning}</p>)}</div>}
+      {view === 'comparison' && <div><p className="stat-line">{t('project.situationScheme.referenceNote')}</p>{benchmark ? <div className="table-wrap"><table className="data-table"><tbody><tr><th>{t('project.situationScheme.refCoverage')}</th><td className="num">{benchmark.referenceCoveragePct}%</td></tr><tr><th>{t('project.situationScheme.axisCoverage')}</th><td className="num">{benchmark.routeCoveragePct}%</td></tr><tr><th>{t('project.situationScheme.meanDeviation')}</th><td className="num">{benchmark.meanDeviationM} м</td></tr><tr><th>{t('project.situationScheme.maxDeviation')}</th><td className="num">{benchmark.maximumDeviationM} м</td></tr><tr><th>{t('project.situationScheme.hausdorff')}</th><td className="num">{benchmark.hausdorffDeviationM} м</td></tr></tbody></table>{benchmark.referenceCoveragePct < 99 && <p className="notice error">{t('project.situationScheme.targetMissed')}</p>}</div> : <p className="hint">{t('project.situationScheme.noReferenceAxis')}</p>}</div>}
     </Panel>
   )
 }

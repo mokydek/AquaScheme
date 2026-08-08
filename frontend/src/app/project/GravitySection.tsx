@@ -1121,7 +1121,7 @@ export function GravitySection({
 
       <div className="drawing-audit" style={{ marginBottom: 12 }}>
         <div>
-          <h5>Глубина промерзания для профиля</h5>
+          <h5>{t('project.gravity.freezingTitle')}</h5>
           <p className={`stat-line${freezingDepth.verified ? ' ok' : ' warn'}`}>
             {freezingDepth.verified
               ? `Подтверждено: ${freezingDepth.detail}.`
@@ -1141,7 +1141,7 @@ export function GravitySection({
       {routeCoverage && (
         <div className="drawing-audit" style={{ marginBottom: 12 }}>
           <div>
-            <h5>Покрытие трассы геологией</h5>
+            <h5>{t('project.gravity.geologyCoverageTitle')}</h5>
             <p className={`stat-line${routeCoverage.blockers.length === 0 ? ' ok' : ' warn'}`}>
               Описано изысканиями {(routeCoverage.covered * 100).toFixed(0)}% станций
               ({routeCoverage.measured} по замеру, {routeCoverage.interpolated} интерполяцией
@@ -1159,7 +1159,7 @@ export function GravitySection({
       {gravityPlan && (
         <div className="drawing-audit" style={{ marginBottom: 12 }}>
           <div>
-            <h5>Самотёк по трассе</h5>
+            <h5>{t('project.gravity.feasibilityTitle')}</h5>
             <p className={`stat-line${gravityPlan.feasibility.feasible ? ' ok' : ' warn'}`}>
               {gravityPlan.feasibility.reason}
             </p>
@@ -1175,12 +1175,12 @@ export function GravitySection({
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th scope="col">Бассейн</th>
-                        <th scope="col" className="num">От, м</th>
-                        <th scope="col" className="num">До, м</th>
-                        <th scope="col" className="num">Длина, м</th>
-                        <th scope="col" className="num">Глубина, м</th>
-                        <th scope="col">Конец</th>
+                        <th scope="col">{t('project.gravity.thBasin')}</th>
+                        <th scope="col" className="num">{t('project.gravity.thFrom')}</th>
+                        <th scope="col" className="num">{t('project.gravity.thTo')}</th>
+                        <th scope="col" className="num">{t('project.gravity.thLength')}</th>
+                        <th scope="col" className="num">{t('project.gravity.thBasinDepth')}</th>
+                        <th scope="col">{t('project.gravity.thEnd')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1201,8 +1201,7 @@ export function GravitySection({
             )}
             {!gravityPlan.feasibility.feasible && !gravityPlan.basins && (
               <p className="stat-line warn">
-                Разбивка на бассейны не рассчитана: не загружен каталог конструкций колодцев,
-                а предел глубины из него и берётся.
+                {t('project.gravity.noBasins')}
               </p>
             )}
           </div>
@@ -1211,24 +1210,23 @@ export function GravitySection({
       {systemType === 'storm' && stormRunoffStatus && (
         <div className="drawing-audit" style={{ marginBottom: 12 }}>
           <div>
-            <h5>Расчёт дождевого стока по N05, п. 5.4</h5>
+            <h5>{t('project.gravity.stormTitle')}</h5>
             <p className={`stat-line${stormRunoffStatus.verified ? ' ok' : ' warn'}`}>
               {stormRunoffStatus.detail}. Подтверждённый расчёт имеет приоритет над ручным расходом.
             </p>
             {!stormRunoffStatus.verified && (
               <p className="notice error">
-                Ручные расходы используются только для черновой гидравлики. Финальный выпуск заблокирован до загрузки
-                `drainage.stormCatchments` с подтверждёнными q20, n, m_r, gamma, P, площадями/типами покрытий и временем добегания.
+                {t('project.gravity.manualFlowsNote')}
               </p>
             )}
             {stormRunoffStatus.blockers?.map((message) => <p className="stat-line warn" key={message}>{message}</p>)}
           </div>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Водосбор</th><th className="num">F, га</th><th className="num">z mid</th><th className="num">t r, мин</th><th className="num">q cal, л/с</th><th>Статус</th></tr></thead>
+              <thead><tr><th>{t('project.gravity.thCatchment')}</th><th className="num">{t('project.gravity.thArea')}</th><th className="num">z mid</th><th className="num">{t('project.gravity.thTravelTime')}</th><th className="num">{t('project.gravity.thFlowCal')}</th><th>{t('project.gravity.thStatus')}</th></tr></thead>
               <tbody>
                 {stormRunoffResults.length === 0 ? (
-                  <tr><td colSpan={6}>Структурированные водосборы не загружены.</td></tr>
+                  <tr><td colSpan={6}>{t('project.gravity.noCatchments')}</td></tr>
                 ) : stormRunoffResults.map(({ inflowId, result: runoff }) => (
                   <tr key={`${inflowId}-${runoff.catchmentId}`} className={runoff.verified ? undefined : 'row-warn'}>
                     <td>{runoff.catchmentId} → {inflowId}</td>
@@ -1379,15 +1377,15 @@ export function GravitySection({
 
           {dropWells && (
             <div>
-              <h4>Перепады на трассе (п. 7.5.1)</h4>
+              <h4>{t('project.gravity.dropWellsTitle')}</h4>
               <p className={dropWells.structureCount > 0 ? 'notice' : 'stat-line'}>{dropWells.reason}</p>
               {dropWells.wells.length > 0 && (
                 <div className="table-wrap">
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Узел</th><th className="num">Пикетаж, м</th><th className="num">Перепад, м</th>
-                        <th className="num">Ø, мм</th><th>Решение</th><th>Обоснование</th>
+                        <th>{t('project.gravity.thDropNode')}</th><th className="num">{t('project.gravity.thDropChainage')}</th><th className="num">{t('project.gravity.thDrop')}</th>
+                        <th className="num">{t('project.gravity.thDropDiameter')}</th><th>{t('project.gravity.thDropDecision')}</th><th>{t('project.gravity.thDropBasis')}</th>
                       </tr>
                     </thead>
                     <tbody>{dropWells.wells.map((well) => (

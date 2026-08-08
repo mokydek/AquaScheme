@@ -534,7 +534,7 @@ export function ImportSection({
       {fromDwg && parsed && <p className="stat-line ok">{t('upload.convertedFromDwg')}</p>}
       {parsed?.kind === 'dxf' && (
         <div style={{ marginTop: 16 }}>
-          <p className="field-label">Распознано в исходном чертеже</p>
+          <p className="field-label">{t('project.import.recognised')}</p>
           <p className="stat-line">
             Инженерный коридор: {parsed.constraints.corridorRings.length > 0 ? 'найден' : 'не найден'} ·
             {' '}красные линии: {parsed.constraints.redLines.length} · коммуникации: {parsed.constraints.utilityLines.length} ·
@@ -563,7 +563,7 @@ export function ImportSection({
                   checked={useDerivedAxis}
                   onChange={(event) => setUseDerivedAxis(event.target.checked)}
                 />
-                <span>Использовать как направляющую ось при трассировке</span>
+                <span>{t('project.import.useAsGuide')}</span>
               </label>
             </div>
           )}
@@ -599,8 +599,8 @@ export function ImportSection({
             onChange={(layer, role) => void setLayerRole(layer, role)}
           />
           <details style={{ marginTop: 12 }}>
-            <summary className="field-label">Подтверждение отсутствующих групп исходных данных</summary>
-            <p className="hint">Ставьте отметку только после проверки всех слоёв и исходных документов. Это действие записывается в аудит проекта.</p>
+            <summary className="field-label">{t('project.import.confirmMissing')}</summary>
+            <p className="hint">{t('project.import.confirmMissingHint')}</p>
             {([
               ['buildings', 'Здания и сооружения', parsed.constraints.buildingFootprints.length],
               ['utilities', 'Существующие коммуникации', parsed.constraints.utilityLines.length],
@@ -614,18 +614,18 @@ export function ImportSection({
             <p className="stat-line warn">Отброшено аномальных высотных отметок: {parsed.constraints.rejectedSurveyPoints}</p>
           )}
           {parsed.constraints.buildingFootprints.length === 0 && (
-            <p className="notice error">Стоп-фактор финального выпуска: в DWG не распознаны замкнутые контуры зданий и сооружений. Неизвестные слои сохранены в аудите, но не используются как препятствия автоматически.</p>
+            <p className="notice error">{t('project.import.noBuildings')}</p>
           )}
           {parsed.constraints.corridorRings.length === 0 && (
-            <p className="notice error">Стоп-фактор: в DWG нет замкнутого слоя инженерного коридора. Автоматическая трасса не строится.</p>
+            <p className="notice error">{t('project.import.noCorridor')}</p>
           )}
           <div className="section-actions">
               {systemType !== 'water' && (
                 <div className="form-grid" style={{ width: '100%', marginBottom: 12 }}>
-                  <label className="field" htmlFor="import-lns-x"><span className="field-label">ЛНС X, м</span><input id="import-lns-x" name="import-lns-x" className="input" inputMode="decimal" value={lnsX} onChange={(event) => setLnsX(event.target.value)} /></label>
-                  <label className="field" htmlFor="import-lns-y"><span className="field-label">ЛНС Y, м</span><input id="import-lns-y" name="import-lns-y" className="input" inputMode="decimal" value={lnsY} onChange={(event) => setLnsY(event.target.value)} /></label>
-                  <label className="field" htmlFor="import-lns-flow"><span className="field-label">Расчётный расход ЛНС, л/с</span><input id="import-lns-flow" name="import-lns-flow" className="input" inputMode="decimal" value={lnsFlow} onChange={(event) => setLnsFlow(event.target.value)} /></label>
-                  <label className="field" htmlFor="import-lns-pump-head"><span className="field-label">Доступный напор ЛНС, м</span><input id="import-lns-pump-head" name="import-lns-pump-head" className="input" inputMode="decimal" value={lnsPumpHead} onChange={(event) => setLnsPumpHead(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-x"><span className="field-label">{t('project.import.lnsX')}</span><input id="import-lns-x" name="import-lns-x" className="input" inputMode="decimal" value={lnsX} onChange={(event) => setLnsX(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-y"><span className="field-label">{t('project.import.lnsY')}</span><input id="import-lns-y" name="import-lns-y" className="input" inputMode="decimal" value={lnsY} onChange={(event) => setLnsY(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-flow"><span className="field-label">{t('project.import.lnsFlow')}</span><input id="import-lns-flow" name="import-lns-flow" className="input" inputMode="decimal" value={lnsFlow} onChange={(event) => setLnsFlow(event.target.value)} /></label>
+                  <label className="field" htmlFor="import-lns-pump-head"><span className="field-label">{t('project.import.lnsHead')}</span><input id="import-lns-pump-head" name="import-lns-pump-head" className="input" inputMode="decimal" value={lnsPumpHead} onChange={(event) => setLnsPumpHead(event.target.value)} /></label>
                 </div>
               )}
               <button
@@ -637,11 +637,11 @@ export function ImportSection({
                 {busy && <span className="button-spinner" aria-hidden="true" />}
                 {busy ? 'Проверка ограничений и поиск трассы…' : 'Построить трассу по генплану и ограничениям'}
               </button>
-              {busy && systemType !== 'water' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => routeCancelRef.current?.()}>Отменить</button>}
+              {busy && systemType !== 'water' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => routeCancelRef.current?.()}>{t('project.import.cancel')}</button>}
           </div>
           <details style={{ marginTop: 16 }}>
-            <summary className="field-label">Ручной импорт уже готовой оси по выбранным слоям</summary>
-            <p className="hint">Этот режим не проектирует трассу, а переносит готовые полилинии. Слои коридора, рельефа и коммуникаций исключены по умолчанию.</p>
+            <summary className="field-label">{t('project.import.manualAxis')}</summary>
+            <p className="hint">{t('project.import.manualAxisHint')}</p>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflow: 'auto' }}>
               {parsed.data.layers
                 .filter((layer) => layer.segments > 0 && ['candidateRoute', 'unknown'].includes(parsed.constraints.roles[layer.name]))
@@ -776,7 +776,7 @@ export function ImportSection({
         <div className="export-progress" role="status" aria-live="polite">
           <span className="export-progress-spinner" aria-hidden="true" />
           <div className="export-progress-copy"><strong>{routingStage}</strong><span>Прошло {routeElapsedSeconds} с. Расчёт выполняется в отдельном рабочем потоке.</span></div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => routeCancelRef.current?.()}>Отменить</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => routeCancelRef.current?.()}>{t('project.import.cancel')}</button>
           <span className="export-progress-bar" aria-hidden="true"><i /></span>
         </div>
       )}
