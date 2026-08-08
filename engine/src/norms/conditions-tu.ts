@@ -208,3 +208,81 @@ export function extractConditionsFromBrief(pages: TuPage[]): ConditionsFromBrief
   if (effluent.length === 0) missing.push('характер перекачиваемых стоков')
   return { category, effluent, missing }
 }
+
+/**
+ * Строки с числами, которые шаблоны НЕ разобрали.
+ *
+ * Измеренный факт: «Д=450 мм» с синтетического скана распознаётся как
+ * «0=450 00». Буква «Д» потеряна, шаблон «Д=» не срабатывает — и верно
+ * прочитанное число 450 до инженера не доходит ВОВСЕ. Молча потерянная
+ * находка это та же тихая потеря данных, только на новом уровне.
+ *
+ * Поэтому такие строки собираются отдельным списком. Программа при этом НИЧЕГО
+ * НЕ УТВЕРЖДАЕТ: список — предложение посмотреть, а не кандидат. Назначить
+ * строку диаметром или просветом может только инженер, и это его решение, а не
+ * догадка распознавателя.
+ *
+ * Только для распознанного текста. Цифровой документ разбирается шаблонами, и
+ * подсовывать инженеру там «строки с числами» значило бы звать его проверять
+ * то, что и так прочитано.
+ */
+
+export interface UnparsedNumericLine {
+  quote: string
+  page: number
+  /** Числа строки, попадающие в диаметровый ряд. */
+  numbers: number[]
+  /** След якоря, из-за которого строка попала в список. */
+  trace: string
+}
+
+/**
+ * Следы искажённых якорей.
+ *
+ * «Д=» распознаётся как «0=», «О=», «Ц=» — важна не буква, а одиночный символ
+ * перед знаком равенства. «мм» становится «00», «MM», «мн»: важно, что после
+ * числа стоит короткая группа из тех же начертаний.
+ */
+const ANCHOR_BEFORE = /(\S)\s*=\s*\d/
+const ANCHOR_AFTER = /\d\s*(00|0[О0]|[МM][МM]|мм|мн|нн)(?![а-яё\d])/i
+
+export function unparsedNumericLines(
+  pages: TuPage[],
+  found: ConditionsFromTu,
+): UnparsedNumericLine[] {
+  const claimed = new Set([
+    ...found.designDiameterMm.map((item) => `${item.page}|${item.quote}`),
+    ...found.allowedDiametersMm.map((item) => `${item.page}|${item.quote}`),
+    ...found.requiredClearanceM.map((item) => `${item.page}|${item.quote}`),
+  ])
+
+  const out: UnparsedNumericLine[] = []
+  for (const { page, text } of pages) {
+    for (const raw of text.split(/\r?\n/)) {
+      const quote = raw.replace(/\s+/g, ' ').trim().slice(0, 200)
+      if (quote === '') continue
+      // Строку, из которой величина уже прочитана, показывать незачем.
+      if (claimed.has(`${page}|${quote}`)) continue
+
+      const numbers = [...quote.matchAll(/\d{2,4}/g)]
+        .map((match) => Number(match[0]))
+        .filter((value) => value >= 50 && value <= 3000)
+      if (numbers.length === 0) continue
+
+      const before = ANCHOR_BEFORE.exec(quote)
+      const after = ANCHOR_AFTER.exec(quote)
+      if (!before && !after) continue
+
+      out.push({
+        quote,
+        page,
+        numbers: [...new Set(numbers)],
+        trace: [
+          before ? `«${before[1]}=» перед числом` : null,
+          after ? `«${after[1]}» после числа` : null,
+        ].filter(Boolean).join('; '),
+      })
+    }
+  }
+  return out
+}

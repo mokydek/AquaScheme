@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
-import type { ConditionsFromBrief, ConditionsFromTu } from '@aquascheme/engine'
+import type { ConditionsFromBrief, ConditionsFromTu, UnparsedNumericLine } from '@aquascheme/engine'
 import { Panel } from './Panel'
 import { saveTechnicalCondition } from '../../shared/technicalConditions'
 import type { DatasetRow } from '../../shared/datasets'
@@ -53,6 +53,13 @@ export function TuImportSection({
   const [scan, setScan] = useState<File | null>(null)
   const [ocrPages, setOcrPages] = useState<OcrPage[] | null>(null)
   const [progress, setProgress] = useState<OcrProgress | null>(null)
+  /**
+   * Строки с числами, которые шаблоны не разобрали.
+   *
+   * Собираются только для распознанного текста: на цифровом документе величина
+   * прочитана шаблоном, и звать инженера проверять её незачем.
+   */
+  const [unparsed, setUnparsed] = useState<UnparsedNumericLine[]>([])
 
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -98,12 +105,18 @@ export function TuImportSection({
     try {
       const { recognizeScan } = await import('../../shared/ocr')
       const pages = await recognizeScan(scan, setProgress)
-      const { extractConditionsFromTu, extractConditionsFromBrief } = await import('@aquascheme/engine')
+      const {
+        extractConditionsFromTu, extractConditionsFromBrief, unparsedNumericLines,
+      } = await import('@aquascheme/engine')
       // Шаблоны, ограничения и экран подтверждения переиспользуются целиком:
       // распознанный текст — это тот же текст, только худшего качества.
       const asPages = pages.map((page) => ({ page: page.page, text: page.text }))
-      setFound(extractConditionsFromTu(asPages))
+      const conditions = extractConditionsFromTu(asPages)
+      setFound(conditions)
       setBrief(extractConditionsFromBrief(asPages))
+      // Буква «Д» со скана теряется, и верно прочитанное число иначе не дошло
+      // бы до инженера вовсе. Программа при этом ничего не утверждает.
+      setUnparsed(unparsedNumericLines(asPages, conditions))
       setOcrPages(pages)
       if (pages.every((page) => page.text.trim() === '')) {
         setMessage(t('project.tu.ocrEmpty'))
@@ -123,6 +136,7 @@ export function TuImportSection({
     page: number,
     quote: string,
     id: string,
+    assignedByHand = false,
   ) => {
     setBusy(true)
     try {
@@ -130,9 +144,11 @@ export function TuImportSection({
         value: value as never,
         // Скан не должен быть неотличим от цифрового документа в аудите.
         origin: ocrPages ? 'ocr' : 'stated',
-        source: ocrPages
-          ? t('project.tu.ocrSource', { file: fileName ?? '', page })
-          : t('project.tu.source', { file: fileName ?? '', page }),
+        source: assignedByHand
+          ? t('project.tu.assignedSource', { file: fileName ?? '', page })
+          : ocrPages
+            ? t('project.tu.ocrSource', { file: fileName ?? '', page })
+            : t('project.tu.source', { file: fileName ?? '', page }),
         page,
         quote,
       })
@@ -284,6 +300,57 @@ export function TuImportSection({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/*
+        Неразобранные строки. Список — предложение посмотреть, а НЕ кандидат:
+        программа не утверждает, что число в строке является диаметром или
+        просветом. Назначает инженер, и назначение помечается как ручное.
+      */}
+      {unparsed.length > 0 && (
+        <>
+          <h5>{t('project.tu.unparsedTitle')}</h5>
+          <p className="stat-line warn">{t('project.tu.unparsedHint')}</p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col" className="num">{t('project.tu.thPage')}</th>
+                  <th scope="col">{t('project.tu.thQuote')}</th>
+                  <th scope="col">{t('project.tu.thTrace')}</th>
+                  <th scope="col">{t('project.tu.thAssign')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unparsed.map((line, index) => (
+                  <tr key={`u${index}`}>
+                    <td className="num mono">{line.page}</td>
+                    <td className="hint">«{line.quote}»</td>
+                    <td className="hint">{line.trace}</td>
+                    <td>
+                      {line.numbers.map((number) => (
+                        <span key={number}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={busy || confirmed.includes(`u${index}-${number}`)}
+                            onClick={() => void confirm(
+                              'designDiameterMm', number, line.page, line.quote,
+                              `u${index}-${number}`, true,
+                            )}
+                          >
+                            {t('project.tu.assignDiameter', { value: number })}
+                          </button>
+                          {' '}
+                        </span>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {found && found.missing.length > 0 && (

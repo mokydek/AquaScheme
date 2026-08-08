@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest'
+import { extractConditionsFromTu, unparsedNumericLines } from './conditions-tu'
+
+const pages = (text: string, page = 1) => [{ page, text }]
+
+describe('строки с числами, которые шаблоны не разобрали', () => {
+  it('распознанное «0=450 00» попадает в список: буква потеряна, число нет', () => {
+    // Ровно то, что вернул tesseract на синтетическом скане.
+    const text = '0=450 00'
+    const found = extractConditionsFromTu(pages(text))
+    expect(found.designDiameterMm).toEqual([])
+
+    const lines = unparsedNumericLines(pages(text), found)
+    expect(lines).toHaveLength(1)
+    expect(lines[0].numbers).toContain(450)
+    expect(lines[0].trace).toContain('перед числом')
+  })
+
+  it('цифровой текст списка не даёт: величина уже прочитана шаблоном', () => {
+    const text = 'Проложить коллектор Д=450 мм.'
+    const found = extractConditionsFromTu(pages(text))
+    expect(found.designDiameterMm[0].value).toBe(450)
+    expect(unparsedNumericLines(pages(text), found)).toEqual([])
+  })
+
+  it('строка без следа якоря не показывается: это не потерянная находка', () => {
+    const text = 'Срок действия условий 730 дней.'
+    const lines = unparsedNumericLines(pages(text), extractConditionsFromTu(pages(text)))
+    expect(lines).toEqual([])
+  })
+
+  it('число вне диаметрового ряда строку не поднимает', () => {
+    const text = '0=45 00'
+    const lines = unparsedNumericLines(pages(text), extractConditionsFromTu(pages(text)))
+    expect(lines).toEqual([])
+  })
+
+  it('искажённое «мм» после числа тоже след', () => {
+    for (const text of ['Труба 500 00', 'Труба 500 MM', 'Труба 500 мн']) {
+      const lines = unparsedNumericLines(pages(text), extractConditionsFromTu(pages(text)))
+      expect(lines.length, text).toBe(1)
+      expect(lines[0].trace, text).toContain('после числа')
+    }
+  })
+
+  it('находка несёт страницу и цитату как распозналась', () => {
+    const lines = unparsedNumericLines([
+      { page: 1, text: 'Общие положения.' },
+      { page: 4, text: 'п. 25. 0=450 00' },
+    ], extractConditionsFromTu([{ page: 4, text: 'п. 25. 0=450 00' }]))
+    expect(lines[0].page).toBe(4)
+    expect(lines[0].quote).toContain('п. 25')
+  })
+
+  it('несколько чисел в строке показываются все: выбирает инженер', () => {
+    const text = '0=450 00, врезка 0=300 00'
+    const lines = unparsedNumericLines(pages(text), extractConditionsFromTu(pages(text)))
+    expect(lines[0].numbers.sort()).toEqual([300, 450])
+  })
+})
