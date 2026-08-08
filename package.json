@@ -20,6 +20,7 @@
     "test:db": "node --test scripts/build-bootstrap.test.mjs scripts/db-contract.test.mjs",
     "db:bootstrap": "node scripts/build-bootstrap.mjs",
     "db:check": "node scripts/build-bootstrap.mjs --check",
+    "db:verify:live": "node scripts/db-verify-live.mjs",
     "test:all": "npm run test && npm run test:frontend && npm run test:converter && npm run test:benchmark && npm run test:db",
     "typecheck": "npm run typecheck --workspace frontend && npm run typecheck --workspace engine",
     "benchmark": "node scripts/benchmark.mjs",
