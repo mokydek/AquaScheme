@@ -571,13 +571,19 @@ export function GravitySection({
     return planBasinPressureLinks({
       lifts,
       designFlowLps: result?.outletFlowLps ?? null,
+      // Длина выводится из геометрии: расстояние по оси до головы следующего
+      // бассейна. Заданная вручную её переопределяет — трасса перемычки может
+      // отличаться от оси самотёчной трассы.
+      basinBoundariesM: lifts.map((item) => item.chainageM),
+      routeEndM: result?.profile?.totalLengthM ?? null,
+      availableDiametersMm: catalogResolution.allowedDiametersMm ?? [],
       pressureLengthM: drainage.basinLinkLengthM ?? null,
       pressureDiameterMm: drainage.basinLinkDiameterMm ?? null,
       catalogue: catalog.entries,
       category: catalog.category,
       effluent: catalog.effluent,
     })
-  }, [gravityPlan, pumpCatalogDataset, drainageDataset, result])
+  }, [gravityPlan, pumpCatalogDataset, drainageDataset, result, catalogResolution])
 
   const unresolvedLayerCount = useMemo(() => {
     const audit = (routeAuditDataset?.content ?? null) as { unresolved?: { layers?: number } } | null
@@ -1331,6 +1337,8 @@ export function GravitySection({
                           <tr>
                             <th scope="col">{t('project.gravity.thLift')}</th>
                             <th scope="col" className="num">{t('project.gravity.thLiftHeight')}</th>
+                            <th scope="col" className="num">{t('project.gravity.thLinkLength')}</th>
+                            <th scope="col" className="num">{t('project.gravity.thLinkDiameter')}</th>
                             <th scope="col" className="num">{t('project.gravity.thHeadloss')}</th>
                             <th scope="col" className="num">{t('project.gravity.thRequiredHead')}</th>
                             <th scope="col">{t('project.gravity.thPump')}</th>
@@ -1341,6 +1349,11 @@ export function GravitySection({
                             <tr key={link.liftNodeId}>
                               <td>{link.liftNodeId}</td>
                               <td className="num mono">{link.geometricLiftM.toFixed(2)}</td>
+                              <td className="num mono">
+                                {link.lengthM === null ? '—' : link.lengthM.toFixed(0)}
+                                {link.lengthOrigin === 'derived' && ` ${t('project.gravity.derivedMark')}`}
+                              </td>
+                              <td className="num mono">{link.suggestedDiameterMm ?? '—'}</td>
                               <td className="num mono">{link.headlossM?.toFixed(2) ?? '—'}</td>
                               <td className="num mono">{link.requiredHeadM?.toFixed(2) ?? '—'}</td>
                               <td>

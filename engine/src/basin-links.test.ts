@@ -22,10 +22,13 @@ describe('напорные перемычки между бассейнами', 
     const plan = planBasinPressureLinks({ lifts: [lift('K-9', 540, 4.2)] })
     expect(plan.links[0].requiredHeadM).toBeNull()
     expect(plan.links[0].pumps).toBeNull()
-    for (const item of ['приток', 'длина напорного участка', 'диаметр', 'каталог насосов',
+    // Длины в общем списке больше нет: она выводится из геометрии, а её
+    // отсутствие — свойство конкретной перемычки, и говорится в её блокере.
+    for (const item of ['приток', 'ряд диаметров', 'каталог насосов',
       'категория надёжности', 'характер']) {
       expect(plan.missing.join(' ')).toContain(item)
     }
+    expect(plan.links[0].blockers.join(' ')).toContain('границы бассейнов')
   })
 
   it('геометрический подъём известен даже без остальных данных: он из разбивки', () => {
@@ -81,5 +84,57 @@ describe('напорные перемычки между бассейнами', 
     expect(plan.links.map((link) => link.liftNodeId)).toEqual(['K-9', 'K-18'])
     // Более высокий подъём требует большего напора: величина следует из данных.
     expect(plan.links[1].requiredHeadM!).toBeGreaterThan(plan.links[0].requiredHeadM!)
+  })
+})
+
+describe('выводимое у перемычки выводится', () => {
+  const lifts = [lift('K-9', 540, 4.2), lift('K-18', 1100, 6.1)]
+  const geometry = { basinBoundariesM: [540, 1100], routeEndM: 1600 }
+
+  it('длина выводится из геометрии и совпадает с расстоянием до головы следующего бассейна', () => {
+    const plan = planBasinPressureLinks({ lifts, ...geometry, designFlowLps: 35 })
+    expect(plan.links[0].lengthM).toBeCloseTo(560, 6)
+    expect(plan.links[0].lengthOrigin).toBe('derived')
+    // Последняя перемычка идёт до конца трассы.
+    expect(plan.links[1].lengthM).toBeCloseTo(500, 6)
+  })
+
+  it('заданная вручную длина переопределяет выведенную', () => {
+    const plan = planBasinPressureLinks({ lifts, ...geometry, designFlowLps: 35, pressureLengthM: 120 })
+    expect(plan.links[0].lengthM).toBe(120)
+    expect(plan.links[0].lengthOrigin).toBe('stated')
+  })
+
+  it('без границ бассейнов длина не выводится и это названо', () => {
+    const plan = planBasinPressureLinks({ lifts, designFlowLps: 35 })
+    expect(plan.links[0].lengthM).toBeNull()
+    expect(plan.links[0].lengthOrigin).toBe('unknown')
+    expect(plan.links[0].blockers.join(' ')).toContain('границы бассейнов')
+  })
+
+  it('диаметр предлагается из ряда каталога по допустимой скорости', () => {
+    const plan = planBasinPressureLinks({
+      lifts, ...geometry, designFlowLps: 35,
+      availableDiametersMm: [100, 160, 200, 315, 400],
+    })
+    expect(plan.links[0].suggestedDiameterMm).toBeGreaterThan(0)
+    // Обоснование называет скорость и предел, а не просто число.
+    expect(plan.links[0].diameterReason).toContain('м/с')
+  })
+
+  it('предложенный диаметр действительно используется в расчёте напора', () => {
+    const plan = planBasinPressureLinks({
+      lifts: [lift('K-9', 540, 4.2)], ...geometry, designFlowLps: 35,
+      availableDiametersMm: [200, 315],
+      catalogue, category: 'first', effluent: 'domestic',
+    })
+    expect(plan.links[0].requiredHeadM).toBeGreaterThan(4.2)
+    expect(plan.missing).toEqual([])
+  })
+
+  it('без ряда диаметров предложения нет и стоп честный', () => {
+    const plan = planBasinPressureLinks({ lifts, ...geometry, designFlowLps: 35 })
+    expect(plan.links[0].suggestedDiameterMm).toBeNull()
+    expect(plan.missing.join(' ')).toContain('ряд диаметров')
   })
 })

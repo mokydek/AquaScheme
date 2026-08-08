@@ -1,4 +1,5 @@
 import { solvePressureMain } from './pressure'
+import { maxVelocityMps, minVelocityMps } from './norms/sewer'
 import { selectPumps, type PumpCatalogueItem, type PumpSelection } from './norms/pumps'
 import type { GravityLift } from './norms/gravity'
 
@@ -29,8 +30,26 @@ export interface BasinPressureLinkInput {
   lifts: GravityLift[]
   /** Расчётный приток на перекачку, л/с. */
   designFlowLps?: number | null
-  /** Длина напорного участка, м: от места насосной станции. */
+  /**
+   * Длина напорного участка, м — ПЕРЕОПРЕДЕЛЕНИЕ выведенного.
+   *
+   * По умолчанию длина берётся из геометрии: расстояние вдоль оси от перекачки
+   * до головы следующего бассейна. Ручной ввод оставлен потому, что трасса
+   * перемычки может отличаться от оси самотёчной трассы — обойти площадку,
+   * пройти по другой улице. Задано — берётся заданное.
+   */
   pressureLengthM?: number | null
+  /**
+   * Пикеты границ бассейнов, м, для вывода длины перемычки.
+   *
+   * Без них длина не выводится: расстояние до головы следующего бассейна
+   * считается по ним.
+   */
+  basinBoundariesM?: number[]
+  /** Конец трассы, м: последняя перемычка идёт до него. */
+  routeEndM?: number | null
+  /** Ряд диаметров активного каталога, мм — для предложения по скорости. */
+  availableDiametersMm?: readonly number[]
   /** Диаметр напорного участка, мм. */
   pressureDiameterMm?: number | null
   /** Число параллельных ниток. */
@@ -46,6 +65,13 @@ export interface BasinPressureLink {
   chainageM: number
   /** Геометрический подъём, м — из разбивки, не из допущения. */
   geometricLiftM: number
+  /** Длина участка, м, и откуда она взята. */
+  lengthM: number | null
+  lengthOrigin: 'derived' | 'stated' | 'unknown'
+  /** Диаметр, предложенный подбором по допустимой скорости, мм. */
+  suggestedDiameterMm: number | null
+  /** Обоснование предложения диаметра — скорость и её предел. */
+  diameterReason: string | null
   /** Потери по длине и местные, м. `null` — не посчитаны. */
   headlossM: number | null
   /** Требуемый напор, м: подъём плюс потери. `null` — не посчитан. */
@@ -65,38 +91,94 @@ export interface BasinPressureLinkPlan {
 export function planBasinPressureLinks(input: BasinPressureLinkInput): BasinPressureLinkPlan {
   const missing: string[] = []
   const flowLps = input.designFlowLps ?? 0
-  const lengthM = input.pressureLengthM ?? 0
-  const diameterMm = input.pressureDiameterMm ?? 0
   const catalogue = input.catalogue ?? []
+  const diameters = [...(input.availableDiametersMm ?? [])].sort((a, b) => a - b)
+
+  /**
+   * Длина перемычки от перекачки до головы следующего бассейна.
+   *
+   * Геометрия оси в проекте есть, и расстояние по ней — величина, а не
+   * догадка. Заданное вручную имеет приоритет: трасса перемычки может
+   * отличаться от оси самотёчной трассы.
+   */
+  const boundaries = [...(input.basinBoundariesM ?? [])].sort((a, b) => a - b)
+  const derivedLength = (chainageM: number): number | null => {
+    const next = boundaries.find((value) => value > chainageM + 1e-9) ?? input.routeEndM ?? null
+    if (next === null || !(next > chainageM)) return null
+    return Math.round((next - chainageM) * 100) / 100
+  }
+
+  /**
+   * Диаметр подбором по допустимой скорости напорного трубопровода.
+   *
+   * Предложение, а не решение: берётся наименьший диаметр ряда, при котором
+   * скорость не превышает наибольшую допустимую и не падает ниже
+   * самоочищающей. Ряд — из активного каталога проекта; своего ряда модуль не
+   * вводит.
+   */
+  const suggestDiameter = (flow: number): { diameterMm: number; reason: string } | null => {
+    if (!(flow > 0) || diameters.length === 0) return null
+    const upper = maxVelocityMps('sewer', 'nonmetal').value
+    for (const candidate of diameters) {
+      const areaM2 = (Math.PI * (candidate / 1000) ** 2) / 4
+      const velocity = areaM2 > 0 ? flow / 1000 / areaM2 : 0
+      const lower = minVelocityMps(candidate, 'sewer').value
+      if (velocity <= upper && velocity >= lower) {
+        return {
+          diameterMm: candidate,
+          reason: `${velocity.toFixed(2)} м/с при ${flow} л/с: в пределах `
+            + `${lower}…${upper} м/с для DN${candidate}`,
+        }
+      }
+    }
+    return null
+  }
 
   if (!(flowLps > 0)) missing.push('расчётный приток на перекачку, л/с')
-  if (!(lengthM > 0)) missing.push('длина напорного участка, м (зависит от места насосной станции)')
-  if (!(diameterMm > 0)) missing.push('диаметр напорного участка, мм')
+  if (diameters.length === 0 && !(input.pressureDiameterMm ?? 0)) {
+    missing.push('ряд диаметров активного каталога — без него диаметр не предложить')
+  }
   if (catalogue.length === 0) missing.push('каталог насосов проекта')
   if (!input.category) missing.push('категория надёжности насосной станции')
   if (!input.effluent) missing.push('характер перекачиваемых стоков')
 
-  const computable = flowLps > 0 && lengthM > 0 && diameterMm > 0
-
   const links = input.lifts.map((lift): BasinPressureLink => {
     // Подъём известен всегда: он посчитан разбивкой по отметкам профиля.
     const geometricLiftM = lift.liftHeightM
+    const stated = input.pressureLengthM ?? 0
+    const derived = derivedLength(lift.chainageM)
+    const lengthM = stated > 0 ? stated : derived
+    const lengthOrigin: 'derived' | 'stated' | 'unknown' =
+      stated > 0 ? 'stated' : derived !== null ? 'derived' : 'unknown'
+    const suggestion = suggestDiameter(flowLps)
+    const suggestedDiameterMm = suggestion?.diameterMm ?? null
+    const diameterMm = input.pressureDiameterMm ?? suggestedDiameterMm ?? 0
+    const computable = flowLps > 0 && (lengthM ?? 0) > 0 && diameterMm > 0
+
     if (!computable) {
+      const own = [
+        ...missing,
+        ...(lengthOrigin === 'unknown' ? ['длина участка: границы бассейнов не переданы'] : []),
+      ]
       return {
         liftNodeId: lift.nodeId,
         chainageM: lift.chainageM,
         geometricLiftM,
+        lengthM,
+        lengthOrigin,
+        suggestedDiameterMm,
+        diameterReason: suggestion?.reason ?? null,
         headlossM: null,
         requiredHeadM: null,
         pumps: null,
-        blockers: [`Напорный участок не посчитан: не задано — ${missing.join('; ')}.`],
+        blockers: [`Напорный участок не посчитан: не задано — ${own.join('; ')}.`],
       }
     }
 
     const solved = solvePressureMain({
       pipes: [{
         id: `НП-${lift.nodeId}`,
-        lengthM,
+        lengthM: lengthM as number,
         diameterMm,
         flowLps,
         parallelCount: input.parallelCount ?? 1,
@@ -126,6 +208,10 @@ export function planBasinPressureLinks(input: BasinPressureLinkInput): BasinPres
       liftNodeId: lift.nodeId,
       chainageM: lift.chainageM,
       geometricLiftM,
+      lengthM,
+      lengthOrigin,
+      suggestedDiameterMm,
+      diameterReason: suggestion?.reason ?? null,
       headlossM,
       requiredHeadM,
       pumps,
