@@ -4,8 +4,8 @@ import { extractConditionsFromTu, unparsedNumericLines } from './conditions-tu'
 const pages = (text: string, page = 1) => [{ page, text }]
 
 describe('строки с числами, которые шаблоны не разобрали', () => {
-  it('распознанное «0=450 00» попадает в список: буква потеряна, число нет', () => {
-    // Ровно то, что вернул tesseract на синтетическом скане.
+  it('строка с разрушенным якорем попадает в список: буква потеряна, число нет', () => {
+    // Вид строки, на которой шаблон «Д=» не срабатывает, а число прочитано.
     const text = '0=450 00'
     const found = extractConditionsFromTu(pages(text))
     expect(found.designDiameterMm).toEqual([])

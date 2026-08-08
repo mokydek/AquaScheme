@@ -14,12 +14,26 @@
  * плохого скана становится «45О». Поэтому здесь возвращается не только текст,
  * но и уверенность ПОСТРОЧНО: величина, прочитанная из неуверенной строки,
  * обязана дойти до инженера с предупреждением, а не молча встать в расчёт.
+ *
+ * Уверенность и геометрия приходят только по явному запросу `blocks`. Без него
+ * tesseract.js 7 отдаёт пустой разбор, и на каждой странице получалось
+ * `lines: []`, `confidence: 0` — предупреждение о сомнительной строке не могло
+ * сработать ни разу. Измерено на синтетическом скане.
  */
+
+/** Слово с его местом на странице: по нему восстанавливаются колонки таблиц. */
+export interface OcrWord {
+  text: string
+  /** Левая и правая границы слова в пикселях отрисованной страницы. */
+  x0: number
+  x1: number
+}
 
 export interface OcrLine {
   text: string
   /** Уверенность распознавания строки, 0…100. */
   confidence: number
+  words: OcrWord[]
 }
 
 export interface OcrPage {
@@ -107,11 +121,18 @@ export async function recognizeScan(
     const pages: OcrPage[] = []
     for (const [index, image] of images.entries()) {
       onProgress?.({ page: index + 1, totalPages: images.length, ratio: 0, stage: 'recognizing' })
-      const { data } = await worker.recognize(image)
+      // Третий аргумент обязателен: без `blocks` разбор приходит пустым.
+      const { data } = await worker.recognize(image, {}, { text: true, blocks: true })
       const lines: OcrLine[] = (data.blocks ?? [])
         .flatMap((block) => block.paragraphs ?? [])
         .flatMap((paragraph) => paragraph.lines ?? [])
-        .map((line) => ({ text: line.text.trim(), confidence: line.confidence }))
+        .map((line) => ({
+          text: line.text.trim(),
+          confidence: line.confidence,
+          words: (line.words ?? [])
+            .filter((word) => word.text.trim() !== '')
+            .map((word) => ({ text: word.text.trim(), x0: word.bbox.x0, x1: word.bbox.x1 })),
+        }))
         .filter((line) => line.text !== '')
       pages.push({
         page: index + 1,

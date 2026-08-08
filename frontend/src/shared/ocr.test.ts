@@ -21,20 +21,40 @@ const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '
 const TRAINEDDATA = join(ROOT, 'frontend', 'public', 'tessdata', 'rus.traineddata.gz')
 const hasLanguageData = existsSync(TRAINEDDATA)
 
+/**
+ * Шрифт для «скана» выбирается из установленных в системе.
+ *
+ * Кириллицу рисует не всякое начертание: с `sans-serif` подставлялся шрифт без
+ * неё, холст выводил квадратики вместо букв, распознаватель честно читал их как
+ * «0» — и «Д=450 мм» превращалось в «0=450 00». Это дефект оснастки, а не
+ * поведение OCR; прежняя проверка выдавала его за измеренное свойство
+ * распознавания, и вывод из неё был неверен.
+ *
+ * Список покрывает и Linux (DejaVu/Liberation/Noto), и Windows (Arial, Segoe
+ * UI). Если ни одного нет — проверка ЯВНО пропускается с причиной.
+ */
+const CYRILLIC_FONTS = [
+  'DejaVu Sans', 'Liberation Sans', 'Noto Sans', 'Arial', 'Segoe UI', 'Tahoma', 'Verdana',
+]
+const { GlobalFonts } = await import('@napi-rs/canvas')
+const installed = new Set(GlobalFonts.families.map((family) => family.family))
+const CYRILLIC_FONT = CYRILLIC_FONTS.find((family) => installed.has(family)) ?? null
+const canDrawCyrillic = CYRILLIC_FONT !== null
+
 describe('распознавание скана', () => {
   // Без языковых данных — явный пропуск: `skipIf` печатает строку в отчёте,
   // и отсутствие проверки видно, а не растворяется в общем «ok».
-  it.skipIf(!hasLanguageData)(
-    'синтетический скан «Д=450 мм» распознаётся (нужен frontend/public/tessdata/rus.traineddata.gz)',
+  it.skipIf(!hasLanguageData || !canDrawCyrillic)(
+    'синтетический скан читается дословно (нужен frontend/public/tessdata/rus.traineddata.gz)',
     async () => {
       const { createCanvas } = await import('@napi-rs/canvas')
-      const canvas = createCanvas(900, 200)
+      const canvas = createCanvas(700, 160)
       const context = canvas.getContext('2d')
       context.fillStyle = '#fff'
-      context.fillRect(0, 0, 900, 200)
+      context.fillRect(0, 0, 700, 160)
       context.fillStyle = '#000'
-      context.font = '64px sans-serif'
-      context.fillText('Д=450 мм', 40, 120)
+      context.font = `48px "${CYRILLIC_FONT}"`
+      context.fillText('Скважина Д=450 мм', 20, 95)
 
       const { createWorker } = await import('tesseract.js')
       // `cachePath` задан явно: без него tesseract.js распаковывает словарь в
@@ -46,17 +66,20 @@ describe('распознавание скана', () => {
         gzip: true,
       })
       try {
-        const { data } = await worker.recognize(canvas.toBuffer('image/png'))
-        // Число из документа доходит до разбора — это и требуется.
-        expect(data.text.replace(/\s+/g, '')).toContain('450')
+        const { data } = await worker.recognize(
+          canvas.toBuffer('image/png'), {}, { text: true, blocks: true },
+        )
+        expect(data.text).toContain('Д=450')
 
-        // А вот буквы вокруг него — нет. На этом самом холсте распознаётся
-        // «0=450 00» при уверенности 79: «Д» читается как «0», «мм» как «00».
-        // Проверка закрепляет это как измеренный факт, а не прячет: ровно
-        // поэтому ни одна распознанная величина не идёт в расчёт без
-        // подтверждения инженером, и ровно поэтому уверенность строки
-        // показывается рядом с находкой.
-        expect(data.confidence).toBeLessThan(95)
+        // Третий аргумент `recognize` — не украшение: без него `blocks` пуст,
+        // и построчная уверенность, на которой держится предупреждение о
+        // сомнительной строке, не приходит вовсе. Проверка держит это.
+        const lines = (data.blocks ?? [])
+          .flatMap((block) => block.paragraphs ?? [])
+          .flatMap((paragraph) => paragraph.lines ?? [])
+        expect(lines.length).toBeGreaterThan(0)
+        expect(lines[0].words.length).toBeGreaterThan(1)
+        expect(lines[0].words[0].bbox.x1).toBeGreaterThan(lines[0].words[0].bbox.x0)
       } finally {
         await worker.terminate()
       }
@@ -64,8 +87,8 @@ describe('распознавание скана', () => {
     120_000,
   )
 
-  it.skipIf(hasLanguageData)('без языковых данных проверка честно сообщает, что не выполнялась', () => {
-    expect(hasLanguageData).toBe(false)
+  it.skipIf(hasLanguageData && canDrawCyrillic)('пропуск объявляется причиной, а не тишиной', () => {
+    expect(hasLanguageData && canDrawCyrillic).toBe(false)
   })
 })
 
@@ -74,8 +97,8 @@ describe('уверенность строки доходит до находки
     page: 1,
     text: 'п. 25. Проложить коллектор Д=450 мм.',
     lines: [
-      { text: 'п. 25. Проложить коллектор Д=450 мм.', confidence: 62 },
-      { text: 'Прочая строка документа', confidence: 96 },
+      { text: 'п. 25. Проложить коллектор Д=450 мм.', confidence: 62, words: [] },
+      { text: 'Прочая строка документа', confidence: 96, words: [] },
     ],
     confidence: 79,
   }]

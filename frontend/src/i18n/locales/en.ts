@@ -918,7 +918,7 @@ export const en = {
         ocrSource: '{{file}}, p. {{page}} (recognised from a scan)',
         assignedSource: '{{file}}, p. {{page}} (recognised from a scan, line assigned by the engineer)',
         unparsedTitle: 'Unparsed lines holding numbers',
-        unparsedHint: 'The program does NOT claim these numbers are a bore or a clearance. Recognition loses letters: «Д=450 мм» becomes «0=450 00» on a scan, so the pattern misses the line although the number is read correctly. The list is shown so the finding is not lost silently; only the engineer may assign a line to a value, after checking it against the document.',
+        unparsedHint: 'The program does NOT claim these numbers are a bore or a clearance. Recognition damages the letters around a number more often than the number itself: the «Д=» or «мм» anchor breaks, the pattern misses the line, yet the number is read correctly. The list is shown so the finding is not lost silently; only the engineer may assign a line to a value, after checking it against the document.',
         thTrace: 'Why it is shown',
         thAssign: 'Assign',
         assignDiameter: 'Bore {{value}} mm',
