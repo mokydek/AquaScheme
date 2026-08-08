@@ -1,5 +1,6 @@
 import { clearanceNote, crossingClearance } from './crossing-clearance'
 import { parsePipeLabel } from './existing-utilities'
+import { parseUtilityMark } from './utility-marks'
 import type { DxfConstraintData, DxfNetworkData } from './dxfread'
 import type { CrossingRecord } from './working-drawings'
 
@@ -100,8 +101,13 @@ export function crossingsFromSurvey(
       y: entity.y,
       raw: String(entity.text ?? '').trim(),
       parsed: parsePipeLabel(String(entity.text ?? '')),
+      // Марки, которых `parsePipeLabel` не знает: «ППУ1020/1200», «2тр.пвх100»,
+      // «гильза ст1420». Раньше они отбрасывались, и карточка оставалась
+      // пустой при том, что габарит был написан прямо на чертеже.
+      mark: parseUtilityMark(String(entity.text ?? '')),
     }))
-    .filter((label) => label.parsed !== null && Number.isFinite(label.x) && Number.isFinite(label.y))
+    .filter((label) => (label.parsed !== null || label.mark.sizeMm !== undefined)
+      && Number.isFinite(label.x) && Number.isFinite(label.y))
 
   /**
    * Ближайшая подпись того же вида сети — без порога расстояния.
@@ -195,8 +201,15 @@ export function crossingsFromSurvey(
             + (size ? `; размер по подписи «${size.label.raw}» в ${size.distanceM.toFixed(1)} м` : '')
             + (clearance ? `; просвет ${clearanceNote(clearance)}` : ''),
           ...(size ? {
-            size: `${size.label.parsed!.material} Ø${size.label.parsed!.diameterMm}`
-              + (size.label.parsed!.count > 1 ? `, ${size.label.parsed!.count} тр.` : ''),
+            // Прежний разбор остаётся первым: подпись, которую он понимает,
+            // описывается ровно так же, как описывалась. Марка добавляет
+            // только те случаи, где раньше не было ничего.
+            size: size.label.parsed !== null
+              ? `${size.label.parsed.material} Ø${size.label.parsed.diameterMm}`
+                + (size.label.parsed.count > 1 ? `, ${size.label.parsed.count} тр.` : '')
+              : `${size.label.mark.material ?? size.label.mark.raw} Ø${size.label.mark.sizeMm}`
+                + (size.label.mark.outerMm ? `/${size.label.mark.outerMm}` : '')
+                + (size.label.mark.count && size.label.mark.count > 1 ? `, ${size.label.mark.count} тр.` : ''),
           } : {}),
           ...(elevation !== undefined ? { existingElevationM: elevation } : {}),
           ...(designInvert !== null ? { designInvertElevationM: designInvert } : {}),

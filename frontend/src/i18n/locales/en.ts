@@ -1406,6 +1406,11 @@ export const en = {
         high_groundwater: 'High groundwater level',
       },
       crossings: {
+        markRegistry: 'Survey mark registry',
+        markRegistryHint: 'Network kind and size are derived from the mark the surveyor wrote on the utility. The registry is open: the sign behind every decision is visible. A mark the registry does not cover is not discarded — it goes to the unrecognised list. The network owner is not derivable from a mark and stays a «needs clarification» field.',
+        markSign: 'Sign in the mark',
+        markMeaning: 'Meaning',
+        markSeen: 'Observed on mark',
         title: 'Crossing cards',
         hint: 'The survey supplies the chainage, the utility kind, the design invert and the elevation where one was levelled. The owner, the construction method and the approval are not in the survey — they come from the technical conditions and the correspondence with the owner. Control excavation results are entered here too. The clearance is not typed but computed from the elevations',
         noDiameter: 'The design bore is not present in the project: without it the pipe crown is unknown and the clearance is not computed. Assemble the project from the survey stating the bore from the technical conditions',

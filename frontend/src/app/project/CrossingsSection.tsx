@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { crossingClearance } from '@aquascheme/engine'
+import { crossingClearance, UTILITY_MARK_REGISTRY } from '@aquascheme/engine'
 import type { CrossingRecord } from '@aquascheme/engine'
 import { saveDataset } from '../../shared/datasets'
 import type { DatasetRow } from '../../shared/datasets'
@@ -310,6 +310,36 @@ export function CrossingsSection({
       {notice && (
         <p className={`notice ${notice === 'saved' ? 'info' : 'error'}`}>{t(`project.${notice}`)}</p>
       )}
-    </Panel>
+          {/*
+        Реестр соответствий «марка → вид сети» открыт целиком.
+
+        Программа читает марку съёмки и выводит из неё вид и габарит. Инженер
+        обязан видеть, ПО ЧЕМУ она это решила: закрытая эвристика, назвавшая
+        кабель трубой, обнаружится только на стройке.
+      */}
+      <h5>{t('project.crossings.markRegistry')}</h5>
+      <p className="hint">{t('project.crossings.markRegistryHint')}</p>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th scope="col">{t('project.crossings.markSign')}</th>
+              <th scope="col">{t('project.crossings.markMeaning')}</th>
+              <th scope="col">{t('project.crossings.markSeen')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {UTILITY_MARK_REGISTRY.map((entry) => (
+              <tr key={entry.seen}>
+                <td className="mono">{String(entry.pattern).replace(/^\/|\/i$/g, '')}</td>
+                <td>{entry.meaning}</td>
+                <td className="mono">{entry.seen}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+</Panel>
   )
 }
