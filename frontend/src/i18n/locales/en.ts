@@ -917,6 +917,8 @@ export const en = {
         ocrWarning: 'The values below were RECOGNISED from a scan, average confidence {{confidence}}%. Recognition confuses 0 with O and 4 with Ch: check every digit against the document before confirming.',
         ocrSource: '{{file}}, p. {{page}} (recognised from a scan)',
         assignedSource: '{{file}}, p. {{page}} (recognised from a scan, line assigned by the engineer)',
+        preliminary: '· the document itself calls this value preliminary: «{{mark}}» — refine by calculation',
+        preliminaryPrefix: 'PRELIMINARY («{{mark}}»);',
         unparsedTitle: 'Unparsed lines holding numbers',
         unparsedHint: 'The program does NOT claim these numbers are a bore or a clearance. Recognition damages the letters around a number more often than the number itself: the «Д=» or «мм» anchor breaks, the pattern misses the line, yet the number is read correctly. The list is shown so the finding is not lost silently; only the engineer may assign a line to a value, after checking it against the document.',
         thTrace: 'Why it is shown',

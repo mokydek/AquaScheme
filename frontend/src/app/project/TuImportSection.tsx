@@ -137,6 +137,11 @@ export function TuImportSection({
     quote: string,
     id: string,
     assignedByHand = false,
+    /**
+     * Оговорка документа. Попадает в источник, чтобы приближение не осталось
+     * в проекте неотличимым от контрактной величины.
+     */
+    preliminary?: string,
   ) => {
     setBusy(true)
     try {
@@ -144,11 +149,11 @@ export function TuImportSection({
         value: value as never,
         // Скан не должен быть неотличим от цифрового документа в аудите.
         origin: ocrPages ? 'ocr' : 'stated',
-        source: assignedByHand
+        source: (preliminary ? t('project.tu.preliminaryPrefix', { mark: preliminary }) + ' ' : '') + (assignedByHand
           ? t('project.tu.assignedSource', { file: fileName ?? '', page })
           : ocrPages
             ? t('project.tu.ocrSource', { file: fileName ?? '', page })
-            : t('project.tu.source', { file: fileName ?? '', page }),
+            : t('project.tu.source', { file: fileName ?? '', page })),
         page,
         quote,
       })
@@ -170,22 +175,27 @@ export function TuImportSection({
     quote: string
     /** Уверенность строки-источника: `null` для цифрового документа. */
     confidence: number | null
+    /** Оговорка документа, делающая величину предварительной. */
+    preliminary?: string
   }> = found
     ? [
       ...found.designDiameterMm.map((item, index) => ({
         id: `d${index}`, key: 'designDiameterMm' as const, label: t('project.tu.diameter'),
         shown: String(item.value), value: item.value, page: item.page, quote: item.quote,
         confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
+        preliminary: item.preliminary,
       })),
       ...found.allowedDiametersMm.map((item, index) => ({
         id: `a${index}`, key: 'allowedDiametersMm' as const, label: t('project.tu.allowed'),
         shown: item.value.join(', '), value: item.value, page: item.page, quote: item.quote,
         confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
+        preliminary: item.preliminary,
       })),
       ...found.requiredClearanceM.map((item, index) => ({
         id: `c${index}`, key: 'requiredClearanceM' as const, label: t('project.tu.clearance'),
         shown: String(item.value), value: item.value, page: item.page, quote: item.quote,
         confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
+        preliminary: item.preliminary,
       })),
       ...(brief?.category ?? []).map((item, index) => ({
         id: `k${index}`, key: 'reliabilityCategory' as const, label: t('project.tu.category'),
@@ -272,6 +282,12 @@ export function TuImportSection({
                   <td className="num mono">{row.page}</td>
                   <td className="hint">
                     «{row.quote}»
+                    {row.preliminary && (
+                      <span className="warn">
+                        {' '}
+                        {t('project.tu.preliminary', { mark: row.preliminary })}
+                      </span>
+                    )}
                     {row.confidence !== null && (
                       <span className={row.confidence < LOW_CONFIDENCE ? ' warn' : ' ok'}>
                         {' '}
@@ -289,7 +305,7 @@ export function TuImportSection({
                           type="button"
                           className="btn btn-ghost btn-sm"
                           disabled={busy}
-                          onClick={() => void confirm(row.key, row.value, row.page, row.quote, row.id)}
+                          onClick={() => void confirm(row.key, row.value, row.page, row.quote, row.id, false, row.preliminary)}
                         >
                           {t('project.tu.confirm')}
                         </button>
@@ -336,7 +352,7 @@ export function TuImportSection({
                             disabled={busy || confirmed.includes(`u${index}-${number}`)}
                             onClick={() => void confirm(
                               'designDiameterMm', number, line.page, line.quote,
-                              `u${index}-${number}`, true,
+                              `u${index}-${number}`, true, line.preliminary,
                             )}
                           >
                             {t('project.tu.assignDiameter', { value: number })}

@@ -24,6 +24,21 @@ export interface TuCandidate<T = number> {
   quote: string
   /** Страница PDF, с 1. */
   page: number
+  /**
+   * Оговорка документа, делающая величину предварительной.
+   *
+   * Задание на проектирование реального объекта пишет: «диаметром 2000 мм
+   * ориентировочной протяжённостью — 12 км (диаметр и протяжённость уточнить
+   * при проектировании)». Это не контрактная величина, а исходное приближение:
+   * документ сам требует уточнить её расчётом. Принять такую величину как
+   * заявленную заданием значило бы превратить приближение в обязательство —
+   * ровно та тихая подмена, от которой защищает вся модель происхождения.
+   *
+   * Здесь хранится найденная оговорка дословно, чтобы она дошла до инженера и
+   * осталась в следе происхождения. Отсутствует — величина названа без
+   * оговорок.
+   */
+  preliminary?: string
 }
 
 export interface TuPage {
@@ -69,6 +84,39 @@ const CLEARANCE = /(?:пересеч[а-яё]*|сближен[а-яё]*|в\s+с�
 
 const numeric = (raw: string): number => Number(raw.replace(',', '.'))
 
+/**
+ * Оговорки, которыми документ сам объявляет величину предварительной.
+ *
+ * Список короткий и буквальный: сюда попадают только обороты, прямо говорящие
+ * «это ещё не окончательно». Ничего не додумывается — «принять», «выполнить»,
+ * «согласовать» предварительности не означают.
+ */
+const PRELIMINARY_MARKS = [
+  /уточнит[ья][^.)]{0,40}(?:при\s+проектировании|проектом|расч[её]том)/i,
+  /подлежит\s+уточнени[юя]/i,
+  /ориентировочн[а-яё]*/i,
+  /предварительн[а-яё]*/i,
+]
+
+/** Ширина окна вокруг находки, в котором ищется оговорка. */
+const PRELIMINARY_WINDOW = 260
+
+/**
+ * Ищет оговорку рядом с найденной величиной.
+ *
+ * Окно, а не строка: в задании реального объекта «диаметром» заканчивает одну
+ * строку, «2000 мм ориентировочной … (уточнить при проектировании)» занимает
+ * следующие. По одной строке оговорка не видна.
+ */
+function preliminaryMark(text: string, index: number): string | undefined {
+  const window = text.slice(Math.max(0, index - PRELIMINARY_WINDOW), index + PRELIMINARY_WINDOW)
+  for (const pattern of PRELIMINARY_MARKS) {
+    const found = pattern.exec(window)
+    if (found) return found[0].replace(/\s+/g, ' ').trim()
+  }
+  return undefined
+}
+
 /** Строка вокруг совпадения — чтобы инженер видел, что именно прочитано. */
 function lineAround(text: string, index: number): string {
   const from = text.lastIndexOf('\n', index) + 1
@@ -94,7 +142,8 @@ export function extractConditionsFromTu(pages: TuPage[]): ConditionsFromTu {
         // Одна и та же строка может подойти двум шаблонам («Ø450 мм» ловится
         // и как Ø, и как «диаметром»): повтор не добавляется.
         if (designDiameterMm.some((item) => item.value === value && item.quote === quote)) continue
-        designDiameterMm.push({ value, quote, page })
+        const preliminary = preliminaryMark(text, match.index ?? 0)
+        designDiameterMm.push(preliminary ? { value, quote, page, preliminary } : { value, quote, page })
       }
     }
 
@@ -103,7 +152,10 @@ export function extractConditionsFromTu(pages: TuPage[]): ConditionsFromTu {
       const values = match[1].split(/[,;]/).map((part) => Number(part.trim()))
         .filter((value) => Number.isFinite(value) && value >= 50 && value <= 3000)
       if (values.length < 2) continue
-      allowedDiametersMm.push({ value: values, quote: lineAround(text, match.index ?? 0), page })
+      const listPreliminary = preliminaryMark(text, match.index ?? 0)
+      allowedDiametersMm.push(listPreliminary
+        ? { value: values, quote: lineAround(text, match.index ?? 0), page, preliminary: listPreliminary }
+        : { value: values, quote: lineAround(text, match.index ?? 0), page })
     }
 
     CLEARANCE.lastIndex = 0
@@ -114,7 +166,8 @@ export function extractConditionsFromTu(pages: TuPage[]): ConditionsFromTu {
       if (!Number.isFinite(value) || value <= 0 || value > 2) continue
       const quote = lineAround(text, match.index ?? 0)
       if (requiredClearanceM.some((item) => item.value === value && item.quote === quote)) continue
-      requiredClearanceM.push({ value, quote, page })
+      const preliminary = preliminaryMark(text, match.index ?? 0)
+      requiredClearanceM.push(preliminary ? { value, quote, page, preliminary } : { value, quote, page })
     }
   }
 
@@ -240,6 +293,8 @@ export interface UnparsedNumericLine {
   numbers: number[]
   /** След якоря, из-за которого строка попала в список. */
   trace: string
+  /** Оговорка документа, делающая величину предварительной. */
+  preliminary?: string
 }
 
 /**
@@ -279,10 +334,12 @@ export function unparsedNumericLines(
       const after = ANCHOR_AFTER.exec(quote)
       if (!before && !after) continue
 
+      const preliminary = preliminaryMark(text, text.indexOf(raw) < 0 ? 0 : text.indexOf(raw))
       out.push({
         quote,
         page,
         numbers: [...new Set(numbers)],
+        ...(preliminary ? { preliminary } : {}),
         trace: [
           before ? `«${before[1]}=» перед числом` : null,
           after ? `«${after[1]}» после числа` : null,
