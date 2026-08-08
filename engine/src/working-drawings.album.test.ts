@@ -166,8 +166,11 @@ describe('dynamic full working-drawing album', () => {
 
     const planPages = set.manifest.pages.filter((page) => page.kind === 'plan')
     const profilePages = set.manifest.pages.filter((page) => page.kind === 'profile')
+    // План по высоте не растёт: у него нет вертикального масштаба, растягивать
+    // нечего. У профиля высота считается по перепаду отметок в масштабе 1:100,
+    // поэтому она не меньше A3 и не обязана ей равняться.
     expect(planPages.every((page) => page.pageFormat.heightMm === 297 && page.pageFormat.format === 'custom')).toBe(true)
-    expect(profilePages.every((page) => page.pageFormat.heightMm === 297 && page.pageFormat.format === 'custom')).toBe(true)
+    expect(profilePages.every((page) => page.pageFormat.heightMm >= 297 && page.pageFormat.format === 'custom')).toBe(true)
     expect(set.manifest.pages.find((page) => page.kind === 'drawing_register')?.pageFormat.format).toBe('custom')
     expect(set.manifest.pages.filter((page) =>
       page.kind === 'network_plan' || page.kind === 'material_table' || page.kind === 'specification')
@@ -277,5 +280,62 @@ describe('dynamic full working-drawing album', () => {
     expect(set.manifest.pdfPageCount).toBe(set.sheets.length + 3)
     expect(set.manifest.pdfPageCount).toBeLessThan(40)
     expect(set.manifest.pdfPageCount).not.toBe(61)
+  })
+})
+
+describe('высота листа профиля считается, а не назначается', () => {
+  /** Профиль с заданным перепадом отметок на всю длину. */
+  const deepProfile = (spanM: number): GravityProfile => ({
+    stations: [
+      { nodeId: 'K-1', chainageM: 0, groundElevationM: 100, invertElevationM: 100 - spanM, depthM: spanM, diameterMm: 400 },
+      { nodeId: 'K-2', chainageM: 200, groundElevationM: 100, invertElevationM: 100 - spanM, depthM: spanM, diameterMm: 400 },
+    ],
+    maxDepthM: spanM,
+    outletInvertElevationM: 100 - spanM,
+    totalLengthM: 200,
+    pipeIds: ['P-1'],
+  })
+
+  const sheetHeights = (spanM: number) => {
+    const set = buildWorkingDrawingSet({
+      system: 'sewer',
+      network: {
+        nodes: [
+          { id: 'K-1', kind: 'manhole', x: 0, y: 0, groundElevation: 100 },
+          { id: 'K-2', kind: 'outlet', x: 200, y: 0, groundElevation: 100 },
+        ],
+        pipes: [{ id: 'P-1', kind: 'gravity_collector', fromNode: 'K-1', toNode: 'K-2', lengthM: 200 }],
+        totalLengthM: 200,
+      },
+      profile: deepProfile(spanM),
+      schedule: { manholes: [], pipes: [], totalPipeLengthM: 0 },
+      routeStatus: 'calculated',
+      catalogReady: true,
+      hydraulicsReady: true,
+    })
+    return set.manifest.pages
+      .filter((page) => set.sheets.find((sheet) => sheet.id === page.sheetId)?.kind === 'profile')
+      .map((page) => page.pageFormat.heightMm)
+  }
+
+  it('мелкий профиль остаётся в высоте A3', () => {
+    expect(sheetHeights(3).every((height) => height === 297)).toBe(true)
+  })
+
+  it('глубокий профиль получает более высокий лист, а не обрушивает альбом', () => {
+    // 15 м перепада в масштабе 1:100 — это 150 мм чертежа плюс боковик и штамп.
+    const tall = sheetHeights(15)
+    expect(tall.length).toBeGreaterThan(0)
+    expect(tall.every((height) => height > 297)).toBe(true)
+  })
+
+  it('высота растёт вместе с перепадом, а не скачком', () => {
+    // Оба перепада выше нижней границы A3, иначе разницу съедает отсечка.
+    const [shallow] = sheetHeights(12)
+    const [deep] = sheetHeights(24)
+    expect(deep).toBeGreaterThan(shallow)
+    // Прирост соответствует масштабу 1:100: 12 м перепада — около 120 мм.
+    expect(deep - shallow).toBeGreaterThanOrEqual(110)
+    expect(deep - shallow).toBeLessThanOrEqual(130)
   })
 })

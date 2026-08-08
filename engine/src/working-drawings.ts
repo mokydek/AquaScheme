@@ -775,6 +775,16 @@ function protectiveGridIssues(design: ProtectiveGridDesign | null | undefined): 
 }
 
 /**
+ * Вертикальный масштаб профиля и запас по высоте листа.
+ *
+ * Масштаб — тот же, что применяет отрисовка альбома; запас покрывает поля,
+ * шапку с условным горизонтом, боковик с отметками и штамп. Это правило
+ * компоновки, а не размеры, снятые с эталонного альбома.
+ */
+const PROFILE_VERTICAL_SCALE_DENOMINATOR = 100
+const PROFILE_VERTICAL_ALLOWANCE_MM = 190
+
+/**
  * Проверки, общие для всех плановых листов.
  *
  * Здесь был мёртвый параметр `missingAlignmentPipeIds` и стоп-фактор
@@ -840,7 +850,34 @@ function sheetHash(inputHash: string, kind: WorkingDrawingKind, number: number, 
   return workingDrawingInputHash({ inputHash, kind, number, interval })
 }
 
-function buildAlbumManifest(sheets: WorkingDrawingSheet[]): WorkingDrawingAlbumManifest {
+/**
+ * Наибольший перепад отметок на листе профиля, м.
+ *
+ * Нужен, чтобы высота листа считалась так же, как ширина. Высота стояла
+ * жёстко 297 мм, и глубокий профиль в вертикальном масштабе 1:100 в неё просто
+ * не влезал: отрисовка честно падала с ошибкой, но альбом при этом не
+ * собирался вовсе. Растянуть чертёж по высоте нельзя — масштаб перестал бы
+ * быть масштабом, поэтому растёт лист.
+ */
+function profileElevationSpanM(
+  sheet: WorkingDrawingSheet,
+  profiles: Array<{ profileId?: string; profile: GravityProfile }>,
+): number | null {
+  if (sheet.kind !== 'profile' || !sheet.interval) return null
+  const owner = profiles.find((item) => (item.profileId ?? undefined) === sheet.profileId) ?? profiles[0]
+  if (!owner) return null
+  const inside = owner.profile.stations.filter((station) =>
+    station.chainageM >= sheet.interval!.fromM - 1e-6 && station.chainageM <= sheet.interval!.toM + 1e-6)
+  if (inside.length === 0) return null
+  const highest = Math.max(...inside.map((station) => station.groundElevationM))
+  const lowest = Math.min(...inside.map((station) => station.invertElevationM))
+  return Number.isFinite(highest) && Number.isFinite(lowest) ? Math.max(0, highest - lowest) : null
+}
+
+function buildAlbumManifest(
+  sheets: WorkingDrawingSheet[],
+  profiles: Array<{ profileId?: string; profile: GravityProfile }> = [],
+): WorkingDrawingAlbumManifest {
   const defaultPageFormat: WorkingDrawingAlbumPage['pageFormat'] = {
     format: 'A3',
     widthMm: 420,
@@ -865,10 +902,20 @@ function buildAlbumManifest(sheets: WorkingDrawingSheet[]): WorkingDrawingAlbumM
     const fixedAllowanceMm = sheet.kind === 'plan' ? 220 : 300
     const rawWidthMm = fixedAllowanceMm + intervalLengthM * 1000 / scaleDenominator
     const widthMm = Math.min(5000, Math.max(420, Math.ceil(rawWidthMm / 10) * 10))
+    // Высота считается по тому же правилу, что и ширина: перепад отметок в
+    // вертикальном масштабе 1:100 плюс место под боковик, подписи и штамп.
+    // Прежде она была жёсткой, и глубокий профиль обрушивал сборку альбома.
+    // Округление до шага 10 мм применяется только к ПОСЧИТАННОЙ высоте: иначе
+    // оно превращало 297 в 300 и там, где высоту считать не из чего.
+    const spanM = profileElevationSpanM(sheet, profiles)
+    const heightMm = spanM === null
+      ? 297
+      : Math.min(2000, Math.max(297, Math.ceil(
+        (PROFILE_VERTICAL_ALLOWANCE_MM + spanM * 1000 / PROFILE_VERTICAL_SCALE_DENOMINATOR) / 10) * 10))
     return {
-      format: widthMm > 420 ? 'custom' : 'A3',
+      format: widthMm > 420 || heightMm > 297 ? 'custom' : 'A3',
       widthMm,
-      heightMm: 297,
+      heightMm,
       orientation: 'landscape',
       rotationDeg: 0,
       source: 'generated_layout_policy',
@@ -1539,7 +1586,10 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
   }
 
   const statusCounts = (status: WorkingDrawingStatus) => sheets.filter((sheet) => sheet.status === status).length
-  const manifest = buildAlbumManifest(sheets)
+  const manifest = buildAlbumManifest(sheets, [
+    ...(input.profile ? [{ profile: input.profile }] : []),
+    ...(input.branchProfiles ?? []).map((branch) => ({ profileId: branch.id, profile: branch.profile })),
+  ])
   return {
     sheets,
     manifest,
