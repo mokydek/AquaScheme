@@ -54,3 +54,54 @@ jobs:
         run: |
           echo "The 61-page benchmark requires the private reference and generated project inputs."
           echo "Run npm run benchmark:required on the controlled acceptance runner before production approval."
+
+  # Настоящий ODA в основном прогоне не ставится: это внешний бинарник в
+  # десятки мегабайт, и держать на нём каждый PR — значит менять его падения на
+  # падения сборки. Но и не проверять его нельзя: все остальные проверки
+  # конвертера работают с подменами и ни разу не запускают ODA, поэтому
+  # сменившийся порядок аргументов в новой версии не поймает ничто.
+  #
+  # Задание включается, только когда задан секрет ODA_DEB_URL со ссылкой на
+  # пакет. Без секрета оно не запускается вовсе — это видно в списке заданий,
+  # в отличие от зелёного прогона, в котором ничего не проверялось.
+  converter-roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ github.event_name == 'push' }}
+    env:
+      ODA_DEB_URL: ${{ secrets.ODA_DEB_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Skip without the ODA package secret
+        if: ${{ env.ODA_DEB_URL == '' }}
+        run: |
+          echo "ODA_DEB_URL не задан: round-trip DXF→DWG→DXF не выполнялся."
+          echo "Это пропуск, а не успех — проверка требует установленного ODA."
+
+      - name: Install ODA File Converter
+        if: ${{ env.ODA_DEB_URL != '' }}
+        env:
+          ODA_DEB_URL: ${{ secrets.ODA_DEB_URL }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxcb-xinerama0 libegl1
+          curl -fsSL "$ODA_DEB_URL" -o /tmp/oda.deb
+          sudo apt-get install -y /tmp/oda.deb
+
+      - name: Install converter dependencies
+        if: ${{ env.ODA_DEB_URL != '' }}
+        run: npm ci --prefix converter
+
+      - name: Run the DXF→DWG→DXF round trip
+        if: ${{ env.ODA_DEB_URL != '' }}
+        env:
+          ODA_ROUNDTRIP: '1'
+          ODA_CONVERTER_PATH: xvfb-run -a ODAFileConverter
+        run: npm run test:converter
