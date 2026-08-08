@@ -1117,8 +1117,31 @@ export function buildProjectSheetDoc(input: ProjectAlbumInput, sheetId: string):
   }
 }
 
-export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
-  if (!input.drawingSet.summary.finalExportAllowed) {
+/**
+ * Кто просит альбом.
+ *
+ * `release` — экранный выпуск. Шлюз прежний и не ослаблен ни на йоту: пока хоть
+ * один лист не `VERIFIED`, альбома не будет.
+ *
+ * `benchmark` — измерение сходства с эталоном. Пока альбом не собирается,
+ * показателя не существует вовсе, и инструмент не мерит прогресс, а лишь
+ * подтверждает финиш. Ровно та же болезнь уже лечилась в самом
+ * `visual-benchmark.mjs`, где несовпадение числа страниц прекращало работу до
+ * всякого измерения.
+ *
+ * Водяного знака в этом режиме НЕТ намеренно: он отравил бы попиксельное
+ * сравнение, ради которого альбом и собирается. Отличимость обеспечивается
+ * иначе — статусом каждого листа в метаданных PDF.
+ */
+export type AlbumBuildMode = 'release' | 'benchmark'
+
+/**
+ * Собирает альбом. Режим `benchmark` доступен только через
+ * `shared/benchmarkAlbum.ts`; из экранов приложения он недостижим, и это
+ * закреплено проверкой.
+ */
+export function buildAlbumDocument(input: ProjectAlbumInput, mode: AlbumBuildMode): PdfNode {
+  if (mode === 'release' && !input.drawingSet.summary.finalExportAllowed) {
     throw new Error(`Финальный выпуск запрещён: заблокировано ${input.drawingSet.summary.blocked}, устарело ${input.drawingSet.summary.stale}.`)
   }
   const totalSheets = input.drawingSet.manifest.pdfPageCount
@@ -1180,8 +1203,29 @@ export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
     },
     info: {
       title: `${input.projectCode} — ${input.projectName}`,
-      subject: `Расчётный комплект рабочих чертежей, ${totalSheets} листов`,
+      subject: mode === 'benchmark'
+        ? `Сборка для измерения сходства, НЕ ВЫПУСК, ${totalSheets} листов`
+        : `Расчётный комплект рабочих чертежей, ${totalSheets} листов`,
       creator: 'AquaScheme',
+      // Статус каждого листа — в метаданных. Ни один лист сборки для измерения
+      // не выдаётся за выпущенный: посмотревший файл видит, что перед ним.
+      ...(mode === 'benchmark'
+        ? {
+          keywords: [
+            'benchmark',
+            `finalExportAllowed=${input.drawingSet.summary.finalExportAllowed}`,
+            ...input.drawingSet.sheets.map((sheet) =>
+              `${sheet.documentSet === 'working_drawings' ? 'MAIN' : 'SPEC'}/${sheet.sheetNumber}=${sheet.status}`),
+          ].join('; '),
+        }
+        : {}),
     },
   }
+}
+
+/**
+ * Экранный выпуск. Поведение не менялось: без `finalExportAllowed` — исключение.
+ */
+export function buildProjectAlbumDoc(input: ProjectAlbumInput): PdfNode {
+  return buildAlbumDocument(input, 'release')
 }
