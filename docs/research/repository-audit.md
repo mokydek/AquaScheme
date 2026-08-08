@@ -29,7 +29,7 @@
 | Export | DXF, PDF, XLSX, ZIP; DWG через converter | Экспорт генерируется из расчётной модели. Финальные рабочие листы блокируются по статусам источников. |
 | Deploy | Vercel frontend; Render/Docker converter | `vercel.json` настроен. Backend и converter требуют отдельных ручных шагов. |
 
-Документация расходится с кодом карты: `README.md` и `docs/PHASES.md` называют MapLibre, но текущая реализация и зависимости используют Leaflet (`frontend/src/app/project/LiveSituationMap.tsx`).
+~~Документация расходится с кодом карты: `README.md` и `docs/PHASES.md` называют MapLibre, но текущая реализация и зависимости используют Leaflet (`frontend/src/app/project/LiveSituationMap.tsx`).~~ **Исправлено 07.08.2026:** в README указан Leaflet, строка фазы 7 в PHASES.md помечена как отменённая; сама запись журнала об удалении maplibre-gl оставлена — это история, а не утверждение о текущем стеке.
 
 ## Что уже является настоящей реализацией
 

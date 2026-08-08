@@ -27,12 +27,15 @@ npm run dev        # dev-сервер фронтенда (http://localhost:5173)
 npm run build      # production-сборка фронтенда
 npm run test       # unit-тесты расчётного ядра
 npm run typecheck  # проверка типов во всех пакетах
+npm run test:all   # ядро, фронтенд, конвертер, бенчмарк и договор с базой
+npm run test:e2e   # браузерный смоук; без E2E_EMAIL/E2E_PASSWORD пропускается с причиной
+npm run db:verify:live  # сверка применённой схемы Supabase; без ключей пропускается, ничего не меняет
 npm run benchmark  # локальная сверка с конфиденциальным эталонным альбомом, если исходники доступны
 ```
 
 ## Технологический стек
 
-React 19, TypeScript, Vite 7, React Router 7, MapLibre GL JS, turf.js, epanet-js (WASM), @tarikjabiri/dxf, pdfmake, Supabase, Vercel.
+React 19, TypeScript, Vite 7, React Router 7, Leaflet, epanet-js (WASM), @tarikjabiri/dxf, pdfmake, fflate, Supabase, Vercel. Проверки — Vitest и Playwright.
 
 ## Нормативная база
 

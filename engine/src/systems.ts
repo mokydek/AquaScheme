@@ -7,10 +7,12 @@ import type { TracedNetwork } from './trace'
  * storm (K2) are gravity networks (Manning: fill ratio h/d, self cleaning
  * velocity, slopes) whose solvers arrive in the deferred K1/K2 phases.
  *
- * This module holds ONLY types and light stubs so it can live in the main
- * engine index without pulling the EPANET WASM into the main bundle. The
- * water implementation of NetworkSolver is exported from ./hydraulics
- * (subpath @aquascheme/engine/hydraulics).
+ * This module holds ONLY types and the availability table so it can live in the
+ * main engine index without pulling the EPANET WASM into the main bundle. It
+ * held stubs once; today all three systems are implemented — water through
+ * `waterPressureSolver` (./hydraulics, subpath @aquascheme/engine/hydraulics),
+ * sewer and storm through `solveGravityNetwork` (./norms/gravity), which the
+ * application calls directly for the reason stated below.
  */
 
 export interface PressureNodeState {
