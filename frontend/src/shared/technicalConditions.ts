@@ -50,6 +50,15 @@ export interface TechnicalConditions {
   requiredClearanceM?: ConfirmedValue
   /** Ширина проезжей части, м: измеряется по съёмке либо вводится. */
   roadWidthM?: ConfirmedValue
+  /**
+   * Категория надёжности насосной станции и характер стоков — из задания.
+   *
+   * Не выводятся ни из чертежа, ни из расчёта: их называет задание словами, и
+   * до этого захода они оставались единственными ручными входами подбора
+   * насосов.
+   */
+  reliabilityCategory?: ConfirmedValue<'first' | 'second' | 'third'>
+  effluentKind?: ConfirmedValue<'domestic' | 'aggressive' | 'storm'>
 }
 
 export const TECHNICAL_CONDITIONS_KIND = 'technical_conditions' as const

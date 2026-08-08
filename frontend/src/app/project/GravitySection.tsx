@@ -39,6 +39,7 @@ import type {
 import type { ParcelRow } from '../../shared/parcels'
 import type { NormativeParams, NormClauseConfirmation } from '@aquascheme/engine'
 import { networkFromRows } from '../../shared/network'
+import { readTechnicalConditions } from '../../shared/technicalConditions'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
 import { saveDataset } from '../../shared/datasets'
@@ -150,6 +151,7 @@ export function GravitySection({
   verticalPlanDataset,
   gravityBasinsDataset,
   pumpCatalogDataset,
+  conditionsDataset,
   constraintsDataset,
   routeAuditDataset,
   manholeCatalogDataset,
@@ -180,6 +182,8 @@ export function GravitySection({
   gravityBasinsDataset?: DatasetRow
   /** Каталог насосов, категория надёжности и характер стоков. */
   pumpCatalogDataset?: DatasetRow
+  /** Контрактные величины проекта, в том числе подтверждённые из задания. */
+  conditionsDataset?: DatasetRow
   constraintsDataset?: DatasetRow
   routeAuditDataset?: DatasetRow
   manholeCatalogDataset?: DatasetRow
@@ -507,6 +511,8 @@ export function GravitySection({
    * производная расчёта: программа предлагает разбивку, а где ставить
    * перекачку — вопрос компоновки площадки и согласований.
    */
+  const projectConditions = readTechnicalConditions(conditionsDataset)
+
   const basinDecision = useMemo(() => {
     if (savedDecision !== undefined) return savedDecision
     const stored = (gravityBasinsDataset?.content ?? null) as
@@ -580,10 +586,12 @@ export function GravitySection({
       pressureLengthM: drainage.basinLinkLengthM ?? null,
       pressureDiameterMm: drainage.basinLinkDiameterMm ?? null,
       catalogue: catalog.entries,
-      category: catalog.category,
-      effluent: catalog.effluent,
+      // Подтверждённое из задания имеет приоритет над карточкой каталога:
+      // категорию называет задание, а каталог — перечень агрегатов.
+      category: projectConditions.reliabilityCategory?.value ?? catalog.category,
+      effluent: projectConditions.effluentKind?.value ?? catalog.effluent,
     })
-  }, [gravityPlan, pumpCatalogDataset, drainageDataset, result, catalogResolution])
+  }, [gravityPlan, pumpCatalogDataset, drainageDataset, result, catalogResolution, projectConditions])
 
   const unresolvedLayerCount = useMemo(() => {
     const audit = (routeAuditDataset?.content ?? null) as { unresolved?: { layers?: number } } | null

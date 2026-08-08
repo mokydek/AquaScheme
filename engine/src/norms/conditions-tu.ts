@@ -124,3 +124,87 @@ export function extractConditionsFromTu(pages: TuPage[]): ConditionsFromTu {
 
   return { designDiameterMm, allowedDiametersMm, requiredClearanceM, missing }
 }
+
+/**
+ * Категория надёжности и характер стоков — из задания на проектирование.
+ *
+ * По итогам прошлого захода эти две величины остались единственными ручными
+ * входами подбора насосов. Они не выводятся ни из чертежа, ни из расчёта — их
+ * называет задание, и там они написаны словами.
+ *
+ * Термины берутся из СН РК 4.01-03-2013*: категории надёжности действия I, II
+ * и III; характер стоков — бытовые, производственные, дождевые. Ни одного
+ * термина сверх названных в норме здесь не изобретено.
+ */
+
+export type ReliabilityCategoryValue = 'first' | 'second' | 'third'
+export type EffluentValue = 'domestic' | 'aggressive' | 'storm'
+
+export interface ConditionsFromBrief {
+  category: Array<TuCandidate<ReliabilityCategoryValue>>
+  effluent: Array<TuCandidate<EffluentValue>>
+  missing: string[]
+}
+
+/**
+ * Категория: «I категории надёжности», «категория надёжности действия II»,
+ * «третья категория надёжности», «категория надёжности — 1».
+ *
+ * Слово «надёжност» обязательно рядом: без него шаблон ловил бы «категория
+ * грунта II» и «II категория сложности изысканий», а это другие величины.
+ */
+/**
+ * Число стоит то перед словом «категория», то после: «I категории
+ * надёжности» и «категория надёжности — II». Поэтому два шаблона, а не один
+ * с необязательными частями: один шаблон на оба порядка ловил бы заодно
+ * посторонние числа из соседнего предложения.
+ */
+const CATEGORY_BEFORE = /(I{1,3}|1|2|3|перв[а-яё]+|втор[а-яё]+|трет[а-яё]+)\s+категор[а-яё]*\s+надёжност[а-яё]*/gi
+const CATEGORY_AFTER = /категор[а-яё]*\s+надёжност[а-яё]*(?:\s+действи[а-яё]*)?\s*[-–—:]?\s*(I{1,3}|1|2|3|перв[а-яё]+|втор[а-яё]+|трет[а-яё]+)(?![IА-Яа-яё\d])/gi
+
+const CATEGORY_VALUES: Record<string, ReliabilityCategoryValue> = {
+  i: 'first', '1': 'first', перв: 'first',
+  ii: 'second', '2': 'second', втор: 'second',
+  iii: 'third', '3': 'third', трет: 'third',
+}
+
+/** Характер стоков: бытовые, производственные, дождевые. */
+const EFFLUENT_PATTERNS: Array<[RegExp, EffluentValue]> = [
+  [/(?:бытов[а-яё]*|хозяйственно-бытов[а-яё]*)\s+(?:сточн[а-яё]*\s+вод[а-яё]*|сток[а-яё]*)/gi, 'domestic'],
+  [/(?:производствен[а-яё]*|промышленн[а-яё]*)\s+(?:сточн[а-яё]*\s+вод[а-яё]*|сток[а-яё]*)/gi, 'aggressive'],
+  [/(?:дождев[а-яё]*|ливнев[а-яё]*|поверхностн[а-яё]*)\s+(?:сточн[а-яё]*\s+вод[а-яё]*|сток[а-яё]*)/gi, 'storm'],
+]
+
+/** Разбирает задание на проектирование. Ничего не выбирает — собирает кандидатов. */
+export function extractConditionsFromBrief(pages: TuPage[]): ConditionsFromBrief {
+  const category: Array<TuCandidate<ReliabilityCategoryValue>> = []
+  const effluent: Array<TuCandidate<EffluentValue>> = []
+
+  for (const { page, text } of pages) {
+    for (const pattern of [CATEGORY_BEFORE, CATEGORY_AFTER]) {
+      pattern.lastIndex = 0
+      for (const match of text.matchAll(pattern)) {
+      const raw = match[1].toLowerCase()
+      const value = CATEGORY_VALUES[raw] ?? CATEGORY_VALUES[raw.slice(0, 4)] ?? CATEGORY_VALUES[raw.slice(0, 3)]
+      if (!value) continue
+      const quote = lineAround(text, match.index ?? 0)
+      if (category.some((item) => item.value === value && item.quote === quote)) continue
+      category.push({ value, quote, page })
+      }
+    }
+
+    for (const [pattern, value] of EFFLUENT_PATTERNS) {
+      pattern.lastIndex = 0
+      for (const match of text.matchAll(pattern)) {
+        const quote = lineAround(text, match.index ?? 0)
+        if (effluent.some((item) => item.value === value && item.quote === quote)) continue
+        effluent.push({ value, quote, page })
+      }
+    }
+  }
+
+  const missing: string[] = []
+  if (category.length === 0) missing.push('категория надёжности насосной станции')
+  if (effluent.length === 0) missing.push('характер перекачиваемых стоков')
+  return { category, effluent, missing }
+}

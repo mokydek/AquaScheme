@@ -775,6 +775,7 @@ export function ProjectPage() {
               verticalPlanDataset={datasets.vertical_plan}
               gravityBasinsDataset={datasets.gravity_basins}
               pumpCatalogDataset={datasets.pump_catalog}
+              conditionsDataset={datasets.technical_conditions}
                 constraintsDataset={datasets.route_constraints}
                 routeAuditDataset={datasets.route_audit}
                 manholeCatalogDataset={datasets.manhole_catalog}
@@ -806,6 +807,7 @@ export function ProjectPage() {
               verticalPlanDataset={datasets.vertical_plan}
               gravityBasinsDataset={datasets.gravity_basins}
               pumpCatalogDataset={datasets.pump_catalog}
+              conditionsDataset={datasets.technical_conditions}
               constraintsDataset={datasets.route_constraints}
               routeAuditDataset={datasets.route_audit}
               manholeCatalogDataset={datasets.manhole_catalog}

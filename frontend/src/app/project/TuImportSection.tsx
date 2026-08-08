@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
-import type { ConditionsFromTu } from '@aquascheme/engine'
+import type { ConditionsFromBrief, ConditionsFromTu } from '@aquascheme/engine'
 import { Panel } from './Panel'
 import { saveTechnicalCondition } from '../../shared/technicalConditions'
 import type { DatasetRow } from '../../shared/datasets'
@@ -37,6 +37,9 @@ export function TuImportSection({
 }) {
   const { t } = useTranslation()
   const [found, setFound] = useState<ConditionsFromTu | null>(null)
+  // ТУ и задание приходят одним комплектом, поэтому разбираются вместе:
+  // отдельная секция ради двух величин была бы лишним экраном.
+  const [brief, setBrief] = useState<ConditionsFromBrief | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -74,8 +77,9 @@ export function TuImportSection({
         setMessage(t('project.tu.noTextLayerOffer'))
         return
       }
-      const { extractConditionsFromTu } = await import('@aquascheme/engine')
+      const { extractConditionsFromTu, extractConditionsFromBrief } = await import('@aquascheme/engine')
       setFound(extractConditionsFromTu(pages))
+      setBrief(extractConditionsFromBrief(pages))
       setFileName(file.name)
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : String(cause))
@@ -94,10 +98,12 @@ export function TuImportSection({
     try {
       const { recognizeScan } = await import('../../shared/ocr')
       const pages = await recognizeScan(scan, setProgress)
-      const { extractConditionsFromTu } = await import('@aquascheme/engine')
+      const { extractConditionsFromTu, extractConditionsFromBrief } = await import('@aquascheme/engine')
       // Шаблоны, ограничения и экран подтверждения переиспользуются целиком:
       // распознанный текст — это тот же текст, только худшего качества.
-      setFound(extractConditionsFromTu(pages.map((page) => ({ page: page.page, text: page.text }))))
+      const asPages = pages.map((page) => ({ page: page.page, text: page.text }))
+      setFound(extractConditionsFromTu(asPages))
+      setBrief(extractConditionsFromBrief(asPages))
       setOcrPages(pages)
       if (pages.every((page) => page.text.trim() === '')) {
         setMessage(t('project.tu.ocrEmpty'))
@@ -111,8 +117,9 @@ export function TuImportSection({
   }
 
   const confirm = async (
-    key: 'designDiameterMm' | 'requiredClearanceM' | 'allowedDiametersMm',
-    value: number | number[],
+    key: 'designDiameterMm' | 'requiredClearanceM' | 'allowedDiametersMm'
+      | 'reliabilityCategory' | 'effluentKind',
+    value: number | number[] | string,
     page: number,
     quote: string,
     id: string,
@@ -139,9 +146,10 @@ export function TuImportSection({
   const rows: Array<{
     id: string
     key: 'designDiameterMm' | 'requiredClearanceM' | 'allowedDiametersMm'
+      | 'reliabilityCategory' | 'effluentKind'
     label: string
     shown: string
-    value: number | number[]
+    value: number | number[] | string
     page: number
     quote: string
     /** Уверенность строки-источника: `null` для цифрового документа. */
@@ -161,6 +169,18 @@ export function TuImportSection({
       ...found.requiredClearanceM.map((item, index) => ({
         id: `c${index}`, key: 'requiredClearanceM' as const, label: t('project.tu.clearance'),
         shown: String(item.value), value: item.value, page: item.page, quote: item.quote,
+        confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
+      })),
+      ...(brief?.category ?? []).map((item, index) => ({
+        id: `k${index}`, key: 'reliabilityCategory' as const, label: t('project.tu.category'),
+        shown: t(`project.tu.categoryValue.${item.value}`), value: item.value as string,
+        page: item.page, quote: item.quote,
+        confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
+      })),
+      ...(brief?.effluent ?? []).map((item, index) => ({
+        id: `e${index}`, key: 'effluentKind' as const, label: t('project.tu.effluent'),
+        shown: t(`project.tu.effluentValue.${item.value}`), value: item.value as string,
+        page: item.page, quote: item.quote,
         confidence: ocrPages ? confidenceOfQuote(ocrPages, item.page, item.quote) : null,
       })),
     ]
