@@ -113,3 +113,49 @@ describe('sliceProfile / profileSheetSpecs', () => {
     for (const s of specs) expect(s.profile.stations.length).toBeGreaterThanOrEqual(2)
   })
 })
+
+describe('нарезка профиля по бассейнам', () => {
+  const profile = {
+    stations: [
+      { nodeId: 'A', chainageM: 0, groundElevationM: 100, invertElevationM: 97, depthM: 3, diameterMm: 400 },
+      { nodeId: 'B', chainageM: 540, groundElevationM: 99, invertElevationM: 96, depthM: 3, diameterMm: 400 },
+      { nodeId: 'C', chainageM: 1070, groundElevationM: 98, invertElevationM: 95, depthM: 3, diameterMm: 400 },
+    ],
+    maxDepthM: 3,
+    outletInvertElevationM: 95,
+    totalLengthM: 1070,
+    pipeIds: ['p1', 'p2'],
+  }
+
+  it('без границ режет как прежде и бассейнов не поминает', () => {
+    const specs = profileSheetSpecs(profile, 'sewer', 850)
+    expect(specs.every((spec) => !spec.title.includes('бассейн'))).toBe(true)
+  })
+
+  it('лист не пересекает границу бассейна', () => {
+    const specs = profileSheetSpecs(profile, 'sewer', 850, { basinBoundariesM: [540] })
+    expect(specs.every((spec) => spec.interval.fromM >= 540 || spec.interval.toM <= 540)).toBe(true)
+  })
+
+  it('граница притягивается к ближайшей станции: перекачка стоит в колодце', () => {
+    // 500 м — не станция; ближайшая 540, на ней и режется.
+    const snapped = profileSheetSpecs(profile, 'sewer', 850, { basinBoundariesM: [500] })
+    const exact = profileSheetSpecs(profile, 'sewer', 850, { basinBoundariesM: [540] })
+    expect(snapped.map((spec) => [spec.interval.fromM, spec.interval.toM]))
+      .toEqual(exact.map((spec) => [spec.interval.fromM, spec.interval.toM]))
+  })
+
+  it('граница за пределами трассы бассейна не создаёт', () => {
+    const specs = profileSheetSpecs(profile, 'sewer', 850, { basinBoundariesM: [0, 1070, 5000] })
+    expect(specs).toEqual(profileSheetSpecs(profile, 'sewer', 850))
+  })
+
+  it('подпись бассейна попадает в заголовок листа', () => {
+    const specs = profileSheetSpecs(profile, 'sewer', 850, {
+      basinBoundariesM: [540],
+      basinLabels: ['бассейн 1', 'бассейн 2'],
+    })
+    expect(specs[0].title).toContain('бассейн 1')
+    expect(specs.at(-1)!.title).toContain('бассейн 2')
+  })
+})

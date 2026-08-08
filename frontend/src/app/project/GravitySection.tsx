@@ -204,7 +204,7 @@ export function GravitySection({
    * страницы, и инженер решил бы, что кнопка не работает.
    */
   const [savedDecision, setSavedDecision] = useState<
-    { confirmed: true; liftCount: number; source: string } | null | undefined
+    { confirmed: true; liftCount: number; source: string; boundaryChainagesM: number[] } | null | undefined
   >(undefined)
   const [exporting, setExporting] = useState(false)
   const [albumExporting, setAlbumExporting] = useState(false)
@@ -506,9 +506,14 @@ export function GravitySection({
   const basinDecision = useMemo(() => {
     if (savedDecision !== undefined) return savedDecision
     const stored = (gravityBasinsDataset?.content ?? null) as
-      { confirmed?: boolean; liftCount?: number; source?: string } | null
+      { confirmed?: boolean; liftCount?: number; source?: string; boundaryChainagesM?: number[] } | null
     if (!stored?.confirmed || !(stored.liftCount ?? 0) || !(stored.source ?? '').trim()) return null
-    return { confirmed: true as const, liftCount: stored.liftCount!, source: stored.source!.trim() }
+    return {
+      confirmed: true as const,
+      liftCount: stored.liftCount!,
+      source: stored.source!.trim(),
+      boundaryChainagesM: stored.boundaryChainagesM ?? [],
+    }
   }, [gravityBasinsDataset, savedDecision])
 
   const plannedSurface = useMemo(() => {
@@ -880,10 +885,19 @@ export function GravitySection({
         confirmed: true,
         liftCount: proposal.lifts.length,
         source: basinSource.trim(),
+        // Пикеты перекачек: по ним лист профиля режется так, чтобы не
+        // пересекать перекачку — за ней начинается другой бассейн со своим
+        // условным горизонтом.
+        boundaryChainagesM: proposal.lifts.map((lift) => lift.chainageM),
         basins: proposal.basins,
         lifts: proposal.lifts,
       }, { liftCount: proposal.lifts.length }, null)
-      setSavedDecision({ confirmed: true, liftCount: proposal.lifts.length, source: basinSource.trim() })
+      setSavedDecision({
+        confirmed: true,
+        liftCount: proposal.lifts.length,
+        source: basinSource.trim(),
+        boundaryChainagesM: proposal.lifts.map((lift) => lift.chainageM),
+      })
     } finally {
       setBasinSaving(false)
     }

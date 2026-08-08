@@ -54,6 +54,7 @@ const SECTION_BY_CODE: Record<string, string> = {
   MANHOLE_SCHEDULE_MISSING: 'Самотёчный расчёт',
   MANHOLE_SCHEDULE_INCOMPLETE: 'Самотёчный расчёт',
   DELIVERABLE_REQUIREMENTS_MISSING: 'Состав проектного комплекта',
+  BASIN_PRESENTATION_UNDECIDED: 'Состав проектного комплекта',
   DELIVERABLE_REQUIREMENTS_UNVERIFIED: 'Состав проектного комплекта',
   DELIVERABLE_SOURCE_MISSING: 'Состав проектного комплекта',
   PROTECTIVE_GRID_DESIGN_MISSING: 'Состав проектного комплекта: защитная сетка',

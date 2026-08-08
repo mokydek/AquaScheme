@@ -49,6 +49,20 @@ export interface WorkingDrawingDeliverableRequirements {
   crossingDetailSheets: boolean
   /** A dedicated protective-grid construction sheet is issued only when explicitly required. */
   protectiveGridDetail: boolean
+  /**
+   * Как показывать профиль, когда трасса разбита на самотёчные бассейны.
+   *
+   * `per_basin` — каждый бассейн отдельным профилем со своим условным
+   * горизонтом; `continuous` — сквозной профиль с отметкой перекачки в месте
+   * разрыва. Оба варианта встречаются в практике, поэтому программа не
+   * выбирает: это вход задания, как и остальные признаки состава.
+   */
+  basinProfileLayout?: 'per_basin' | 'continuous'
+  /**
+   * Где показывать напорную перемычку между бассейнами: на том же листе
+   * профиля или отдельным листом напорной сети.
+   */
+  pressureLinkSheets?: 'same_sheet' | 'separate'
   source: string
   verified: boolean
 }
@@ -331,6 +345,13 @@ export interface WorkingDrawingInput {
     liftCount: number
     /** Чем подтверждено: решение, протокол, ответственный. */
     source: string
+    /**
+     * Пикеты перекачек — границы бассейнов.
+     *
+     * Нужны, чтобы лист профиля не пересекал перекачку: за ней начинается
+     * другой бассейн со своим условным горизонтом.
+     */
+    boundaryChainagesM?: number[]
   } | null
   deliverableRequirements?: WorkingDrawingDeliverableRequirements | null
   protectiveGridDesign?: ProtectiveGridDesign | null
@@ -1178,14 +1199,44 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
     number++
   }
 
+  /**
+   * Представление профиля при разбивке на бассейны — выбор инженера.
+   *
+   * Пока трасса едина, вопроса нет. Как только появилась перекачка, вариантов
+   * два, и оба законны: отдельный профиль на бассейн со своим условным
+   * горизонтом или сквозной с отметкой перекачки. Программа не выбирает —
+   * выбор влияет на состав и нумерацию альбома и приходит из задания.
+   */
+  const basinBoundaries = (input.gravityBasinDecision?.confirmed
+    ? input.gravityBasinDecision.boundaryChainagesM ?? []
+    : []
+  ).filter((value) => Number.isFinite(value) && value > 0)
+  const basinLayout = input.deliverableRequirements?.basinProfileLayout
+  const splitProfileByBasin = basinBoundaries.length > 0 && basinLayout === 'per_basin'
+  const basinPresentationUndecided = basinBoundaries.length > 0
+    && (basinLayout === undefined || input.deliverableRequirements?.pressureLinkSheets === undefined)
+
   const profileSpecs = input.profile
-    ? profileSheetSpecs(input.profile, input.system, opts.profileLengthM)
+    ? profileSheetSpecs(input.profile, input.system, opts.profileLengthM, splitProfileByBasin
+      ? {
+        basinBoundariesM: basinBoundaries,
+        basinLabels: Array.from({ length: basinBoundaries.length + 1 }, (_, index) => `бассейн ${index + 1}`),
+      }
+      : {})
     : []
   const profileItems = profileSpecs.length > 0 ? profileSpecs : [{ title: `Профиль ${input.system === 'storm' ? 'К2' : 'К1'}`, interval: undefined }]
   for (const item of profileItems) {
     const blockers = [...planChecks.blockers]
     const warnings = [...planChecks.warnings]
     if (!input.profile || input.profile.stations.length < 2) blockers.push(issue('PROFILE_DATA_MISSING', 'Не рассчитаны отметки продольного профиля.', 'hydraulics'))
+    if (basinPresentationUndecided) blockers.push(issue(
+      'BASIN_PRESENTATION_UNDECIDED',
+      `Трасса разбита на ${basinBoundaries.length + 1} бассейна: не выбрано, показывать профиль `
+      + 'отдельно по бассейнам или сквозным с отметкой перекачки, и где показывать напорную '
+      + 'перемычку. Оба варианта законны, выбор приходит из задания — раздел «Состав '
+      + 'проектного комплекта».',
+      'route',
+    ))
     if (input.profile && (path.points.length < 2 || path.missingAlignmentPipeIds.length > 0)) {
       const pipeIds = path.missingAlignmentPipeIds.length > 0
         ? path.missingAlignmentPipeIds

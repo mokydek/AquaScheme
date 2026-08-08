@@ -55,6 +55,21 @@ export function DeliverablesSection({
     protectiveGridDesign?: ProtectiveGridDesign
   }
 
+  /**
+   * Представление профиля при разбивке на бассейны и место напорной перемычки.
+   *
+   * Пустая строка означает «не выбрано», и это не то же самое, что вариант по
+   * умолчанию: пока трасса разбита, а выбор не сделан, набор листов держит
+   * стоп-фактор. Оба варианта по каждому вопросу законны, и назначать один из
+   * них молча значило бы принять за инженера решение о составе альбома.
+   */
+  // Начальное значение берётся из набора данных, а не только из эффекта:
+  // эффект выполняется после первой отрисовки, и сохранённый выбор на мгновение
+  // показывался невыбранным. Эффект ниже остаётся — он ловит смену набора.
+  const [basinLayout, setBasinLayout] = useState<'' | 'per_basin' | 'continuous'>(
+    content.deliverableRequirements?.basinProfileLayout ?? '')
+  const [pressureLink, setPressureLink] = useState<'' | 'same_sheet' | 'separate'>(
+    content.deliverableRequirements?.pressureLinkSheets ?? '')
   const [crossingSheets, setCrossingSheets] = useState(false)
   const [gridSheet, setGridSheet] = useState(false)
   const [source, setSource] = useState('')
@@ -65,6 +80,8 @@ export function DeliverablesSection({
 
   useEffect(() => {
     const requirements = content.deliverableRequirements
+    setBasinLayout(requirements?.basinProfileLayout ?? '')
+    setPressureLink(requirements?.pressureLinkSheets ?? '')
     setCrossingSheets(Boolean(requirements?.crossingDetailSheets))
     setGridSheet(Boolean(requirements?.protectiveGridDetail))
     setSource(requirements?.source ?? '')
@@ -91,6 +108,10 @@ export function DeliverablesSection({
           deliverableRequirements: {
             crossingDetailSheets: crossingSheets,
             protectiveGridDetail: gridSheet,
+            // Невыбранное не сохраняется вовсе: ключ со значением '' выглядел
+            // бы как сделанный выбор пустого варианта.
+            ...(basinLayout === '' ? {} : { basinProfileLayout: basinLayout }),
+            ...(pressureLink === '' ? {} : { pressureLinkSheets: pressureLink }),
             source: source.trim(),
             verified,
           },
@@ -167,6 +188,49 @@ export function DeliverablesSection({
           />
         </label>
       </div>
+
+      {/*
+        Два вопроса, на которые у практики два ответа. Спрашиваются здесь, а не
+        в самотёчном расчёте, потому что это признаки СОСТАВА комплекта: от них
+        зависит число листов и их нумерация, а не расчётные величины.
+      */}
+      <div className="form-grid">
+        <label className="field" htmlFor="deliverables-basin-layout">
+          <span className="field-label">{t('project.deliverables.basinLayout')}</span>
+          <select
+            id="deliverables-basin-layout"
+            name="deliverables-basin-layout"
+            className="input"
+            value={basinLayout}
+            onChange={(event) => {
+              setNotice(null)
+              setBasinLayout(event.target.value as '' | 'per_basin' | 'continuous')
+            }}
+          >
+            <option value="">{t('project.deliverables.notChosen')}</option>
+            <option value="per_basin">{t('project.deliverables.basinLayoutPerBasin')}</option>
+            <option value="continuous">{t('project.deliverables.basinLayoutContinuous')}</option>
+          </select>
+        </label>
+        <label className="field" htmlFor="deliverables-pressure-link">
+          <span className="field-label">{t('project.deliverables.pressureLink')}</span>
+          <select
+            id="deliverables-pressure-link"
+            name="deliverables-pressure-link"
+            className="input"
+            value={pressureLink}
+            onChange={(event) => {
+              setNotice(null)
+              setPressureLink(event.target.value as '' | 'same_sheet' | 'separate')
+            }}
+          >
+            <option value="">{t('project.deliverables.notChosen')}</option>
+            <option value="same_sheet">{t('project.deliverables.pressureLinkSame')}</option>
+            <option value="separate">{t('project.deliverables.pressureLinkSeparate')}</option>
+          </select>
+        </label>
+      </div>
+      <p className="hint">{t('project.deliverables.basinHint')}</p>
 
       <label className="field-inline" htmlFor="deliverables-crossing-sheets">
         <input

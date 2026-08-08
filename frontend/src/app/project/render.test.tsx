@@ -42,6 +42,7 @@ const { SourceBundleRunSection } = await import('./SourceBundleRunSection')
 const { StankevichaDemoView } = await import('./StankevichaDemoView')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
+const { DeliverablesSection } = await import('./DeliverablesSection')
 const { maxFilling, auditProjectProvenance } = await import('@aquascheme/engine')
 const { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } = await import('../../shared/stankevichaDemo')
 
@@ -406,5 +407,51 @@ describe('поверхность топосъёмки выбирается яв�
     // Выбрана существующая: подставлять проектную поверхность по умолчанию
     // значило бы считать глубины от того, чего в проекте может не быть.
     expect(markup).toMatch(/<option value="existing"[^>]*selected|value="existing"/)
+  })
+})
+
+describe('представление профиля по бассейнам спрашивается у инженера', () => {
+  it('оба варианта по обоим вопросам предложены, и ни один не выбран заранее', () => {
+    const markup = html(createElement(DeliverablesSection, {
+      projectId: 'p1',
+      constraintsDataset: undefined,
+      onSaved: async () => {},
+    }))
+    for (const key of [
+      'project.deliverables.basinLayoutPerBasin',
+      'project.deliverables.basinLayoutContinuous',
+      'project.deliverables.pressureLinkSame',
+      'project.deliverables.pressureLinkSeparate',
+      'project.deliverables.notChosen',
+    ]) {
+      expect(markup).toContain(key)
+    }
+  })
+
+  it('сохранённый выбор виден на экране', () => {
+    const markup = html(createElement(DeliverablesSection, {
+      projectId: 'p1',
+      constraintsDataset: {
+        id: 'd1',
+        project_id: 'p1',
+        kind: 'route_constraints',
+        file_name: null,
+        meta: null,
+        content: {
+          deliverableRequirements: {
+            crossingDetailSheets: false,
+            protectiveGridDetail: false,
+            basinProfileLayout: 'per_basin',
+            pressureLinkSheets: 'separate',
+            source: 'задание на проектирование',
+            verified: true,
+          },
+        },
+      } as never,
+      onSaved: async () => {},
+    }))
+    // Значение select отражается атрибутом selected на выбранном варианте.
+    expect(markup).toMatch(/value="per_basin"[^>]*selected|selected[^>]*value="per_basin"/)
+    expect(markup).toMatch(/value="separate"[^>]*selected|selected[^>]*value="separate"/)
   })
 })

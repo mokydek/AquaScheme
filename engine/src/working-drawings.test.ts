@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GravityProfile, SewerSchedule } from './norms/gravity'
 import type { TracedNetwork } from './trace'
+import { READINESS_SECTIONS } from './readiness'
 import { buildWorkingDrawingSet, workingDrawingMainPath, workingDrawingPlanPaths } from './working-drawings'
 
 const network: TracedNetwork = {
@@ -809,5 +810,79 @@ describe('разбивка на бассейны как решение инже�
       expect(profileSheet.blockers.map((item) => item.code), JSON.stringify(decision))
         .toContain('GRAVITY_RUN_INFEASIBLE')
     }
+  })
+})
+
+describe('представление профиля при разбивке на бассейны', () => {
+  const withBasins = (
+    deliverables?: Partial<import('./working-drawings').WorkingDrawingDeliverableRequirements>,
+  ) => buildWorkingDrawingSet({
+    ...readyInput(),
+    gravityFeasibility: { feasible: false, shortfallM: 1.4, maxDepthM: 59 },
+    gravityBasinDecision: {
+      confirmed: true,
+      liftCount: 1,
+      source: 'решение ГИП',
+      boundaryChainagesM: [540],
+    },
+    ...(deliverables
+      ? {
+        deliverableRequirements: {
+          crossingDetailSheets: false,
+          protectiveGridDetail: false,
+          source: 'задание на проектирование',
+          verified: true,
+          ...deliverables,
+        },
+      }
+      : {}),
+  })
+
+  it('без выбора стоп-фактор с адресом раздела', () => {
+    const set = withBasins()
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    const blocker = profileSheet.blockers.find((item) => item.code === 'BASIN_PRESENTATION_UNDECIDED')
+    expect(blocker).toBeDefined()
+    expect(blocker!.message).toContain('Состав')
+    // Код обязан быть в карте разделов, иначе стоп-фактор некуда адресовать.
+    expect(READINESS_SECTIONS.BASIN_PRESENTATION_UNDECIDED).toBe('Состав проектного комплекта')
+  })
+
+  it('половина выбора решением не считается', () => {
+    const set = withBasins({ basinProfileLayout: 'per_basin' })
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    expect(profileSheet.blockers.map((item) => item.code)).toContain('BASIN_PRESENTATION_UNDECIDED')
+  })
+
+  it('сквозной профиль: стоп снят, листы режутся по длине как прежде', () => {
+    const set = withBasins({ basinProfileLayout: 'continuous', pressureLinkSheets: 'same_sheet' })
+    const profiles = set.sheets.filter((sheet) => sheet.kind === 'profile')
+    expect(profiles.every((sheet) =>
+      !sheet.blockers.some((item) => item.code === 'BASIN_PRESENTATION_UNDECIDED'))).toBe(true)
+    expect(profiles.every((sheet) => !sheet.title.includes('бассейн'))).toBe(true)
+  })
+
+  it('по бассейнам: лист не пересекает перекачку и назван бассейном', () => {
+    const set = withBasins({ basinProfileLayout: 'per_basin', pressureLinkSheets: 'separate' })
+    const profiles = set.sheets.filter((sheet) => sheet.kind === 'profile')
+    expect(profiles.some((sheet) => sheet.title.includes('бассейн 1'))).toBe(true)
+    expect(profiles.some((sheet) => sheet.title.includes('бассейн 2'))).toBe(true)
+    // Ни один лист не переходит через перекачку на 540 м.
+    expect(profiles.every((sheet) => !sheet.interval
+      || sheet.interval.fromM >= 540 - 1e-6 || sheet.interval.toM <= 540 + 1e-6)).toBe(true)
+  })
+
+  it('состав листов у двух вариантов различается', () => {
+    const continuous = withBasins({ basinProfileLayout: 'continuous', pressureLinkSheets: 'same_sheet' })
+      .sheets.filter((sheet) => sheet.kind === 'profile')
+    const perBasin = withBasins({ basinProfileLayout: 'per_basin', pressureLinkSheets: 'separate' })
+      .sheets.filter((sheet) => sheet.kind === 'profile')
+    expect(perBasin.map((sheet) => sheet.title)).not.toEqual(continuous.map((sheet) => sheet.title))
+  })
+
+  it('без разбивки вопрос не задаётся вовсе', () => {
+    const set = buildWorkingDrawingSet(readyInput())
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    expect(profileSheet.blockers.map((item) => item.code)).not.toContain('BASIN_PRESENTATION_UNDECIDED')
   })
 })

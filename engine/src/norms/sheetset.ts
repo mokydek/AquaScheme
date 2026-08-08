@@ -153,15 +153,72 @@ export interface ProfileSheetSpec {
 }
 
 /** Per-sheet profile fragments named like the professional set. */
+export interface ProfileSheetOptions {
+  /**
+   * Пикеты, на которых лист обязан начаться заново.
+   *
+   * Это границы самотёчных бассейнов: за перекачкой начинается другой бассейн
+   * со своим условным горизонтом, и лист, пересекающий её, показывал бы две
+   * несвязанные линии лотка как одну. Обычная разбивка по длине о бассейнах не
+   * знает и режет где придётся.
+   */
+  basinBoundariesM?: number[]
+  /** Подписи бассейнов для заголовка листа, по порядку. */
+  basinLabels?: string[]
+}
+
 export function profileSheetSpecs(
   profile: GravityProfile,
   system: 'sewer' | 'storm' = 'storm',
   targetPerSheetM = 850,
+  options: ProfileSheetOptions = {},
 ): ProfileSheetSpec[] {
   const mark = system === 'storm' ? 'К2' : 'К1'
-  return paginateByStations(profile.stations.map((s) => s.chainageM), targetPerSheetM).map((interval) => ({
-    title: `Профиль ${mark} ${interval.label}`,
-    interval,
-    profile: sliceProfile(profile, interval.fromM, interval.toM),
-  }))
+  const stations = profile.stations.map((s) => s.chainageM)
+  /**
+   * Границы притягиваются к ближайшей станции профиля.
+   *
+   * Перекачка стоит в колодце, а не между колодцами, поэтому граница бассейна
+   * — это станция. Пикет, не совпавший ни с одной, означает расхождение
+   * данных; без притягивания такой бассейн молча терялся бы (в интервале
+   * оставалось бы меньше двух станций), и лист просто не появлялся.
+   */
+  const snap = (value: number) => stations.length === 0
+    ? value
+    : stations.reduce((best, station) =>
+      Math.abs(station - value) < Math.abs(best - value) ? station : best, stations[0])
+  const boundaries = [...new Set((options.basinBoundariesM ?? [])
+    .filter((value) => Number.isFinite(value))
+    .map(snap)
+    .filter((value) => value > stations[0] + 1e-9 && value < stations[stations.length - 1] - 1e-9))]
+    .sort((a, b) => a - b)
+
+  if (boundaries.length === 0) {
+    return paginateByStations(stations, targetPerSheetM).map((interval) => ({
+      title: `Профиль ${mark} ${interval.label}`,
+      interval,
+      profile: sliceProfile(profile, interval.fromM, interval.toM),
+    }))
+  }
+
+  // Каждый бассейн разбивается на листы отдельно, поэтому граница всегда
+  // приходится на стык листов, а не на середину.
+  const edges = [...new Set([stations[0], ...boundaries, stations[stations.length - 1]])]
+    .sort((a, b) => a - b)
+  const specs: ProfileSheetSpec[] = []
+  for (let index = 1; index < edges.length; index++) {
+    const fromM = edges[index - 1]
+    const toM = edges[index]
+    const inside = stations.filter((value) => value >= fromM - 1e-9 && value <= toM + 1e-9)
+    if (inside.length < 2) continue
+    const label = options.basinLabels?.[index - 1]
+    for (const interval of paginateByStations(inside, targetPerSheetM)) {
+      specs.push({
+        title: `Профиль ${mark}${label ? ` · ${label}` : ''} ${interval.label}`,
+        interval,
+        profile: sliceProfile(profile, interval.fromM, interval.toM),
+      })
+    }
+  }
+  return specs
 }
