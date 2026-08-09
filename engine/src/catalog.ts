@@ -18,6 +18,29 @@ export interface CatalogItem {
   itemType: CatalogItemType
   material?: string
   standard?: string
+  /**
+   * Код позиции в справочнике-источнике (например, АГСК-3 «241-702-0912»).
+   *
+   * Позиция каталога — это данные с источником, а не результат расчёта, и
+   * источник обязан быть назван поимённо: по коду позицию можно найти в
+   * официальном справочнике и сверить.
+   */
+  code?: string
+  /** Страница справочника, с которой позиция снята. */
+  sourcePage?: number
+  /**
+   * Внутренний диаметр, мм, названный самим справочником.
+   *
+   * Существует потому, что `dn` — величина условная и внутреннему диаметру
+   * равна не всегда: у полимерной трубы DN близок к наружному, у стальной — ни
+   * к тому, ни к другому. Выводить внутренний диаметр из `dn` «по умолчанию»
+   * значило бы подставить допущение вместо данных.
+   *
+   * Заполняется там, где источник говорит это прямо: АГСК-3 у железобетонных
+   * безнапорных труб ГОСТ 6482 пишет «DN/ID 2000» — то есть условный проход и
+   * внутренний диаметр совпадают по самому документу.
+   */
+  internalMm?: number
   dn?: number
   outerMm?: number
   wallMm?: number
@@ -88,6 +111,9 @@ const HEADER_FIELDS: Array<{ field: keyof CatalogItem | 'type'; aliases: string[
   { field: 'type', aliases: ['тип', 'type'] },
   { field: 'material', aliases: ['материал', 'material'] },
   { field: 'standard', aliases: ['стандарт', 'standard'] },
+  { field: 'code', aliases: ['код', 'код позиции', 'code'] },
+  { field: 'sourcePage', aliases: ['страница', 'страница-источник', 'page', 'source_page'] },
+  { field: 'internalMm', aliases: ['id', 'внутренний диаметр, мм', 'внутренний диаметр', 'internal', 'internal_mm'] },
   { field: 'dn', aliases: ['dn', 'ду'] },
   { field: 'outerMm', aliases: ['наружный диаметр, мм', 'наружный диаметр', 'outer', 'outer_mm'] },
   { field: 'wallMm', aliases: ['толщина стенки, мм', 'толщина стенки', 'wall', 'wall_mm'] },
@@ -145,7 +171,7 @@ export function parseCatalogRows(rows: Array<Record<string, unknown>>): CatalogP
       return
     }
 
-    const numberFields = ['dn', 'outerMm', 'wallMm', 'sdr', 'pn', 'roughnessMm', 'price'] as const
+    const numberFields = ['dn', 'outerMm', 'wallMm', 'sdr', 'pn', 'roughnessMm', 'price', 'sourcePage', 'internalMm'] as const
     const numbers: Partial<Record<(typeof numberFields)[number], number>> = {}
     let badNumber = false
     for (const field of numberFields) {
@@ -165,6 +191,7 @@ export function parseCatalogRows(rows: Array<Record<string, unknown>>): CatalogP
       itemType,
       material: String(byField.get('material') ?? '').trim() || undefined,
       standard: String(byField.get('standard') ?? '').trim() || undefined,
+      code: String(byField.get('code') ?? '').trim() || undefined,
       ...numbers,
     }
 
@@ -181,6 +208,8 @@ export function parseCatalogRows(rows: Array<Record<string, unknown>>): CatalogP
 
 /** Internal diameter of a pipe item, mm, from wall or SDR. */
 export function internalDiameterMm(item: CatalogItem): number | null {
+  // Названный источником внутренний диаметр сильнее любого вычисления.
+  if (item.internalMm && item.internalMm > 0) return item.internalMm
   if (item.outerMm && item.wallMm && item.wallMm > 0) {
     return Math.round((item.outerMm - 2 * item.wallMm) * 10) / 10
   }

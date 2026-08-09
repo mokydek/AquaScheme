@@ -71,3 +71,47 @@ describe('toPipeSizeOptions', () => {
     expect(toPipeSizeOptions([{ itemType: 'valve', dn: 100 }])).toBeNull()
   })
 })
+
+describe('позиция каталога несёт свой источник', () => {
+  it('код справочника и страница доходят до позиции', () => {
+    // Позиция каталога — данные с источником, а не результат расчёта: по коду
+    // её можно найти в официальном справочнике и сверить глазами.
+    const parsed = parseCatalogRows([{
+      'Тип': 'труба',
+      'Материал': 'железобетон',
+      'Стандарт': 'ГОСТ 6482-2011',
+      'Код': '241-702-0912',
+      'Страница': '1706',
+      'DN': '2000',
+      'ID': '2000',
+    }])
+    expect(parsed.issues).toEqual([])
+    expect(parsed.items[0]).toMatchObject({
+      itemType: 'pipe',
+      standard: 'ГОСТ 6482-2011',
+      code: '241-702-0912',
+      sourcePage: 1706,
+      dn: 2000,
+      internalMm: 2000,
+    })
+  })
+
+  it('позиция без кода принимается: не всякий каталог его несёт', () => {
+    const parsed = parseCatalogRows([{ 'Тип': 'труба', 'DN': '450', 'ID': '450' }])
+    expect(parsed.items[0].code).toBeUndefined()
+    expect(parsed.items[0].sourcePage).toBeUndefined()
+  })
+
+  it('условный проход сам по себе внутренним диаметром не считается', () => {
+    // DN — величина условная: у полимерной трубы он близок к наружному
+    // диаметру, у стальной — ни к тому, ни к другому. Без явного ID подбирать
+    // не по чему, и строка получает замечание, а не выдуманный диаметр.
+    const parsed = parseCatalogRows([{ 'Тип': 'труба', 'DN': '450' }])
+    expect(parsed.issues.map((issue) => issue.code)).toContain('noDiameter')
+  })
+
+  it('нечисловая страница — замечание строки, а не тихий пропуск', () => {
+    const parsed = parseCatalogRows([{ 'Тип': 'труба', 'DN': '450', 'ID': '450', 'Страница': 'см. приложение' }])
+    expect(parsed.issues.map((issue) => issue.code)).toContain('badNumber')
+  })
+})
