@@ -822,6 +822,24 @@ const PROFILE_VERTICAL_SCALE_DENOMINATOR = 100
 const PROFILE_VERTICAL_ALLOWANCE_MM = 190
 
 /**
+ * Доля высоты листа, отведённая под поле профиля.
+ *
+ * Отрисовка кладёт профиль в полосу между фиксированными краями (боковик,
+ * подписи, штамп) и добавляет по метру запаса сверху и снизу. Полоса занимает
+ * 295 из 500 единиц холста — 59% высоты листа. Считать высоту листа по одному
+ * лишь перепаду в масштабе 1:100 значит игнорировать это: при перепаде свыше
+ * ~22 м профиль переставал помещаться, и сборка альбома падала с ошибкой
+ * «диапазон отметок не помещается по высоте». На настоящем объекте это
+ * случилось на 34-м листе из 54.
+ *
+ * Число взято из самой отрисовки, а не подобрано: см. `profileSvg`.
+ */
+const PROFILE_BAND_SHARE = 295 / 500
+
+/** Запас отметок, который отрисовка добавляет сверху и снизу, м. */
+const PROFILE_ELEVATION_MARGIN_M = 2
+
+/**
  * Проверки, общие для всех плановых листов.
  *
  * Здесь был мёртвый параметр `missingAlignmentPipeIds` и стоп-фактор
@@ -933,22 +951,31 @@ function buildAlbumManifest(
     // room for the left band, sheet marks, notes and the title block.
     const intervalLengthM = Math.max(0, sheet.interval.toM - sheet.interval.fromM)
     const scaleDenominator = 500
-    // Generated allowances cover the page margins, plan/profile side bands,
-    // annotations and the title block. They are layout policy values derived
-    // from the renderer, not dimensions copied from a reference album.
-    const fixedAllowanceMm = sheet.kind === 'plan' ? 220 : 300
-    const rawWidthMm = fixedAllowanceMm + intervalLengthM * 1000 / scaleDenominator
-    const widthMm = Math.min(5000, Math.max(420, Math.ceil(rawWidthMm / 10) * 10))
-    // Высота считается по тому же правилу, что и ширина: перепад отметок в
-    // вертикальном масштабе 1:100 плюс место под боковик, подписи и штамп.
-    // Прежде она была жёсткой, и глубокий профиль обрушивал сборку альбома.
-    // Округление до шага 10 мм применяется только к ПОСЧИТАННОЙ высоте: иначе
-    // оно превращало 297 в 300 и там, где высоту считать не из чего.
+
+    // Высота считается ПЕРВОЙ: у профиля от неё зависят и боковые поля.
+    // Перепад отметок в вертикальном масштабе 1:100, делённый на долю высоты,
+    // которую отрисовка отводит под поле профиля, плюс место под боковик,
+    // подписи и штамп. Округление до шага 10 мм применяется только к
+    // ПОСЧИТАННОЙ высоте: иначе оно превращало 297 в 300 и там, где высоту
+    // считать не из чего.
     const spanM = profileElevationSpanM(sheet, profiles)
     const heightMm = spanM === null
       ? 297
       : Math.min(2000, Math.max(297, Math.ceil(
-        (PROFILE_VERTICAL_ALLOWANCE_MM + spanM * 1000 / PROFILE_VERTICAL_SCALE_DENOMINATOR) / 10) * 10))
+        (PROFILE_VERTICAL_ALLOWANCE_MM
+          + (spanM + PROFILE_ELEVATION_MARGIN_M) * 1000 / PROFILE_VERTICAL_SCALE_DENOMINATOR
+            / PROFILE_BAND_SHARE) / 10) * 10))
+
+    // Ширина: длина интервала в масштабе 1:500 плюс постоянный запас под поля,
+    // выноски и штамп.
+    //
+    // ИЗВЕСТНОЕ РАСХОЖДЕНИЕ, не закрытое здесь: отрисовка выводит ширину
+    // холста из соотношения сторон СОДЕРЖИМОГО, а не из размера листа, и
+    // согласовать её формулой в манифесте нельзя. На длинном объекте это
+    // роняет сборку альбома на профильных листах. Записано в BACKLOG.
+    const fixedAllowanceMm = sheet.kind === 'plan' ? 220 : 300
+    const rawWidthMm = fixedAllowanceMm + intervalLengthM * 1000 / scaleDenominator
+    const widthMm = Math.min(5000, Math.max(420, Math.ceil(rawWidthMm / 10) * 10))
     return {
       format: widthMm > 420 || heightMm > 297 ? 'custom' : 'A3',
       widthMm,

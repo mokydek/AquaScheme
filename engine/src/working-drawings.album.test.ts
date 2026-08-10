@@ -334,8 +334,13 @@ describe('высота листа профиля считается, а не н�
     const [shallow] = sheetHeights(12)
     const [deep] = sheetHeights(24)
     expect(deep).toBeGreaterThan(shallow)
-    // Прирост соответствует масштабу 1:100: 12 м перепада — около 120 мм.
-    expect(deep - shallow).toBeGreaterThanOrEqual(110)
-    expect(deep - shallow).toBeLessThanOrEqual(130)
+    // Прирост больше, чем 120 мм «в лоб» по масштабу 1:100, и это правильно:
+    // отрисовка кладёт профиль в полосу, занимающую 59% высоты листа, поэтому
+    // лист растёт быстрее самого чертежа. 12 м перепада — около 12/0,59 = 203
+    // мм. Пока высота считалась «в лоб», профиль с перепадом свыше ~22 м не
+    // помещался, и сборка альбома падала; на настоящем объекте — на 34-м листе
+    // из 54.
+    expect(deep - shallow).toBeGreaterThanOrEqual(190)
+    expect(deep - shallow).toBeLessThanOrEqual(215)
   })
 })
