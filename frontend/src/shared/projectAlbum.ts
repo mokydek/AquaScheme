@@ -980,7 +980,28 @@ function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet, 
   const viewport = drawingViewport(format)
   if (sheet.kind === 'plan') return [{ svg: planSvg(input, sheet, viewport.canvasWidth, viewport.svgUnitsPerMm), fit: [viewport.fitWidth, viewport.fitHeight] }]
   if (sheet.kind === 'network_plan') return [{ svg: networkPlanSvg(input, sheet), fit: [viewport.fitWidth, viewport.fitHeight] }]
-  if (sheet.kind === 'profile') return [{ svg: profileSvg(input, sheet, viewport.canvasWidth, viewport.svgUnitsPerMm), fit: [viewport.fitWidth, viewport.fitHeight] }]
+  if (sheet.kind === 'profile') {
+    // Лист профиля без интервала — это лист, включённый в состав комплекта, для
+    // которого ещё нет данных: например, профиль существующего участка
+    // примыкания до загрузки нивелировки. Рисовать нечего, но и обрушивать
+    // сборку всего альбома одним незаполненным листом нельзя — печатается лист,
+    // честно называющий, чего в нём нет. То же правило, что у плана без
+    // подосновы и у защитной сетки без конструкции.
+    if (!sheet.interval) {
+      return [
+        {
+          text: 'ЛИСТ НЕ ЗАПОЛНЕН: данных для профиля нет.',
+          fontSize: 12, bold: true, color: '#8a4c00', margin: [0, 0, 0, 6],
+        },
+        {
+          text: sheet.blockers[0]?.message
+            ?? 'Профиль строится по станциям с отметками; станции не заданы.',
+          fontSize: 9, margin: [0, 0, 0, 8],
+        },
+      ]
+    }
+    return [{ svg: profileSvg(input, sheet, viewport.canvasWidth, viewport.svgUnitsPerMm), fit: [viewport.fitWidth, viewport.fitHeight] }]
+  }
   if (sheet.kind === 'material_table') {
     const range = sheet.dataRange ?? { start: 0, end: input.schedule.manholes.length, total: input.schedule.manholes.length }
     const rows = input.schedule.manholes.slice(range.start, range.end)
@@ -994,7 +1015,24 @@ function drawingSheetBody(input: ProjectAlbumInput, sheet: WorkingDrawingSheet, 
     if (sheet.variant === 'protective_grid') {
       const design = input.drawingSet.protectiveGridDesign
       if (!design || !design.verified) {
-        throw new Error(`Лист ${sheet.sheetNumber}: отсутствует подтверждённая конструкция защитной сетки.`)
+        // Лист входит в состав комплекта, но чертить нечего: конструкция
+        // изделия не подтверждена. Раньше здесь бросалось исключение, и один
+        // незаполненный лист обрушивал сборку ВСЕГО альбома — при том что
+        // прочие незавершённые листы выпускаются со своим стоп-фактором. Тот
+        // же приём, что у плана без подосновы: лист печатается и честно
+        // говорит, чего в нём нет.
+        return [
+          {
+            text: 'ЛИСТ НЕ ЗАПОЛНЕН: конструкция защитной сетки не подтверждена.',
+            fontSize: 12, bold: true, color: '#8a4c00', margin: [0, 0, 0, 6],
+          },
+          {
+            text: 'Габариты, шаг прутка и количество задаются в составе проектного комплекта '
+              + 'и берутся из каталога конструкций. Пока их нет, чертить нечего, и лист '
+              + 'остаётся в ведомости незаполненным — он не выдаётся за готовый.',
+            fontSize: 9, margin: [0, 0, 0, 8],
+          },
+        ]
       }
       const drawingWidth = Math.min(650, 320 * design.overallWidthMm / Math.max(design.overallHeightMm, 1))
       const drawingHeight = Math.min(320, 650 * design.overallHeightMm / Math.max(design.overallWidthMm, 1))
