@@ -131,7 +131,13 @@ describe('project working-drawing album', () => {
     expect((profilePoints.at(-1)![1] - profilePoints[0][1]) / unitsPerMm(profileSvg)).toBeCloseTo((97 - 95) * 10, 1)
 
     expect(set.manifest.pages.find((page) => page.sheetId === planSheet.id)?.pageFormat.widthMm).toBe(1560)
-    expect(set.manifest.pages.find((page) => page.sheetId === profileSheet.id)?.pageFormat.widthMm).toBe(1640)
+    // Ширина профильного листа: 2·670 м в масштабе 1:500 плюс боковые поля.
+    // Поля пропорциональны ВЫСОТЕ листа (отрисовка задаёт их в единицах холста,
+    // а холст всегда 500 единиц высотой), а не постоянны: 0,44·297 + 3,2 ≈ 134
+    // мм. Прежде здесь стояло 1640 — постоянный запас 300 мм, из-за которого
+    // высокий лист переставал вмещать профиль по ширине и сборка альбома
+    // падала на 38-м листе из 54 на настоящем объекте.
+    expect(set.manifest.pages.find((page) => page.sheetId === profileSheet.id)?.pageFormat.widthMm).toBe(1480)
   })
 
   it('labels an axis-only plan as incomplete instead of presenting it as a finished drawing', () => {

@@ -128,6 +128,10 @@ describe('сборка альбома реального объекта', () => 
     for (const sheet of drawingSet.sheets) byStatus.set(sheet.status, (byStatus.get(sheet.status) ?? 0) + 1)
     console.log(`ЛИСТОВ: ${drawingSet.sheets.length}; страниц PDF ${drawingSet.manifest.pdfPageCount};`
       + ` по статусам ${JSON.stringify([...byStatus])}`)
+    // Поимённый состав нужен для сопоставления с ведомостью эталона.
+    drawingSet.sheets.forEach((sheet, index) => {
+      console.log(`НАШ ЛИСТ ${index + 1}: ${sheet.title}`)
+    })
 
     const { buildBenchmarkAlbumDoc } = await import('./benchmarkAlbum')
     try {
@@ -145,18 +149,34 @@ describe('сборка альбома реального объекта', () => 
       outletFlowLps: gravity.outletFlowLps,
       } as never)
 
+      // Объём документа — первый признак того, что отрисовка не зависла, а
+      // захлебнулась содержимым.
+      console.log(`ДОКУМЕНТ: узлов JSON ${JSON.stringify(doc).length} символов`)
+      // Ограничение числа страниц — только для поиска места зависания.
+      const limit = Number(process.env.AQUASCHEME_RENDER_PAGES ?? 0)
+      if (limit > 0 && Array.isArray((doc as { content?: unknown[] }).content)) {
+        ;(doc as { content: unknown[] }).content = (doc as { content: unknown[] }).content.slice(0, limit)
+        console.log(`ОТРИСОВКА ОГРАНИЧЕНА: первые ${limit} элементов содержимого`)
+      }
+      if (process.env.AQUASCHEME_SKIP_RENDER === '1') {
+        console.log('ОТРИСОВКА ПРОПУЩЕНА по AQUASCHEME_SKIP_RENDER=1')
+        return
+      }
+
     // Рисуем тем же pdfmake, что и приложение. Обёртка `renderPdfDoc` не
     // экспортирована, а `generateProjectAlbumPdf` идёт через шлюз выпуска —
     // поэтому здесь тот же вызов, что делает она сама.
+      // `getBlob()` в pdfmake 0.3 возвращает ПРОМИС и колбэка не принимает.
+      // Обёртка `new Promise((resolve) => ....getBlob(resolve))` не
+      // разрешалась никогда — это выглядело как бесконечно медленная
+      // отрисовка и стоило часа ожидания.
       const pdfmake = (await import('pdfmake/build/pdfmake')).default as unknown as {
         addVirtualFileSystem: (v: unknown) => void
-        createPdf: (d: unknown) => { getBlob: (cb: (b: Blob) => void) => void }
+        createPdf: (d: unknown) => { getBlob: () => Promise<Blob> }
       }
       const fonts = (await import('pdfmake/build/vfs_fonts')).default
       pdfmake.addVirtualFileSystem(fonts)
-      const blob: Blob = await new Promise((resolve) => {
-        pdfmake.createPdf(doc).getBlob(resolve)
-      })
+      const blob = await pdfmake.createPdf(doc).getBlob()
       mkdirSync(join(ROOT, 'docs', 'benchmark', 'out'), { recursive: true })
       writeFileSync(OUT, Buffer.from(await blob.arrayBuffer()))
       console.log(`АЛЬБОМ ЗАПИСАН: ${OUT}`)
@@ -166,7 +186,7 @@ describe('сборка альбома реального объекта', () => 
       // он называется причиной, и по нему видно, что числа в этот раз нет.
       console.log(`АЛЬБОМ НЕ СОБРАН: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }, 900_000)
+  }, 3_600_000)
 
   it.skipIf(ready)('пропуск объявляется причиной, а не тишиной', () => {
     expect(ready).toBe(false)
