@@ -86,6 +86,17 @@ function pdfPageSize(format: AlbumPageFormat): string | { width: number; height:
   return { width: format.widthMm * PDF_POINTS_PER_MM, height: format.heightMm * PDF_POINTS_PER_MM }
 }
 
+/**
+ * Ориентация страницы — по объявленным сторонам листа.
+ *
+ * pdfmake нормализует явно заданный размер под объявленную ориентацию: у
+ * «landscape» он делает ширину не меньше высоты. Постоянный «landscape»
+ * поэтому переворачивал листы, которые по расчёту выше своей ширины.
+ */
+function pdfPageOrientation(format: AlbumPageFormat): 'portrait' | 'landscape' {
+  return format.heightMm > format.widthMm ? 'portrait' : 'landscape'
+}
+
 function manifestPageForSheet(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): WorkingDrawingAlbumPage {
   const page = input.drawingSet.manifest.pages.find((item) => item.sheetId === sheet.id)
   if (!page) throw new Error(`Лист ${sheet.id} отсутствует в манифесте альбома.`)
@@ -890,7 +901,7 @@ function sheetPage(sheet: WorkingDrawingSheet, body: PdfNode[], format: AlbumPag
       ],
     },
     pageSize: pdfPageSize(format),
-    pageOrientation: 'landscape',
+    pageOrientation: pdfPageOrientation(format),
     pageMargins: PAGE_MARGINS,
   }
 }
@@ -901,7 +912,7 @@ function servicePage(page: WorkingDrawingAlbumPage, section: PdfNode): PdfNode {
   return {
     section: normalizedSection,
     pageSize: pdfPageSize(page.pageFormat),
-    pageOrientation: 'landscape',
+    pageOrientation: pdfPageOrientation(page.pageFormat),
     pageMargins: PAGE_MARGINS,
   }
 }
@@ -1087,7 +1098,7 @@ export function buildProjectSheetDoc(input: ProjectAlbumInput, sheetId: string):
   const page = manifestPageForSheet(input, sheet)
   return {
     pageSize: pdfPageSize(page.pageFormat),
-    pageOrientation: 'landscape',
+    pageOrientation: pdfPageOrientation(page.pageFormat),
     pageMargins: PAGE_MARGINS,
     defaultStyle: { font: 'Roboto', fontSize: 9, color: '#111' },
     content: [{

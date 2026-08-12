@@ -58,6 +58,7 @@ const SECTION_BY_CODE: Record<string, string> = {
   DELIVERABLE_REQUIREMENTS_UNVERIFIED: 'Состав проектного комплекта',
   DELIVERABLE_SOURCE_MISSING: 'Состав проектного комплекта',
   PROTECTIVE_GRID_DESIGN_MISSING: 'Состав проектного комплекта: защитная сетка',
+  EXISTING_SECTION_PROFILE_MISSING: 'Топосъёмка: существующий участок примыкания',
   PROTECTIVE_GRID_DESIGN_INCOMPLETE: 'Состав проектного комплекта: защитная сетка',
   PROTECTIVE_GRID_DESIGN_UNVERIFIED: 'Состав проектного комплекта: защитная сетка',
   CROSSING_CARDS_MISSING: 'Карточки пересечений',

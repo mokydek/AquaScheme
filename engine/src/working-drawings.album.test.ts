@@ -344,3 +344,52 @@ describe('высота листа профиля считается, а не н�
     expect(deep - shallow).toBeLessThanOrEqual(215)
   })
 })
+
+describe('профиль существующего участка: состав и готовность — разные вещи', () => {
+  const withRequirement = (existingSectionProfile: boolean, stations: unknown[] = []) => {
+    const input = generatedLinearProject()
+    return buildWorkingDrawingSet({
+      ...input,
+      deliverableRequirements: {
+        crossingDetailSheets: false,
+        protectiveGridDetail: false,
+        existingSectionProfile,
+        source: 'задание на проектирование',
+        verified: true,
+      },
+      existingSectionProfile: stations.length > 0 ? { stations } : null,
+    })
+  }
+  const existingSheets = (set: ReturnType<typeof buildWorkingDrawingSet>) =>
+    set.sheets.filter((sheet) => sheet.variant === 'existing_section_profile')
+
+  it('признак состава не задан — листа нет', () => {
+    expect(existingSheets(withRequirement(false))).toHaveLength(0)
+  })
+
+  it('признак задан, данных нет — лист В РЕЕСТРЕ со стоп-фактором', () => {
+    // Пустое место в ведомости честнее отсутствующего листа, о котором никто
+    // не вспомнит: состав комплекта и готовность листа — разные вещи.
+    const sheets = existingSheets(withRequirement(true))
+    expect(sheets).toHaveLength(1)
+    expect(sheets[0].blockers.map((issue) => issue.code)).toContain('EXISTING_SECTION_PROFILE_MISSING')
+    expect(sheets[0].status).toBe('BLOCKED')
+  })
+
+  it('стоп-фактор называет, чего именно не хватает', () => {
+    const [sheet] = existingSheets(withRequirement(true))
+    const message = sheet.blockers.find((issue) => issue.code === 'EXISTING_SECTION_PROFILE_MISSING')?.message ?? ''
+    expect(message).toContain('отметки лотков')
+  })
+
+  it('данные есть — стоп-фактор снят', () => {
+    const [sheet] = existingSheets(withRequirement(true, [{ chainageM: 0 }, { chainageM: 40 }]))
+    expect(sheet.blockers.map((issue) => issue.code)).not.toContain('EXISTING_SECTION_PROFILE_MISSING')
+  })
+
+  it('лист попадает и в манифест, и в счёт страниц', () => {
+    const set = withRequirement(true)
+    expect(set.manifest.pdfPageCount).toBe(set.sheets.length + set.manifest.servicePageCount)
+    expect(set.manifest.pages.some((page) => page.title.includes('примыкания'))).toBe(true)
+  })
+})

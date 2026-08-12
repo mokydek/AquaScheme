@@ -23,6 +23,8 @@ export type WorkingDrawingVariant =
   | 'network_plan'
   | 'main_profile'
   | 'branch_profile'
+  /** Профиль существующего участка примыкания: не расчёт, а нивелировка. */
+  | 'existing_section_profile'
   | 'material_schedule'
   | 'crossing_detail'
   | 'protective_grid'
@@ -49,6 +51,15 @@ export interface WorkingDrawingDeliverableRequirements {
   crossingDetailSheets: boolean
   /** A dedicated protective-grid construction sheet is issued only when explicitly required. */
   protectiveGridDetail: boolean
+  /**
+   * Продольный профиль существующего участка, к которому примыкает трасса.
+   *
+   * Отдельное семейство листов: существующий коллектор — не проектируемая
+   * сеть, его профиль строится по нивелировке и марках съёмки, а не по
+   * расчёту. Признак состава, потому что примыкание к существующей сети есть
+   * не у всякого объекта.
+   */
+  existingSectionProfile?: boolean
   /**
    * Как показывать профиль, когда трасса разбита на самотёчные бассейны.
    *
@@ -171,7 +182,7 @@ export interface WorkingDrawingAlbumPage {
     format: 'A3' | 'custom'
     widthMm: number
     heightMm: number
-    orientation: 'landscape'
+    orientation: 'landscape' | 'portrait'
     rotationDeg: 0 | 270
     /** The exporter may replace this default only from an explicit layout policy, never from reference geometry. */
     source: 'generated_layout_policy' | 'explicit_layout_policy'
@@ -354,6 +365,12 @@ export interface WorkingDrawingInput {
     boundaryChainagesM?: number[]
   } | null
   deliverableRequirements?: WorkingDrawingDeliverableRequirements | null
+  /**
+   * Профиль существующего участка примыкания: станции с отметками лотка.
+   *
+   * Отсутствует — лист всё равно попадает в реестр, но со стоп-фактором.
+   */
+  existingSectionProfile?: { title?: string; stations?: unknown[] } | null
   protectiveGridDesign?: ProtectiveGridDesign | null
   manholeCatalogReady?: boolean
   normsVerified?: boolean
@@ -999,7 +1016,15 @@ function buildAlbumManifest(
       format: widthMm > 420 || heightMm > 297 ? 'custom' : 'A3',
       widthMm,
       heightMm,
-      orientation: 'landscape',
+      // Ориентация — по фактическим сторонам листа, а не по умолчанию.
+      //
+      // Глубокий профиль на коротком интервале выходит выше своей ширины. Пока
+      // манифест объявлял такому листу «landscape», отрисовка меняла стороны
+      // местами (pdfmake нормализует размер под объявленную ориентацию),
+      // содержимое переставало помещаться и лист разливался на вторую
+      // страницу. На настоящем объекте так расходились два листа, и в файле
+      // получалось 59 страниц против 57 в манифесте.
+      orientation: heightMm > widthMm ? 'portrait' : 'landscape',
       rotationDeg: 0,
       source: 'generated_layout_policy',
     }
@@ -1660,6 +1685,44 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       requirements: ['deliverables', 'protective_grid', 'norms'],
       sources,
       inputHash: sheetHash(inputHash, 'detail', number),
+    })
+    number++
+  }
+
+  if (input.deliverableRequirements?.existingSectionProfile) {
+    // Лист входит в состав по заданию, даже когда строить его пока не из чего:
+    // состав комплекта и готовность листа — разные вещи. Пустое место в
+    // ведомости честнее отсутствующего листа, о котором никто не вспомнит.
+    const blockers: WorkingDrawingIssue[] = []
+    const warnings: WorkingDrawingIssue[] = []
+    const stations = input.existingSectionProfile?.stations ?? []
+    if (stations.length < 2) {
+      blockers.push(issue(
+        'EXISTING_SECTION_PROFILE_MISSING',
+        'Данные существующего участка не загружены: профиль примыкания строить не из чего. '
+          + 'Нужны отметки лотков существующих колодцев из нивелировки или съёмки.',
+        'topography',
+      ))
+    }
+    const sources = [
+      makeSource('deliverables', true, input.deliverableRequirements?.verified === true),
+      makeSource('topography', stations.length >= 2, stations.length >= 2, undefined,
+        `${stations.length} станций существующего участка`),
+    ]
+    sheets.push({
+      id: `existing-profile-${number}`,
+      sequence: sheets.length + 1,
+      documentSet: 'working_drawings',
+      sheetNumber: number,
+      title: input.existingSectionProfile?.title ?? 'Профиль на участке примыкания к существующей сети',
+      kind: 'profile',
+      variant: 'existing_section_profile',
+      status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+      blockers,
+      warnings,
+      requirements: ['deliverables', 'topography'],
+      sources,
+      inputHash: sheetHash(inputHash, 'profile', number),
     })
     number++
   }

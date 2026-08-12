@@ -12,6 +12,7 @@ import {
 } from '@aquascheme/engine'
 // Разбор DXF живёт отдельным подпутём — так его берёт и само приложение.
 import { classifyDxfConstraints, parseDxfNetwork } from '@aquascheme/engine/dxfread'
+import { crossingsFromSurvey } from '@aquascheme/engine'
 
 /**
  * Сборка альбома реального объекта для ИЗМЕРЕНИЯ сходства с эталоном.
@@ -103,6 +104,12 @@ describe('сборка альбома реального объекта', () => 
       + ` профиль ${gravity.profile === null ? 'НЕ построен' : 'построен'},`
       + ` непокрытых узлов ${gravity.surfaceGapNodeIds.length}`)
 
+    // Пересечения — из той же съёмки: карточки нужны и составу, и листам.
+    const crossings = (crossingsFromSurvey as unknown as (a: never, c: never, d: never) => unknown[])(
+      axis.points as never, constraints as never, data as never,
+    )
+    console.log(`ПЕРЕСЕЧЕНИЙ ИЗ СЪЁМКИ: ${crossings.length}`)
+
     const schedule = gravity.profile === null ? null
       : (buildSewerSchedule as unknown as (r: never, o: never) => never)(gravity as never, {} as never)
 
@@ -122,6 +129,19 @@ describe('сборка альбома реального объекта', () => 
       unresolvedLayerCount: 0,
       catalogReady: series.length > 0,
       hydraulicsReady: gravity.profile !== null,
+      // Состав комплекта — по ведомости эталона (ETALON-SHEETS.md). Состав
+      // сверять с эталоном правилами проекта разрешено; величины — нет.
+      deliverableRequirements: {
+        // Отдельных листов пересечений эталон не выпускает — пересечения у него
+        // показаны на планах. Состав по ведомости эталона, не «на всякий случай».
+        crossingDetailSheets: false,
+        protectiveGridDetail: true,
+        existingSectionProfile: true,
+        source: 'Ведомость рабочих чертежей эталона 2024-51-НК',
+        verified: true,
+      },
+      crossings,
+      utilityFeatureCount: (constraints.utilityLines ?? []).length,
     } as never)
 
     const byStatus = new Map<string, number>()
@@ -180,6 +200,34 @@ describe('сборка альбома реального объекта', () => 
       mkdirSync(join(ROOT, 'docs', 'benchmark', 'out'), { recursive: true })
       writeFileSync(OUT, Buffer.from(await blob.arrayBuffer()))
       console.log(`АЛЬБОМ ЗАПИСАН: ${OUT}`)
+
+      // Манифест обязан совпадать с фактом. Расхождение значит, что альбом
+      // содержит страницы, о которых реестр не знает: их не пронумеровать, не
+      // сослаться на них и не сверить.
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+      const reopened = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(OUT)) }).promise
+      const manifest = (drawingSet as unknown as {
+        manifest: { pdfPageCount: number; pages: Array<{ pageFormat: { widthMm: number; heightMm: number }; title: string }> }
+      }).manifest
+      console.log(`СВЕРКА: манифест ${manifest.pdfPageCount} стр., файл ${reopened.numPages} стр.`)
+      // Реестр обязан знать о каждой странице альбома: страница, о которой он
+      // не знает, не пронумерована, на неё нельзя сослаться и её нельзя
+      // сверить. Прежде расходилось на две страницы молча.
+      expect(reopened.numPages).toBe(manifest.pdfPageCount)
+      const PT = 72 / 25.4
+      for (let page = 1; page <= Math.min(reopened.numPages, manifest.pages.length); page++) {
+        const viewport = (await reopened.getPage(page)).getViewport({ scale: 1 })
+        const declared = manifest.pages[page - 1].pageFormat
+        const widthOff = Math.abs(viewport.width - declared.widthMm * PT)
+        const heightOff = Math.abs(viewport.height - declared.heightMm * PT)
+        const off = widthOff > 1 || heightOff > 1
+        if (off) {
+          console.log(`  РАЗОШЛОСЬ с.${page}: файл ${Math.round(viewport.width)}×${Math.round(viewport.height)} пт,`
+            + ` манифест ${Math.round(declared.widthMm * PT)}×${Math.round(declared.heightMm * PT)} — «${manifest.pages[page - 1].title}»`)
+        }
+        expect(off, `формат страницы ${page} разошёлся с манифестом`).toBe(false)
+      }
+      await reopened.destroy()
     } catch (error) {
       // Сборка или отрисовка могут отказать: у листа свои ограничения на
       // размер. Отказ не прячется под зелёным прогоном и не выдаётся за успех —
