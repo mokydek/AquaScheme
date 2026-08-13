@@ -21,7 +21,7 @@ import {
   summarizeRouteCoverage,
   planDropWells,
   planBasinPressureLinks,
-  planGravityBasins,
+  applyGravityBasinLifts,
   unverifiedClauses,
   workingDrawingSpecificationItemCount,
 } from '@aquascheme/engine'
@@ -552,13 +552,20 @@ export function GravitySection({
       diameterAdoptedWithoutFlow: adoptedWithoutFlow,
     })
     const catalogMaxDepthM = manholeCatalog.reduce((deepest, entry) => Math.max(deepest, entry.maxDepthM), 0)
-    const basins = catalogMaxDepthM > 0 && !feasibility.feasible
-      ? planGravityBasins(profile, design, {
+    // Разбивка считается вместе с пересчётом профиля: одни только места
+    // перекачек ничего не меняли, и инженер не видел, на какую глубину труба
+    // выходит ПОСЛЕ подтверждения разбивки.
+    const outcome = catalogMaxDepthM > 0 && !feasibility.feasible
+      ? applyGravityBasinLifts(profile, design, {
         maxDepthM: catalogMaxDepthM,
         freezingDepthM: freezingDepth.valueM ?? 0,
       })
       : null
-    return { feasibility, basins, catalogMaxDepthM }
+    const basins = outcome?.plan ?? null
+    const basinDepthLine = outcome && outcome.plan.lifts.length > 0
+      ? `${outcome.profile.maxDepthM} м / ${catalogMaxDepthM} м`
+      : null
+    return { feasibility, basins, catalogMaxDepthM, basinDepthLine }
   }, [result, manholeCatalog, freezingDepth])
   /**
    * Напорные перемычки между бассейнами.
@@ -1302,6 +1309,9 @@ export function GravitySection({
             {!gravityPlan.feasibility.feasible && gravityPlan.basins && (
               <>
                 <p className="stat-line">{gravityPlan.basins.reason}</p>
+                {gravityPlan.basinDepthLine && (
+                  <p className="stat-line">{gravityPlan.basinDepthLine}</p>
+                )}
                 <p className="hint">
                   Предел глубины {gravityPlan.catalogMaxDepthM} м взят из каталога конструкций
                   колодцев проекта: глубже самой глубокой позиции колодец не из чего собрать.

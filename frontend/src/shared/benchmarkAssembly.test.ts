@@ -3,8 +3,10 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  applyGravityBasinLifts,
   buildSewerSchedule,
   buildWorkingDrawingSet,
+  planBasinPressureLinks,
   corridorAxis,
   importNetwork,
   parseCatalogRows,
@@ -134,6 +136,59 @@ describe('сборка альбома реального объекта', () => 
       + `${Math.min(...fills).toFixed(3)}…${Math.max(...fills).toFixed(3)}; скорость `
       + `${Math.min(...speeds).toFixed(3)}…${Math.max(...speeds).toFixed(3)} м/с`)
     console.log(`ЗАМЕЧАНИЯ УЧАСТКОВ: ${codes.size === 0 ? 'нет' : JSON.stringify([...codes])}`)
+    // Разбивка на самотёчные бассейны с перекачками.
+    //
+    // Решатель топил трубу одной самотёчной ниткой до 47,10 м: механизм
+    // разбивки в движке был, но к сборке не подключён, и подтверждённое
+    // инженером решение до выпуска не доходило.
+    //
+    // Предел глубины — вход инженера. Каталога конструкций колодцев в этой
+    // сборке нет (manholeConstructions пуст), высот колец взять неоткуда,
+    // поэтому по действующему разрешению владельца принят предел 6,0 м —
+    // типовая граница сборных колодцев ГОСТ 8020. Происхождение — assumed,
+    // запись «принято за владельца» в GAP.md.
+    const DEPTH_LIMIT_M = 6
+    const design = new Map((gravity.pipes as unknown as Array<{ id: string; diameterMm: number; slope: number }>)
+      .map((pipe) => [pipe.id, { diameterMm: pipe.diameterMm, slope: pipe.slope }]))
+    const basinOutcome = (applyGravityBasinLifts as unknown as (p: never, d: never, o: never) => {
+      profile: { maxDepthM: number; stations: unknown[]; totalLengthM: number }
+      plan: {
+        reason: string
+        basins: Array<{ index: number; fromChainageM: number; toChainageM: number; maxDepthM: number; liftAtEnd: boolean }>
+        lifts: Array<{ nodeId: string; chainageM: number; incomingDepthM: number; liftHeightM: number }>
+      }
+    })(gravity.profile as never, design as never, { maxDepthM: DEPTH_LIMIT_M, freezingDepthM: FREEZING_DEPTH_M } as never)
+    gravity.profile = basinOutcome.profile
+    console.log(`РАЗБИВКА: ${basinOutcome.plan.reason}`)
+    console.log(`БАССЕЙНЫ: ${basinOutcome.plan.basins.length}, перекачек ${basinOutcome.plan.lifts.length},`
+      + ` наибольшая глубина после разбивки ${basinOutcome.profile.maxDepthM} м при пределе ${DEPTH_LIMIT_M} м`)
+    for (const basin of basinOutcome.plan.basins.slice(0, 12)) {
+      console.log(`  бассейн ${basin.index}: ${basin.fromChainageM.toFixed(2)}…${basin.toChainageM.toFixed(2)} м,`
+        + ` глубина макс ${basin.maxDepthM} м, перекачка в конце: ${basin.liftAtEnd ? 'да' : 'нет (выпуск)'}`)
+    }
+    // Напорные перемычки: длина выводится из геометрии по границам бассейнов,
+    // диаметр — подбором по допустимой скорости из каталожного ряда. Каталога
+    // насосов в сборке нет, и это скажет блокер каждой перемычки, а не общий
+    // молчаливый пропуск.
+    const links = (planBasinPressureLinks as unknown as (i: never) => {
+      links: Array<{ chainageM: number; lengthM: number | null; lengthOrigin: string; suggestedDiameterMm: number | null; requiredHeadM: number | null; blockers: string[] }>
+      missing: string[]
+      reason: string
+    })({
+      lifts: basinOutcome.plan.lifts,
+      designFlowLps: DESIGN_FLOW_LPS,
+      basinBoundariesM: basinOutcome.plan.basins.map((basin) => basin.fromChainageM),
+      routeEndM: basinOutcome.profile.totalLengthM,
+      availableDiametersMm: series,
+    } as never)
+    console.log(`ПЕРЕМЫЧКИ: ${links.links.length}; ${links.reason}`)
+    console.log(`НЕ ХВАТАЕТ ДЛЯ НАПОРНЫХ: ${links.missing.length === 0 ? 'ничего' : links.missing.join('; ')}`)
+    for (const link of links.links.slice(0, 12)) {
+      console.log(`  перемычка на ${link.chainageM.toFixed(2)} м: длина ${link.lengthM ?? '—'} м (${link.lengthOrigin}),`
+        + ` Ø${link.suggestedDiameterMm ?? '—'}, напор ${link.requiredHeadM ?? '—'} м,`
+        + ` блокеры: ${link.blockers.length === 0 ? 'нет' : link.blockers.join(', ')}`)
+    }
+
     const prof = gravity.profile as unknown as { maxDepthM?: number; stations?: unknown[] } | null
     console.log(`ПРОФИЛЬ: станций ${prof?.stations?.length ?? 0}, наибольшая глубина ${prof?.maxDepthM ?? '—'} м`)
     // Контрольная сумма инженерных величин профиля: смена подачи на листе не

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyGravityBasinLifts,
   accumulateGravityFlows,
   buildSewerSchedule,
   circularSection,
@@ -369,5 +370,42 @@ describe('нулевой расчётный расход', () => {
     const design = designGravitySegment(0, { system: 'sewer', allowedDiametersMm: [450] })
     expect(design.diameterMm).toBe(450)
     expect(design.issues.map((issue) => issue.code)).toEqual(['noDesignFlow'])
+  })
+})
+
+describe('профиль пересчитывается по разбивке на бассейны', () => {
+  /** Плоский рельеф: лоток уходит вглубь, потому что земля не падает. */
+  const flatProfile = {
+    stations: Array.from({ length: 21 }, (_, index) => ({
+      nodeId: `K-${index}`,
+      chainageM: index * 100,
+      groundElevationM: 100,
+      invertElevationM: 97 - index * 0.4,
+      depthM: 3 + index * 0.4,
+      diameterMm: 800,
+    })),
+    maxDepthM: 11,
+    outletInvertElevationM: 89,
+    totalLengthM: 2000,
+    pipeIds: Array.from({ length: 20 }, (_, index) => `P-${index}`),
+  } as never
+  const design = new Map(Array.from({ length: 20 }, (_, index) => [`P-${index}`, { diameterMm: 800, slope: 0.004 }]))
+
+  it('после разбивки глубина не превышает предела, а без разбивки профиль не трогается', () => {
+    const limited = applyGravityBasinLifts(flatProfile, design, { maxDepthM: 6, freezingDepthM: 2 })
+    expect(limited.plan.lifts.length).toBeGreaterThan(0)
+    // Ради этого разбивка и делается: труба поднимается к рабочей глубине.
+    expect(limited.profile.maxDepthM).toBeLessThanOrEqual(6)
+    expect(limited.profile.stations.length).toBe(21)
+    // Пикетаж и отметки земли — исходные данные, разбивка их не трогает.
+    expect(limited.profile.stations.map((station) => station.chainageM))
+      .toEqual((flatProfile as { stations: Array<{ chainageM: number }> }).stations.map((station) => station.chainageM))
+    expect(limited.profile.outletInvertElevationM)
+      .toBe(limited.profile.stations[limited.profile.stations.length - 1].invertElevationM)
+
+    // Предел, до которого профиль и так не доходит, не должен ничего менять.
+    const untouched = applyGravityBasinLifts(flatProfile, design, { maxDepthM: 50, freezingDepthM: 2 })
+    expect(untouched.plan.lifts).toHaveLength(0)
+    expect(untouched.profile).toBe(flatProfile)
   })
 })

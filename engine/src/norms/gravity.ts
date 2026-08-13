@@ -891,6 +891,64 @@ export function planGravityBasins(
   }
 }
 
+/**
+ * Профиль, пересчитанный по разбивке на бассейны.
+ *
+ * Разбивка сама по себе ничего не меняла: `planGravityBasins` возвращала места
+ * перекачек, а профиль оставался прежним — одной самотёчной ниткой, уходящей на
+ * запредельную глубину. Чертёж и ведомости шли по старому профилю, то есть
+ * подтверждённое инженером решение до выпуска не доходило.
+ *
+ * Здесь тот же обход, что и в разбивке, но он возвращает отметки: в конце
+ * бассейна лоток поднимается к минимальному заглублению, и следующий бассейн
+ * начинается от него.
+ *
+ * У станции с перекачкой отметка ОДНА — после подъёма. Приходящая, более
+ * глубокая, остаётся в `GravityLift.incomingDepthM` и в профиль НЕ попадает.
+ *
+ * Это упрощение, и оно не безобидно: предел проверяется только на станциях, а
+ * между ними бывает до трёх километров, и лоток успевает уйти заметно глубже
+ * предела. Наибольшая глубина перестроенного профиля поэтому меньше той, что
+ * труба имеет на подходе к перекачке. Честное решение — ставить перекачку в
+ * самой точке пересечения предела, вставляя туда узел; здесь этого нет.
+ */
+export function applyGravityBasinLifts(
+  profile: GravityProfile,
+  design: Map<string, { diameterMm: number; slope: number }>,
+  options: { maxDepthM: number; freezingDepthM: number },
+): { profile: GravityProfile; plan: GravityBasinPlan } {
+  const plan = planGravityBasins(profile, design, options)
+  if (plan.lifts.length === 0) return { profile, plan }
+
+  const minDepth = (diameterMm: number) =>
+    minSewerInvertDepthM(diameterMm || minGravityDiameterMm('sewer', 'street').value, options.freezingDepthM).value
+  const liftNodeIds = new Set(plan.lifts.map((lift) => lift.nodeId))
+  const stations = profile.stations
+  const rebuilt: ProfileStation[] = []
+  let invert = stations[0].groundElevationM - minDepth(stations[0].diameterMm)
+  rebuilt.push({ ...stations[0], invertElevationM: invert, depthM: stations[0].groundElevationM - invert })
+  let maxDepthM = stations[0].groundElevationM - invert
+  for (let index = 1; index < stations.length; index++) {
+    const station = stations[index]
+    const span = Math.abs(station.chainageM - stations[index - 1].chainageM)
+    const slope = design.get(profile.pipeIds[index - 1])?.slope ?? 0
+    invert = Math.min(station.groundElevationM - minDepth(station.diameterMm), invert - slope * span)
+    if (liftNodeIds.has(station.nodeId)) invert = station.groundElevationM - minDepth(station.diameterMm)
+    const depthM = station.groundElevationM - invert
+    maxDepthM = Math.max(maxDepthM, depthM)
+    rebuilt.push({ ...station, invertElevationM: invert, depthM })
+  }
+  return {
+    profile: {
+      ...profile,
+      stations: rebuilt,
+      maxDepthM: Math.round(maxDepthM * 100) / 100,
+      outletInvertElevationM: rebuilt[rebuilt.length - 1].invertElevationM,
+    },
+    plan,
+  }
+}
+
 /** Picket (ПК) label for a chainage, e.g. 1057 m → «ПК10+57». */
 export function picketLabel(chainageM: number): string {
   const pk = Math.floor(chainageM / 100)
