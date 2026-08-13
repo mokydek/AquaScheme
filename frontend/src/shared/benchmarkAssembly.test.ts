@@ -6,7 +6,9 @@ import {
   applyGravityBasinLifts,
   buildSewerSchedule,
   buildWorkingDrawingSet,
+  parseManholeCatalogRows,
   planBasinPressureLinks,
+  selectManholeConstructions,
   corridorAxis,
   importNetwork,
   parseCatalogRows,
@@ -34,6 +36,9 @@ import { buildDxfCadContext } from './dxfContext'
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..')
 const DXF = join(ROOT, 'docs', 'benchmark', 'taldykol', 'dxf', 'topo.dxf')
 const CATALOG = join(ROOT, 'docs', 'benchmark', 'out', 'catalog-pipes.csv')
+const MANHOLE_CATALOG = join(ROOT, 'docs', 'benchmark', 'out', 'manhole-catalog.csv')
+/** Разделитель строк CSV: файл может прийти и с переводом каретки. */
+const SPLIT_LINES = /\r?\n/
 const OUT = join(ROOT, 'docs', 'benchmark', 'out', 'generated-album.pdf')
 const ready = existsSync(DXF) && existsSync(CATALOG)
 
@@ -207,8 +212,50 @@ describe('сборка альбома реального объекта', () => 
     )
     console.log(`ПЕРЕСЕЧЕНИЙ ИЗ СЪЁМКИ: ${crossings.length}`)
 
+    // Каталог конструкций колодцев: позиции ГОСТ 8020 и ГОСТ 3634 из АГСК-3.
+    //
+    // Прежде он был пуст, и таблицы расхода материалов печатались без состава
+    // конструкций. Высота кольца берётся из марки КС d-h (h — дециметры), а
+    // ПРЕДЕЛЬНОЙ глубины конструкции марки не задают: кольца ставятся стопкой,
+    // и сколько их можно поставить, каталог не говорит. Поэтому предел
+    // бассейнов остаётся принятым (6,0 м, assumed), а не каталожным.
+    const manholeCatalogRows = (() => {
+      if (!existsSync(MANHOLE_CATALOG)) return []
+      const lines = readFileSync(MANHOLE_CATALOG, 'utf8').trim().split(SPLIT_LINES)
+      const split = (line: string) => {
+        const cells: string[] = []
+        let cell = ''
+        let quoted = false
+        for (let index = 0; index < line.length; index++) {
+          const char = line[index]
+          if (char === '"') {
+            if (quoted && line[index + 1] === '"') { cell += '"'; index++ } else quoted = !quoted
+          } else if (char === ';' && !quoted) { cells.push(cell); cell = '' } else cell += char
+        }
+        cells.push(cell)
+        return cells
+      }
+      const headers = split(lines[0])
+      return lines.slice(1).map((line) => Object.fromEntries(split(line).map((cell, index) => [headers[index], cell])))
+    })()
+    const manholeCatalog = (parseManholeCatalogRows as unknown as (r: never) => {
+      entries: unknown[]; issues: unknown[]
+    })(manholeCatalogRows as never)
+    console.log(`КАТАЛОГ КОНСТРУКЦИЙ: позиций ${manholeCatalog.entries.length}, замечаний разбора ${manholeCatalog.issues.length}`)
+
     const schedule = gravity.profile === null ? null
       : (buildSewerSchedule as unknown as (r: never, o: never) => never)(gravity as never, {} as never)
+
+    // Конструкции подбираются под каждый колодец ведомости по диаметру трубы и
+    // глубине — тем же отбором, что и в приложении. Не подобранные названы:
+    // Ø2000 требует камеры 2400, а такой в каталоге нет.
+    const manholeSelection = (selectManholeConstructions as unknown as (m: never, e: never) => {
+      selected: unknown[]; unmatched: string[]
+    })(((schedule as unknown as { manholes?: unknown[] } | null)?.manholes ?? []) as never, manholeCatalog.entries as never)
+    const manholeConstructions = manholeSelection.selected
+    console.log(`КОНСТРУКЦИИ КОЛОДЦЕВ: подобрано ${manholeSelection.selected.length},`
+      + ` без конструкции ${manholeSelection.unmatched.length}`
+      + `${manholeSelection.unmatched.length === 0 ? '' : ` (${manholeSelection.unmatched.slice(0, 6).join(', ')}…)`}`)
 
     const drawingSet = (buildWorkingDrawingSet as unknown as (i: never) => {
       sheets: Array<{ status: string; title: string }>
@@ -314,7 +361,7 @@ describe('сборка альбома реального объекта', () => 
       schedule,
       drawingSet,
       surveyPoints,
-      manholeConstructions: [],
+      manholeConstructions,
       constraints: albumConstraints,
       pipeDiameterMm: new Map(),
       outletFlowLps: gravity.outletFlowLps,
