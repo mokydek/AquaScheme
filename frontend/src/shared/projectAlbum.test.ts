@@ -714,3 +714,55 @@ describe('условный горизонт меняется внутри лис
     expect(inverts(shallow)[0]).toBe('98.00')
   })
 })
+
+describe('врезка положения листа', () => {
+  const planSvg = (withContext: boolean) => {
+    const set = drawingSet()
+    const planSheet = set.sheets.find((sheet) => sheet.kind === 'plan')!
+    const doc = buildProjectSheetDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm',
+      network, profile, schedule, drawingSet: set, surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      ...(withContext
+        ? {
+          constraints: {
+            corridorRings: [],
+            cadContextLines: Array.from({ length: 900 }, (_, index) => ({
+              points: [{ x: index, y: 0 }, { x: index, y: 40 }],
+            })),
+          },
+        }
+        : {}),
+    } as never, planSheet.id) as { content: Array<{ stack: Array<{ svg?: string }> }> }
+    return doc.content[0].stack.find((node) => typeof node.svg === 'string')?.svg ?? ''
+  }
+
+  it('прямоугольник границ листа нарисован', () => {
+    expect(planSvg(false)).toContain('data-inset-sheet-bounds="true"')
+  })
+
+  it('прямоугольник лежит внутри кадра врезки', () => {
+    const svg = planSvg(false)
+    const rect = /data-inset-sheet-bounds="true" x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/.exec(svg)!
+    const frame = /<rect x="([\d.]+)" y="35" width="150" height="90"/.exec(svg)!
+    const [x, y, w, h] = rect.slice(1, 5).map(Number)
+    const frameX = Number(frame[1])
+    // Врезка сдвинута трансформом на -20 по вертикали, поэтому кадр по Y — 15…105.
+    expect(x).toBeGreaterThanOrEqual(frameX - 1)
+    expect(x + w).toBeLessThanOrEqual(frameX + 150 + 1)
+    expect(y).toBeGreaterThanOrEqual(14)
+    expect(y + h).toBeLessThanOrEqual(126)
+  })
+
+  it('подоснова во врезке прорежена, а не выведена целиком', () => {
+    // Полные четырнадцать тысяч линий сделали бы врезку чёрным пятном.
+    const svg = planSvg(true)
+    const thin = (svg.match(/stroke="#dcdcdc" stroke-width="0.4"/g) ?? []).length
+    expect(thin).toBeGreaterThan(0)
+    expect(thin).toBeLessThanOrEqual(400)
+  })
+
+  it('без подосновы врезка всё равно строится', () => {
+    expect(planSvg(false)).toContain('Положение листа')
+  })
+})

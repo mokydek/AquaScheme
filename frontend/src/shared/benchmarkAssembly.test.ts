@@ -13,6 +13,7 @@ import {
 // Разбор DXF живёт отдельным подпутём — так его берёт и само приложение.
 import { classifyDxfConstraints, parseDxfNetwork } from '@aquascheme/engine/dxfread'
 import { crossingsFromSurvey } from '@aquascheme/engine'
+import { buildDxfCadContext } from './dxfContext'
 
 /**
  * Сборка альбома реального объекта для ИЗМЕРЕНИЯ сходства с эталоном.
@@ -222,6 +223,31 @@ describe('сборка альбома реального объекта', () => 
       console.log(`СТОП-ФАКТОР ${code}: листов ${count}`)
     }
 
+    // Подоснова листа: проектные координаты совпадают с координатами чертежа
+    // (привязка вида survey_grid, смещения нет), поэтому перенос тождественный.
+    const cad = buildDxfCadContext(constraints as never, (point) => point)
+    const albumConstraints = {
+      corridorRings: constraints.corridorRings,
+      redLines: constraints.redLines,
+      utilityLines: constraints.utilityLines,
+      roadLines: constraints.roadLines,
+      waterLines: constraints.hydrography,
+      buildingPolygons: constraints.buildingFootprints,
+      ...cad,
+      crossings,
+    }
+    const count = (value: unknown) => Array.isArray(value) ? value.length : 0
+    console.log('ПОДОСНОВА В АЛЬБОМ: '
+      + `коридор ${count(albumConstraints.corridorRings)}, `
+      + `красные ${count(albumConstraints.redLines)}, `
+      + `сети ${count(albumConstraints.utilityLines)}, `
+      + `дороги ${count(albumConstraints.roadLines)}, `
+      + `гидрография ${count(albumConstraints.waterLines)}, `
+      + `здания ${count(albumConstraints.buildingPolygons)}, `
+      + `рельеф ${count(cad.terrainLines)} из ${count(constraints.terrainLines)}, `
+      + `подложка ${count(cad.cadContextLines)} из ${count(constraints.contextLines)}, `
+      + `подписи ${count(cad.cadTextEntities)}, блоки ${count(cad.cadBlockEntities)}`)
+
     const { buildBenchmarkAlbumDoc } = await import('./benchmarkAlbum')
     try {
       const doc = buildBenchmarkAlbumDoc({
@@ -234,6 +260,7 @@ describe('сборка альбома реального объекта', () => 
       drawingSet,
       surveyPoints,
       manholeConstructions: [],
+      constraints: albumConstraints,
       pipeDiameterMm: new Map(),
       outletFlowLps: gravity.outletFlowLps,
       } as never)
