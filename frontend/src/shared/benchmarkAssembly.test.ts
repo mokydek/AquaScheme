@@ -135,6 +135,15 @@ describe('сборка альбома реального объекта', () => 
     console.log(`ЗАМЕЧАНИЯ УЧАСТКОВ: ${codes.size === 0 ? 'нет' : JSON.stringify([...codes])}`)
     const prof = gravity.profile as unknown as { maxDepthM?: number; stations?: unknown[] } | null
     console.log(`ПРОФИЛЬ: станций ${prof?.stations?.length ?? 0}, наибольшая глубина ${prof?.maxDepthM ?? '—'} м`)
+    // Контрольная сумма инженерных величин профиля: смена подачи на листе не
+    // смеет их менять. Сравнивается между заходами.
+    const digits = JSON.stringify((prof?.stations ?? []).map((station) => {
+      const point = station as { chainageM: number; groundElevationM: number; invertElevationM: number; depthM: number }
+      return [point.chainageM, point.groundElevationM, point.invertElevationM, point.depthM]
+    }))
+    let sum = 0
+    for (let index = 0; index < digits.length; index++) sum = (sum * 31 + digits.charCodeAt(index)) >>> 0
+    console.log(`КОНТРОЛЬНАЯ СУММА ПРОФИЛЯ: ${sum}`)
 
     // Пересечения — из той же съёмки: карточки нужны и составу, и листам.
     const crossings = (crossingsFromSurvey as unknown as (a: never, c: never, d: never) => unknown[])(

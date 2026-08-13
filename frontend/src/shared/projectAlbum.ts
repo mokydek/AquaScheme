@@ -664,37 +664,93 @@ function profileSvg(
     if (!projection || projection.chainageM < fromM || projection.chainageM > toM) return []
     return [{ borehole, projection }]
   })
-  const minimumSourceElevations = [
-    ...stations.map((station) => station.invertElevationM),
-    ...activeCrossings.flatMap((crossing) => Number.isFinite(crossing.designInvertElevationM) ? [crossing.designInvertElevationM!] : []),
-    ...activeBoreholes.map(({ borehole }) => borehole.mouthElevationM! - Math.max(...borehole.layers.map((layer) => layer.bottomDepthM))),
-  ]
-  const maximumSourceElevations = [
-    ...stations.map((station) => station.groundElevationM),
-    ...activeCrossings.flatMap((crossing) => Number.isFinite(crossing.existingElevationM) ? [crossing.existingElevationM!] : []),
-    ...activeBoreholes.map(({ borehole }) => borehole.mouthElevationM!),
-  ]
-  const minElevation = Math.floor(Math.min(...minimumSourceElevations) - 1)
-  const maxElevation = Math.ceil(Math.max(...maximumSourceElevations) + 1)
+  // Диапазон условного горизонта считается по станциям профиля. Пересечения
+  // и колонки скважин, выходящие за полосу, обрезаются рамкой чертежа: их
+  // включение в подбор базы дробило бы лист на десятки горизонтов.
   const horizontalUnitsPerMetre = scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR) * svgUnitsPerMm
   const verticalUnitsPerMetre = scaleMillimetresPerMetre(PROFILE_VERTICAL_SCALE_DENOMINATOR) * svgUnitsPerMm
   const x = (chainageM: number) => 185 + (chainageM - fromM) * horizontalUnitsPerMetre
-  const y = (elevationM: number) => 330 - (elevationM - minElevation) * verticalUnitsPerMetre
   if (x(toM) > canvasWidth - 35 + 1e-6) {
     throw new Error(`Лист ${sheet.sheetNumber}: ширины рулонного листа недостаточно для масштаба профиля 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}.`)
   }
-  if (y(maxElevation) < 35 - 1e-6) {
-    throw new Error(`Лист ${sheet.sheetNumber}: диапазон отметок не помещается по высоте в масштабе 1:${PROFILE_VERTICAL_SCALE_DENOMINATOR}.`)
+
+  /**
+   * Смена условного горизонта внутри листа.
+   *
+   * Высота рулонного листа постоянна (297 мм у эталона), а вертикальный
+   * масштаб — 1:100, поэтому графическая полоса вмещает ограниченный перепад
+   * отметок. Когда трасса выходит за него, чертёж НЕ растягивают и лист не
+   * растят: базовая отметка ступенью переходит на новую круглую величину,
+   * линия профиля разрывается вертикальным скачком, и рядом подписывается
+   * новый условный горизонт. Это обычный приём продольного профиля.
+   *
+   * Базы кратны пяти метрам — так они читаются и так подписаны у эталона
+   * (330, 333, 335 на разных листах его альбома).
+   */
+  const bandMetres = (330 - 35) / verticalUnitsPerMetre
+  const DATUM_STEP_M = 5
+  const roundDatum = (elevationM: number) => Math.floor(elevationM / DATUM_STEP_M) * DATUM_STEP_M
+  type DatumSegment = {
+    fromM: number; toM: number; datumM: number; lowM: number; highM: number; stations: typeof stations
   }
-  const ground = stations.map((station) => `${x(station.chainageM).toFixed(1)},${y(station.groundElevationM).toFixed(1)}`).join(' ')
-  const invert = stations.map((station) => `${x(station.chainageM).toFixed(1)},${y(station.invertElevationM).toFixed(1)}`).join(' ')
+  const segments: DatumSegment[] = []
+  for (const station of stations) {
+    const low = Math.min(station.invertElevationM, station.groundElevationM)
+    const high = Math.max(station.invertElevationM, station.groundElevationM)
+    const current = segments[segments.length - 1]
+    if (current !== undefined) {
+      // База берётся по САМОЙ НИЗКОЙ точке участка, а не по первой станции:
+      // иначе нисходящий профиль выпадал бы из полосы на второй же станции и
+      // горизонт менялся бы там, где перепад ещё помещается.
+      const lowM = Math.min(current.lowM, low)
+      const highM = Math.max(current.highM, high)
+      if (highM - roundDatum(lowM - 1) <= bandMetres + 1e-9) {
+        current.toM = station.chainageM
+        current.lowM = lowM
+        current.highM = highM
+        current.datumM = roundDatum(lowM - 1)
+        current.stations.push(station)
+        continue
+      }
+    }
+    segments.push({
+      fromM: station.chainageM,
+      toM: station.chainageM,
+      datumM: roundDatum(low - 1),
+      lowM: low,
+      highM: high,
+      stations: [station],
+    })
+  }
+  const datumAt = (chainageM: number) => {
+    for (const segment of segments) {
+      if (chainageM >= segment.fromM - 1e-9 && chainageM <= segment.toM + 1e-9) return segment.datumM
+    }
+    return segments[0]?.datumM ?? 0
+  }
+  const y = (elevationM: number, chainageM: number) =>
+    330 - (elevationM - datumAt(chainageM)) * verticalUnitsPerMetre
+
+  // Каждый сегмент — своя ломаная: разрыв между ними и есть скачок горизонта.
+  const polyline = (pick: (station: typeof stations[number]) => number) => segments
+    .map((segment) => segment.stations
+      .map((station) => `${x(station.chainageM).toFixed(1)},${y(pick(station), station.chainageM).toFixed(1)}`)
+      .join(' '))
+    .filter((points) => points.trim() !== '')
+  const ground = polyline((station) => station.groundElevationM)
+  const invert = polyline((station) => station.invertElevationM)
+  const datumMarks = segments.map((segment) => {
+    const markX = x(segment.fromM)
+    return `<line data-datum-break="true" x1="${markX.toFixed(1)}" y1="35" x2="${markX.toFixed(1)}" y2="330" stroke="#c07800" stroke-width="0.8" stroke-dasharray="4 3"/>`
+      + `<text data-datum-label="true" x="${(markX + 3).toFixed(1)}" y="46" font-size="7" fill="#8a4c00">УГ ${segment.datumM.toFixed(2)}</text>`
+  }).join('')
   const manholeByNodeId = new Map(input.schedule.manholes.flatMap((manhole) => (
     manhole.nodeId ? [[manhole.nodeId, manhole.label] as const] : []
   )))
   const columns = stations.map((station) => {
     const stationPicket = picket(station.chainageM)
     const label = manholeByNodeId.get(station.nodeId) ?? station.nodeId
-    return `<line x1="${x(station.chainageM)}" y1="${y(station.groundElevationM)}" x2="${x(station.chainageM)}" y2="${y(station.invertElevationM)}" stroke="#111"/><line x1="${x(station.chainageM)}" y1="350" x2="${x(station.chainageM)}" y2="500" stroke="#bbb"/><text x="${x(station.chainageM)}" y="367" text-anchor="middle" font-size="8">${station.invertElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="392" text-anchor="middle" font-size="8">${station.groundElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="417" text-anchor="middle" font-size="8">${station.diameterMm}</text><text x="${x(station.chainageM)}" y="484" text-anchor="middle" font-size="7">${xmlText(label)}</text><text x="${x(station.chainageM)}" y="496" text-anchor="middle" font-size="7">${stationPicket}</text>`
+    return `<line x1="${x(station.chainageM)}" y1="${y(station.groundElevationM, station.chainageM)}" x2="${x(station.chainageM)}" y2="${y(station.invertElevationM, station.chainageM)}" stroke="#111"/><line x1="${x(station.chainageM)}" y1="350" x2="${x(station.chainageM)}" y2="500" stroke="#bbb"/><text x="${x(station.chainageM)}" y="367" text-anchor="middle" font-size="8">${station.invertElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="392" text-anchor="middle" font-size="8">${station.groundElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="417" text-anchor="middle" font-size="8">${station.diameterMm}</text><text x="${x(station.chainageM)}" y="484" text-anchor="middle" font-size="7">${xmlText(label)}</text><text x="${x(station.chainageM)}" y="496" text-anchor="middle" font-size="7">${stationPicket}</text>`
   }).join('')
   const segmentValues = stations.slice(1).map((station, index) => {
     const previous = stations[index]
@@ -713,8 +769,8 @@ function profileSvg(
   const crossings = activeCrossings
     .map((crossing) => {
       const crossingX = x(crossing.stationM)
-      const designY = Number.isFinite(crossing.designInvertElevationM) ? y(crossing.designInvertElevationM!) : 315
-      const existingY = Number.isFinite(crossing.existingElevationM) ? y(crossing.existingElevationM!) : 65
+      const designY = Number.isFinite(crossing.designInvertElevationM) ? y(crossing.designInvertElevationM!, crossing.stationM) : 315
+      const existingY = Number.isFinite(crossing.existingElevationM) ? y(crossing.existingElevationM!, crossing.stationM) : 65
       const title = `${crossing.id} · ${crossing.kind}`
       const clearance = `просвет ${Number.isFinite(crossing.clearanceM) ? crossing.clearanceM!.toFixed(2) + ' м' : 'нет данных'}`
       const width = Math.max(title.length, clearance.length) * 3.5 + 6
@@ -736,18 +792,18 @@ function profileSvg(
     const mouthElevationM = borehole.mouthElevationM!
     const deepest = Math.max(...borehole.layers.map((layer) => layer.bottomDepthM))
     const layerLines = borehole.layers.map((layer) => {
-      const boundaryY = y(mouthElevationM - layer.bottomDepthM)
-      const middleY = y(mouthElevationM - (layer.topDepthM + layer.bottomDepthM) / 2)
+      const boundaryY = y(mouthElevationM - layer.bottomDepthM, chainageM)
+      const middleY = y(mouthElevationM - (layer.topDepthM + layer.bottomDepthM) / 2, chainageM)
       return `<line x1="${boreholeX - 5}" y1="${boundaryY}" x2="${boreholeX + 5}" y2="${boundaryY}" stroke="#7a5a32"/><text x="${boreholeX + 6}" y="${middleY}" font-size="6" fill="#6b4c2b">ИГЭ-${xmlText(layer.igeCode ?? '—')}</text>`
     }).join('')
     const water = Number.isFinite(borehole.water.depthM)
-      ? `<line x1="${boreholeX - 7}" y1="${y(mouthElevationM - borehole.water.depthM!)}" x2="${boreholeX + 7}" y2="${y(mouthElevationM - borehole.water.depthM!)}" stroke="#2685b5" stroke-width="2"/><text x="${boreholeX - 9}" y="${y(mouthElevationM - borehole.water.depthM!) - 2}" text-anchor="end" font-size="6" fill="#2685b5">УГВ</text>`
+      ? `<line x1="${boreholeX - 7}" y1="${y(mouthElevationM - borehole.water.depthM!, chainageM)}" x2="${boreholeX + 7}" y2="${y(mouthElevationM - borehole.water.depthM!, chainageM)}" stroke="#2685b5" stroke-width="2"/><text x="${boreholeX - 9}" y="${y(mouthElevationM - borehole.water.depthM!, chainageM) - 2}" text-anchor="end" font-size="6" fill="#2685b5">УГВ</text>`
       : ''
-    return [`<line x1="${boreholeX}" y1="${y(mouthElevationM)}" x2="${boreholeX}" y2="${y(mouthElevationM - deepest)}" stroke="#7a5a32" stroke-width="2"/>${layerLines}${water}<text x="${boreholeX}" y="${y(mouthElevationM) - 5}" text-anchor="middle" font-size="7" fill="#6b4c2b">${xmlText(borehole.label)}</text>`]
+    return [`<line x1="${boreholeX}" y1="${y(mouthElevationM, chainageM)}" x2="${boreholeX}" y2="${y(mouthElevationM - deepest, chainageM)}" stroke="#7a5a32" stroke-width="2"/>${layerLines}${water}<text x="${boreholeX}" y="${y(mouthElevationM, chainageM) - 5}" text-anchor="middle" font-size="7" fill="#6b4c2b">${xmlText(borehole.label)}</text>`]
   }).join('')
   const rows = ['Отметка лотка, м', 'Отметка земли, м', 'Диаметр, мм', 'Уклон / длина', 'Расстояние, м', 'Колодец / ПК']
   const table = rows.map((label, index) => `<rect x="35" y="${350 + index * 25}" width="${canvasWidth - 70}" height="25" fill="none" stroke="#111"/><line x1="160" y1="${350 + index * 25}" x2="160" y2="${375 + index * 25}" stroke="#111"/><text x="42" y="${367 + index * 25}" font-size="8">${label}</text>`).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR)}" data-vertical-scale-denominator="${PROFILE_VERTICAL_SCALE_DENOMINATOR}" data-vertical-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_VERTICAL_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="35" width="${canvasWidth - 195}" height="300"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${minElevation.toFixed(2)} м · масштаб гор. 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}, верт. 1:${PROFILE_VERTICAL_SCALE_DENOMINATOR}</text><g clip-path="url(#profile-${sheet.sheetNumber})"><polyline data-profile-ground="true" points="${ground}" fill="none" stroke="#6c5134" stroke-width="2.5"/><polyline data-profile-invert="true" points="${invert}" fill="none" stroke="#1746b5" stroke-width="3.5"/>${geology}${crossings}</g>${columns}${table}${segmentValues}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR)}" data-vertical-scale-denominator="${PROFILE_VERTICAL_SCALE_DENOMINATOR}" data-vertical-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_VERTICAL_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="35" width="${canvasWidth - 195}" height="300"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${segments.map((segment) => segment.datumM.toFixed(2)).join(', ')} м · масштаб гор. 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}, верт. 1:${PROFILE_VERTICAL_SCALE_DENOMINATOR}</text><g clip-path="url(#profile-${sheet.sheetNumber})">${ground.map((points) => `<polyline data-profile-ground="true" points="${points}" fill="none" stroke="#6c5134" stroke-width="2.5"/>`).join('')}${invert.map((points) => `<polyline data-profile-invert="true" points="${points}" fill="none" stroke="#1746b5" stroke-width="3.5"/>`).join('')}${datumMarks}${geology}${crossings}</g>${columns}${table}${segmentValues}</svg>`
 }
 
 function basicTable(headers: string[], rows: Array<Array<string | number>>, widths?: Array<number | string>): PdfNode {

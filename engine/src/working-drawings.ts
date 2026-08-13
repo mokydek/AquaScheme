@@ -835,44 +835,15 @@ function protectiveGridIssues(design: ProtectiveGridDesign | null | undefined): 
  * шапку с условным горизонтом, боковик с отметками и штамп. Это правило
  * компоновки, а не размеры, снятые с эталонного альбома.
  */
-const PROFILE_VERTICAL_SCALE_DENOMINATOR = 100
-const PROFILE_VERTICAL_ALLOWANCE_MM = 190
-
 /**
- * Доля высоты листа, отведённая под поле профиля.
+ * Высота рулонного листа плана и профиля, мм.
  *
- * Отрисовка кладёт профиль в полосу между фиксированными краями (боковик,
- * подписи, штамп) и добавляет по метру запаса сверху и снизу. Полоса занимает
- * 295 из 500 единиц холста — 59% высоты листа. Считать высоту листа по одному
- * лишь перепаду в масштабе 1:100 значит игнорировать это: при перепаде свыше
- * ~22 м профиль переставал помещаться, и сборка альбома падала с ошибкой
- * «диапазон отметок не помещается по высоте». На настоящем объекте это
- * случилось на 34-м листе из 54.
- *
- * Число взято из самой отрисовки, а не подобрано: см. `profileSvg`.
+ * Величина оформления, а не расчёта: у эталонного альбома все листы планов и
+ * профилей имеют высоту 297 мм — это написано в его собственном штампе
+ * («Формат 297х2200») и подтверждается размером страниц PDF (842 пт).
  */
-const PROFILE_BAND_SHARE = 295 / 500
+const ROLL_SHEET_HEIGHT_MM = 297
 
-/** Запас отметок, который отрисовка добавляет сверху и снизу, м. */
-const PROFILE_ELEVATION_MARGIN_M = 2
-
-/**
- * Боковые поля профиля в долях ВЫСОТЫ листа.
- *
- * Отрисовка задаёт их в единицах холста — 185 слева под боковик отметок, 35
- * справа, — а холст всегда 500 единиц высотой и по ширине следует пропорции
- * полезного поля листа. Значит в миллиметрах боковые поля пропорциональны
- * высоте листа, а не постоянны.
- *
- * Требование отрисовки, выведенное из её же формул:
- *   ширина ≥ 2·длина_интервала + 0,44·высота + 3,2 мм,
- * где 3,2 мм — разница полей страницы по горизонтали и вертикали
- * ((30+30) − 0,44·(28+52+36) пунктов, переведённая в миллиметры).
- *
- * Пока запас был постоянным (300 мм), высокий лист переставал вмещать профиль
- * по ширине: на настоящем объекте сборка падала на 38-м листе из 54 сразу
- * после того, как высота стала считаться правильно.
- */
 const PROFILE_SIDE_ALLOWANCE_SHARE = (185 + 35) / 500
 
 /** Разница полей страницы по горизонтали и вертикали, мм. */
@@ -953,25 +924,8 @@ function sheetHash(inputHash: string, kind: WorkingDrawingKind, number: number, 
  * собирался вовсе. Растянуть чертёж по высоте нельзя — масштаб перестал бы
  * быть масштабом, поэтому растёт лист.
  */
-function profileElevationSpanM(
-  sheet: WorkingDrawingSheet,
-  profiles: Array<{ profileId?: string; profile: GravityProfile }>,
-): number | null {
-  if (sheet.kind !== 'profile' || !sheet.interval) return null
-  const owner = profiles.find((item) => (item.profileId ?? undefined) === sheet.profileId) ?? profiles[0]
-  if (!owner) return null
-  const inside = owner.profile.stations.filter((station) =>
-    station.chainageM >= sheet.interval!.fromM - 1e-6 && station.chainageM <= sheet.interval!.toM + 1e-6)
-  if (inside.length === 0) return null
-  const highest = Math.max(...inside.map((station) => station.groundElevationM))
-  const lowest = Math.min(...inside.map((station) => station.invertElevationM))
-  return Number.isFinite(highest) && Number.isFinite(lowest) ? Math.max(0, highest - lowest) : null
-}
 
-function buildAlbumManifest(
-  sheets: WorkingDrawingSheet[],
-  profiles: Array<{ profileId?: string; profile: GravityProfile }> = [],
-): WorkingDrawingAlbumManifest {
+function buildAlbumManifest(sheets: WorkingDrawingSheet[]): WorkingDrawingAlbumManifest {
   const defaultPageFormat: WorkingDrawingAlbumPage['pageFormat'] = {
     format: 'A3',
     widthMm: 420,
@@ -991,19 +945,16 @@ function buildAlbumManifest(
     const intervalLengthM = Math.max(0, sheet.interval.toM - sheet.interval.fromM)
     const scaleDenominator = 500
 
-    // Высота считается ПЕРВОЙ: у профиля от неё зависят и боковые поля.
-    // Перепад отметок в вертикальном масштабе 1:100, делённый на долю высоты,
-    // которую отрисовка отводит под поле профиля, плюс место под боковик,
-    // подписи и штамп. Округление до шага 10 мм применяется только к
-    // ПОСЧИТАННОЙ высоте: иначе оно превращало 297 в 300 и там, где высоту
-    // считать не из чего.
-    const spanM = profileElevationSpanM(sheet, profiles)
-    const heightMm = spanM === null
-      ? 297
-      : Math.min(2000, Math.max(297, Math.ceil(
-        (PROFILE_VERTICAL_ALLOWANCE_MM
-          + (spanM + PROFILE_ELEVATION_MARGIN_M) * 1000 / PROFILE_VERTICAL_SCALE_DENOMINATOR
-            / PROFILE_BAND_SHARE) / 10) * 10))
+    // Высота рулонного листа — постоянная 297 мм, как у эталонного альбома:
+    // его собственный штамп называет формат «297х2200», и все плановые и
+    // профильные листы там одной высоты, меняется только длина.
+    //
+    // Перепад отметок, не помещающийся в графическую полосу, решается СМЕНОЙ
+    // УСЛОВНОГО ГОРИЗОНТА внутри листа, а не ростом листа: базовая отметка
+    // ступенью переходит на новую круглую величину, линия профиля разрывается
+    // вертикальным скачком с подписью. Прежде лист рос вместе с перепадом и
+    // доходил до 2863 пт при 842 у эталона — ни один формат не совпадал.
+    const heightMm = ROLL_SHEET_HEIGHT_MM
 
     // Ширина: длина интервала в масштабе 1:500 плюс поля. У плана запас
     // постоянный, у профиля — пропорционален высоте листа (см. константу).
@@ -1782,10 +1733,9 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
   }
 
   const statusCounts = (status: WorkingDrawingStatus) => sheets.filter((sheet) => sheet.status === status).length
-  const manifest = buildAlbumManifest(sheets, [
-    ...(input.profile ? [{ profile: input.profile }] : []),
-    ...(input.branchProfiles ?? []).map((branch) => ({ profileId: branch.id, profile: branch.profile })),
-  ])
+  // Профили манифесту больше не нужны: высота рулонного листа постоянна, а
+  // перепад отметок решается сменой условного горизонта внутри листа.
+  const manifest = buildAlbumManifest(sheets)
   return {
     sheets,
     manifest,

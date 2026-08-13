@@ -631,3 +631,86 @@ describe('project working-drawing album', () => {
     }
   })
 })
+
+describe('условный горизонт меняется внутри листа, а лист не растёт', () => {
+  /** Профиль с заданным перепадом: земля и лоток равномерно уходят вниз. */
+  const slopingProfile = (dropM: number) => ({
+    stations: Array.from({ length: 6 }, (_, index) => ({
+      nodeId: `K-${index + 1}`,
+      chainageM: index * 100,
+      groundElevationM: 100 - (dropM * index) / 5,
+      invertElevationM: 98 - (dropM * index) / 5,
+      depthM: 2,
+      diameterMm: 800,
+    })),
+    maxDepthM: 2,
+    outletInvertElevationM: 98 - dropM,
+    totalLengthM: 500,
+    pipeIds: ['P-1', 'P-2', 'P-3', 'P-4', 'P-5'],
+  })
+
+  const sheetSvg = (dropM: number) => {
+    const set = drawingSet()
+    const profileSheet = set.sheets.find((sheet) => sheet.kind === 'profile')!
+    const doc = buildProjectSheetDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm',
+      network, profile: slopingProfile(dropM) as never, schedule,
+      drawingSet: set, surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+    } as never, profileSheet.id) as { content: Array<{ stack: Array<{ svg?: string }> }> }
+    const svg = doc.content[0].stack.find((node) => typeof node.svg === 'string')?.svg ?? ''
+    return { svg, set, profileSheet }
+  }
+
+  const datumCount = (svg: string) => (svg.match(/data-datum-label="true"/g) ?? []).length
+
+  it('пологий профиль обходится одним горизонтом', () => {
+    // Полоса чертежа вмещает около пятнадцати метров перепада — столько же,
+    // сколько показывает шкала отметок на листах эталона (13…17 м).
+    expect(datumCount(sheetSvg(6).svg)).toBe(1)
+  })
+
+  it('перепад больше полосы вводит смену горизонта', () => {
+    expect(datumCount(sheetSvg(24).svg)).toBeGreaterThan(1)
+  })
+
+  it('чем глубже перепад, тем больше горизонтов', () => {
+    expect(datumCount(sheetSvg(48).svg)).toBeGreaterThan(datumCount(sheetSvg(24).svg))
+  })
+
+  it('высота листа не меняется от перепада', () => {
+    for (const dropM of [6, 24, 48]) {
+      const { set, profileSheet } = sheetSvg(dropM)
+      const page = set.manifest.pages.find((item) => item.sheetId === profileSheet.id)
+      expect(page?.pageFormat.heightMm, `перепад ${dropM} м`).toBe(297)
+    }
+  })
+
+  it('линия профиля разрывается на границе горизонта, а не тянется через скачок', () => {
+    // Один горизонт — одна ломаная; два горизонта — две.
+    const one = (sheetSvg(6).svg.match(/data-profile-invert="true"/g) ?? []).length
+    const many = (sheetSvg(48).svg.match(/data-profile-invert="true"/g) ?? []).length
+    expect(one).toBe(1)
+    expect(many).toBeGreaterThan(1)
+  })
+
+  it('базовые отметки круглые — кратны пяти метрам', () => {
+    const labels = [...sheetSvg(48).svg.matchAll(/УГ (-?\d+(?:\.\d+)?)/g)].map((match) => Number(match[1]))
+    expect(labels.length).toBeGreaterThan(1)
+    for (const datum of labels) expect(datum % 5).toBeCloseTo(0, 9)
+  })
+
+  it('отметки боковика абсолютные и от смены базы не зависят', () => {
+    // Числа в графах «лоток» и «земля» — проектные величины; смена условного
+    // горизонта это подача, а не расчёт, и трогать их она не смеет.
+    const shallow = sheetSvg(6).svg
+    const deep = sheetSvg(48).svg
+    const inverts = (svg: string) => [...svg.matchAll(/y="367" text-anchor="middle" font-size="8">([\d.]+)</g)]
+      .map((match) => match[1])
+    expect(inverts(shallow).length).toBeGreaterThan(0)
+    // Профили разные, поэтому сравниваем не значения, а то, что подписи
+    // соответствуют СВОИМ станциям в обоих случаях.
+    expect(inverts(deep)[0]).toBe('98.00')
+    expect(inverts(shallow)[0]).toBe('98.00')
+  })
+})
