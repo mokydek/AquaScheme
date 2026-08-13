@@ -18,7 +18,7 @@
     "test": "npm run test --workspace engine",
     "test:frontend": "node ./node_modules/vitest/vitest.mjs run frontend/src --pool=forks --poolOptions.forks.singleFork",
     "test:converter": "npm test --prefix converter",
-    "test:benchmark": "node --test scripts/visual-score.test.mjs",
+    "test:benchmark": "node --test scripts/visual-score.test.mjs scripts/sheet-matching.test.mjs",
     "test:db": "node --test scripts/build-bootstrap.test.mjs scripts/db-contract.test.mjs",
     "test:e2e": "playwright test",
     "db:bootstrap": "node scripts/build-bootstrap.mjs",
