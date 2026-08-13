@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -149,8 +149,19 @@ test('семейство листа определяется одинаково 
   assert.equal(classifySheet('Защитная сетка для колодцев'), 'grid')
 })
 
-test('ведомость эталона разбирается в листы с диапазонами', () => {
-  const register = parseReferenceRegister(readFileSync(join(ROOT, 'docs', 'benchmark', 'ETALON-SHEETS.md'), 'utf8'))
+/**
+ * Ведомость эталона приватная и лежит только локально: `docs/benchmark`
+ * закрыт от git. Тест не имеет права падать там, где её нет, — в чистом клоне
+ * и в CI он честно пропускается с названной причиной. Падение на отсутствии
+ * приватного файла — это не красный тест, а красный шум.
+ */
+const REGISTER = join(ROOT, 'docs', 'benchmark', 'ETALON-SHEETS.md')
+const registerAvailable = existsSync(REGISTER)
+
+test('ведомость эталона разбирается в листы с диапазонами', {
+  skip: registerAvailable ? false : 'приватная ведомость эталона недоступна в этой среде',
+}, () => {
+  const register = parseReferenceRegister(readFileSync(REGISTER, 'utf8'))
   const plans = register.filter((sheet) => sheet.family === 'plan')
   assert.equal(plans.length, 28)
   // Лист 3 ведомости — страница 4 PDF: титул сдвигает нумерацию на единицу.
