@@ -46,6 +46,9 @@ const FREEZING_DEPTH_M = 2.53
  */
 const DESIGN_FLOW_LPS = 2335.8
 
+/** Идентификатор узла-источника: по нему гидравлика находит приток. */
+const INFLOW_ID = 'ЛНС'
+
 describe('сборка альбома реального объекта', () => {
   it.skipIf(!ready)('собирает комплект и пытается отрисовать альбом для измерения', async () => {
     const data = (parseDxfNetwork as unknown as (text: string) => never)(readFileSync(DXF, 'utf8'))
@@ -82,11 +85,13 @@ describe('сборка альбома реального объекта', () => 
       s: never, b: never, src: never, sp: never,
     ) => { network: never; report: unknown })(
       segments as never,
-      // Расход входит в модель через сток в голове трассы: другого способа
-      // подать подтверждённую владельцем величину модель не имеет.
-      // Сток входит в модель зданием в голове трассы: другого способа подать
-      // подтверждённую владельцем величину модель не имеет. Выпуск — в хвосте.
-      [{ id: 'ЛНС', x: head0.x, y: head0.y }] as never,
+      // Сток входит в модель узлом-источником в голове трассы. Привязать
+      // подтверждённые расходы к отдельным очистным сооружениям НЕВОЗМОЖНО:
+      // в съёмке есть только одиночные подписи «кнс», «очистной»,
+      // «резервуар» — без номеров III-4/III-6/III-8, и какое из них какое,
+      // из чертежа не следует. Поэтому принята консервативная схема: вся
+      // подтверждённая нагрузка приходит с головы трассы.
+      [{ id: INFLOW_ID, x: head0.x, y: head0.y }] as never,
       tail0 as never,
       surveyPoints as never,
     )
@@ -95,14 +100,41 @@ describe('сборка альбома реального объекта', () => 
       profile: unknown; pipes: unknown[]; surfaceGapNodeIds: string[]; outletFlowLps: number
     })({
       network: network.network,
-      buildingFlowLps: new Map([['B1', DESIGN_FLOW_LPS]]),
+      // Ключ — идентификатор ИСТОЧНИКА, а не узла: гидравлика ищет приток по
+      // `node.buildingId ?? node.id`, и узел, созданный импортом, несёт
+      // buildingId исходного объекта. Ключ по 'B1' промахивался мимо, и на
+      // выпуске получался ноль при подтверждённых 2335,8 л/с.
+      buildingFlowLps: new Map([[INFLOW_ID, DESIGN_FLOW_LPS]]),
       system: 'storm',
       freezingDepthM: FREEZING_DEPTH_M,
       allowedDiametersMm: series,
+      // Магистральный коллектор на плоском рельефе: критерий подбора —
+      // наименьшее заглубление, а не наименьший диаметр. По умолчанию берётся
+      // `minDiameter`, и он гонит крутые уклоны: на шестнадцати километрах это
+      // дало скорости до 7,3 м/с и глубину 537 м. Выбор критерия — вход
+      // инженера; для этого объекта он записан в GAP.md итерации 0.
+      strategy: 'minBurial' as const,
     } as never)
     console.log(`САМОТЁК: участков ${gravity.pipes.length}, расход на выпуске ${gravity.outletFlowLps} л/с,`
       + ` профиль ${gravity.profile === null ? 'НЕ построен' : 'построен'},`
       + ` непокрытых узлов ${gravity.surfaceGapNodeIds.length}`)
+
+    // Что дал подбор: ряд диаметров, наполнение, скорость, замечания.
+    const pipes = gravity.pipes as unknown as Array<{
+      diameterMm: number; fillRatio: number; velocityMs: number; slope: number; flowLps: number
+      issues: Array<{ code: string }>
+    }>
+    const diameters = [...new Set(pipes.map((pipe) => pipe.diameterMm))].sort((a, b) => a - b)
+    const codes = new Map<string, number>()
+    for (const pipe of pipes) for (const issue of pipe.issues) codes.set(issue.code, (codes.get(issue.code) ?? 0) + 1)
+    const fills = pipes.map((pipe) => pipe.fillRatio)
+    const speeds = pipes.map((pipe) => pipe.velocityMs)
+    console.log(`ПОДБОР: диаметры ${diameters.join(', ')}; наполнение `
+      + `${Math.min(...fills).toFixed(3)}…${Math.max(...fills).toFixed(3)}; скорость `
+      + `${Math.min(...speeds).toFixed(3)}…${Math.max(...speeds).toFixed(3)} м/с`)
+    console.log(`ЗАМЕЧАНИЯ УЧАСТКОВ: ${codes.size === 0 ? 'нет' : JSON.stringify([...codes])}`)
+    const prof = gravity.profile as unknown as { maxDepthM?: number; stations?: unknown[] } | null
+    console.log(`ПРОФИЛЬ: станций ${prof?.stations?.length ?? 0}, наибольшая глубина ${prof?.maxDepthM ?? '—'} м`)
 
     // Пересечения — из той же съёмки: карточки нужны и составу, и листам.
     const crossings = (crossingsFromSurvey as unknown as (a: never, c: never, d: never) => unknown[])(
@@ -142,6 +174,23 @@ describe('сборка альбома реального объекта', () => 
       },
       crossings,
       utilityFeatureCount: (constraints.utilityLines ?? []).length,
+      // Промерзание — величина из документа, а не принятая: отчёт по
+      // инженерно-геологическим изысканиям ТОО «Geo Global KZ», Арх. № 17-08/25,
+      // раздел «Климат». Разобрана из отчёта, не введена руками.
+      freezingDepth: {
+        valueM: FREEZING_DEPTH_M,
+        status: 'verified' as const,
+        source: 'Отчёт ИГИ ТОО «Geo Global KZ», Арх. № 17-08/25, раздел «Климат»',
+      },
+      // Расход дождевого стока не считается формулой интенсивности: ТЗ
+      // предписывает брать его из расчёта ТОО «НИПИ Астана Генплан». Величина
+      // распознана со «Схемы ЛК от Генплан» и подтверждена владельцем.
+      stormRunoff: {
+        available: true,
+        verified: true,
+        source: 'Схема ЛК от Генплан, ТОО «НИПИ Астана Генплан»; подтверждено владельцем 08.08.2026',
+        detail: `расчётный расход на выпуске ${DESIGN_FLOW_LPS} л/с`,
+      },
     } as never)
 
     const byStatus = new Map<string, number>()
@@ -152,6 +201,17 @@ describe('сборка альбома реального объекта', () => 
     drawingSet.sheets.forEach((sheet, index) => {
       console.log(`НАШ ЛИСТ ${index + 1}: ${sheet.title}`)
     })
+    // Стоп-факторы поимённо: какой код скольким листам мешает.
+    const blockerCounts = new Map<string, number>()
+    for (const sheet of drawingSet.sheets as unknown as Array<{ status: string; blockers: Array<{ code: string }> }>) {
+      if (sheet.status !== 'BLOCKED') continue
+      for (const code of new Set(sheet.blockers.map((issue) => issue.code))) {
+        blockerCounts.set(code, (blockerCounts.get(code) ?? 0) + 1)
+      }
+    }
+    for (const [code, count] of [...blockerCounts].sort((a, b) => b[1] - a[1])) {
+      console.log(`СТОП-ФАКТОР ${code}: листов ${count}`)
+    }
 
     const { buildBenchmarkAlbumDoc } = await import('./benchmarkAlbum')
     try {
