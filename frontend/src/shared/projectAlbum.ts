@@ -11,8 +11,16 @@ import type {
   WorkingDrawingSet,
   WorkingDrawingSheet,
 } from '@aquascheme/engine'
-import { contoursFromSurvey } from '@aquascheme/engine'
+import { contoursFromSurvey, parseUtilityMark } from '@aquascheme/engine'
 import type { ContourResult } from '@aquascheme/engine'
+import {
+  PLAN_TEXT_HEIGHT_MM,
+  UTILITY_MARK_INTERVAL_MM,
+  markPositionsAlong,
+  planColour,
+  planFontSize,
+  planStroke,
+} from './planStyles'
 import { buildPlanSheetScene, clipPlanPolyline } from './planScene'
 import type { PlanPipeDesign } from './planScene'
 import { buildTitleBlock } from './titleBlock'
@@ -55,6 +63,23 @@ const PAGE_MARGINS: [number, number, number, number] = [30, 28, 30, 52]
 const PLAN_SCALE_DENOMINATOR = 500
 const PROFILE_HORIZONTAL_SCALE_DENOMINATOR = 500
 const PROFILE_VERTICAL_SCALE_DENOMINATOR = 100
+
+/**
+ * Пределы прореживания подосновы на листе.
+ *
+ * Съёмка объекта — сотни тысяч примитивов, и весь массив в один SVG не влезает:
+ * pdfmake разбирает разметку в лоб, и лист перестаёт собираться. Пределы подняты
+ * против прежних (2400 / 1400 / 320 / 240) по измерению эталона: на его плотном
+ * план-листе 15,5 тысячи обводок и 211 текстовых подписей, то есть прежний
+ * предел подписей был втрое ниже натуры.
+ *
+ * Отброшенное не замалчивается: `cadContextSvg` возвращает счётчики, и лист
+ * печатает их в строке основания.
+ */
+const CONTEXT_LINE_LIMIT = 6000
+const TERRAIN_LINE_LIMIT = 3000
+const CONTEXT_LABEL_LIMIT = 900
+const CONTEXT_BLOCK_LIMIT = 500
 
 /** Physical paper distance occupied by one model metre at the requested scale. */
 export function scaleMillimetresPerMetre(denominator: number): number {
@@ -144,11 +169,35 @@ function xmlText(value: unknown): string {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 }
 
+/** Что осталось за кадром при отрисовке подосновы — чтобы не молчать об этом. */
+interface CadContextResult {
+  svg: string
+  /** Линий подосновы отброшено прореживанием. */
+  droppedLines: number
+  /** Подписей подосновы скрыто из-за тесноты. */
+  hiddenLabels: number
+  /** Подписей подосновы выведено. */
+  shownLabels: number
+}
+
+/**
+ * Подоснова листа.
+ *
+ * Толщины и цвета — из таблицы стилей `planStyles`, а не числами по месту:
+ * линия обязана быть одинаковой на листах разной высоты, а «0.65» в разметке
+ * этого не обеспечивает.
+ *
+ * Прореживание осталось — полная съёмка объекта не влезает в один SVG, — но
+ * теперь оно возвращает, сколько отброшено. Молчаливая обрезка читается как
+ * «показано всё», а это неправда.
+ */
 function cadContextSvg(
   constraints: ProjectAlbumInput['constraints'],
   project: SvgProjector,
   bounds: Bounds,
-): string {
+  svgUnitsPerMm = 1,
+  placer: ReturnType<typeof labelPlacer> | null = null,
+): CadContextResult {
   const linePoints = (points: Array<{ x: number; y: number }>) => points
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
     .map((point) => {
@@ -156,42 +205,68 @@ function cadContextSvg(
       return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
     })
     .join(' ')
-  const contextLines = sampled(
-    (constraints?.cadContextLines ?? []).filter((line) => intersectsBounds(line.points, bounds)),
-    2400,
-  ).map((line) => `<polyline data-cad-context="line" points="${linePoints(line.points)}" fill="none" stroke="#c7c7c7" stroke-width="0.65"/>`).join('')
-  const terrainLines = sampled(
-    (constraints?.terrainLines ?? []).filter((line) => intersectsBounds(line.points, bounds)),
-    1400,
-  ).map((line) => `<polyline data-cad-context="terrain" points="${linePoints(line.points)}" fill="none" stroke="#78906d" stroke-width="0.9"/>`).join('')
+  const contextSource = (constraints?.cadContextLines ?? []).filter((line) => intersectsBounds(line.points, bounds))
+  const terrainSource = (constraints?.terrainLines ?? []).filter((line) => intersectsBounds(line.points, bounds))
+  const keptContext = sampled(contextSource, CONTEXT_LINE_LIMIT)
+  const keptTerrain = sampled(terrainSource, TERRAIN_LINE_LIMIT)
+  const contextLines = keptContext
+    .map((line) => `<polyline data-cad-context="line" points="${linePoints(line.points)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`).join('')
+  const terrainLines = keptTerrain
+    .map((line) => `<polyline data-cad-context="terrain" points="${linePoints(line.points)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`).join('')
+  const fontSize = planFontSize(svgUnitsPerMm)
+  let hiddenLabels = 0
+  let shownLabels = 0
   const labels = sampled(
     (constraints?.cadTextEntities ?? []).filter((label) =>
       Number.isFinite(label.x) && Number.isFinite(label.y)
       && label.x >= bounds.minX && label.x <= bounds.maxX
       && label.y >= bounds.minY && label.y <= bounds.maxY),
-    320,
+    CONTEXT_LABEL_LIMIT,
   ).map((label) => {
     const projected = project(label)
-    const tx = projected.x
-    const ty = projected.y
+    const text = String(label.text ?? '').replaceAll('\\P', ' ')
+    // Подпись подосновы уступает всем: сначала пробуется её собственное место,
+    // затем небольшой сдвиг, и только потом она снимается. Наложение не
+    // допускается — нечитаемая каша хуже отсутствующей отметки.
+    const w = Math.max(fontSize, text.length * fontSize * 0.55)
+    const h = fontSize * 1.25
+    const box = placer
+      ? placer.placeSource([0, -h, h, -2 * h, 2 * h].map((dy) => ({
+        x: projected.x, y: projected.y - h + dy, w, h,
+      })))
+      : { x: projected.x, y: projected.y - h, w, h }
+    if (box === null) { hiddenLabels += 1; return '' }
+    shownLabels += 1
+    const tx = box.x
+    // Базовая линия отсчитывается от верха коробки так же, как у отметок
+    // съёмки: у обоих видов подписи одна геометрия, и проверка перекрытий
+    // восстанавливает коробку по одной формуле.
+    const ty = box.y + h * 0.8
     const rotation = Number.isFinite(label.rotationDeg) && label.rotationDeg
       ? ` transform="rotate(${-label.rotationDeg!} ${tx.toFixed(1)} ${ty.toFixed(1)})"`
       : ''
-    return `<text data-cad-context="text" x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="7" fill="#555"${rotation}>${xmlText(label.text.replaceAll('\\P', ' '))}</text>`
+    return `<text data-cad-context="text" x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="${fontSize.toFixed(2)}" fill="${planColour('topobase')}"${rotation}>${xmlText(text)}</text>`
   }).join('')
   const blocks = sampled(
     (constraints?.cadBlockEntities ?? []).filter((block) =>
       Number.isFinite(block.x) && Number.isFinite(block.y)
       && block.x >= bounds.minX && block.x <= bounds.maxX
       && block.y >= bounds.minY && block.y <= bounds.maxY),
-    240,
+    CONTEXT_BLOCK_LIMIT,
   ).map((block) => {
     const projected = project(block)
     const bx = projected.x
     const by = projected.y
-    return `<g data-cad-context="block"><path d="M${(bx - 3).toFixed(1)} ${by.toFixed(1)}H${(bx + 3).toFixed(1)}M${bx.toFixed(1)} ${(by - 3).toFixed(1)}V${(by + 3).toFixed(1)}" stroke="#555" stroke-width="0.8"/><text x="${(bx + 4).toFixed(1)}" y="${(by - 3).toFixed(1)}" font-size="6.5" fill="#555">${xmlText(block.name)}</text></g>`
+    const arm = fontSize * 0.7
+    return `<g data-cad-context="block"><path d="M${(bx - arm).toFixed(1)} ${by.toFixed(1)}H${(bx + arm).toFixed(1)}M${bx.toFixed(1)} ${(by - arm).toFixed(1)}V${(by + arm).toFixed(1)}" ${planStroke('topobase', svgUnitsPerMm)}/><text x="${(bx + arm + 1).toFixed(1)}" y="${(by - arm).toFixed(1)}" font-size="${fontSize.toFixed(2)}" fill="${planColour('topobase')}">${xmlText(block.name)}</text></g>`
   }).join('')
-  return contextLines + terrainLines + blocks + labels
+  return {
+    svg: contextLines + terrainLines + blocks + labels,
+    droppedLines: Math.max(0, contextSource.length - keptContext.length)
+      + Math.max(0, terrainSource.length - keptTerrain.length),
+    hiddenLabels,
+    shownLabels,
+  }
 }
 
 /**
@@ -275,7 +350,22 @@ function labelPlacer() {
     box.x < other.x + other.w && other.x < box.x + box.w
     && box.y < other.y + other.h && other.y < box.y + box.h)
   return {
-    reserveSource(box: LabelBox) { source.push(box) },
+    /**
+     * Ставит подпись подосновы, если место свободно.
+     *
+     * Приоритет обратный прежнему. Раньше подписи съёмки занимали место первыми
+     * — «это исходные данные». На листе плана это оказалось неверно: подосновы
+     * тысячи подписей, они разбирали лист целиком, и обозначению колодца
+     * оставалось наложение. Содержание листа — проектная сеть; отметка съёмки
+     * рядом с ней контекст, и уступает она, а не наоборот. Наложения нет ни в
+     * какую сторону: не поместилась — снимается.
+     */
+    placeSource(candidates: LabelBox[]): LabelBox | null {
+      for (const box of candidates) {
+        if (!overlaps(box, own) && !overlaps(box, source)) { source.push(box); return box }
+      }
+      return null
+    },
     /**
      * Ставит подпись в первое место, не задевающее ничего; если такого нет —
      * в первое, не задевающее наши подписи.
@@ -350,28 +440,60 @@ function planSvg(
     const projected = project(point)
     return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
   }).join(' ')
-  const context = cadContextSvg(input.constraints, project, {
-    minX: window.minX,
-    maxX: window.maxX,
-    minY: window.minY,
-    maxY: window.maxY,
-  })
+  const placer = labelPlacer()
+  const fontSize = planFontSize(svgUnitsPerMm)
+  const markInterval = UTILITY_MARK_INTERVAL_MM * svgUnitsPerMm
+  /**
+   * Буквенная марка существующей сети повторяется вдоль линии.
+   *
+   * Марку разбирает `parseUtilityMark` — тот же разбор, что и на карточке
+   * пересечения; второго словаря марок в проекте нет и не заводится. Текст
+   * марки берётся из обозначения линии в съёмке: роль линии уже определена
+   * (существующая сеть), и имя слоя используется как подпись съёмки, а не как
+   * признак роли.
+   *
+   * Если разбор вида не удался, а обозначение длинное, марка не ставится:
+   * повторять «W-КАНАЛИЗАЦИЯ-ЛИВНЕВАЯ» через каждые два сантиметра — не
+   * подпись, а помеха. Короткое обозначение подписывается дословно.
+   *
+   * Шаг повтора — 21,0 мм бумаги, измерен по эталону (см. `planStyles`).
+   */
+  const utilityMarkSvg = (line: { points: Array<{ x: number; y: number }>; layer?: string }): string => {
+    const raw = String(line.layer ?? '').trim()
+    if (raw === '') return ''
+    const parsed = parseUtilityMark(raw)
+    const mark = parsed.kindEvidence ?? (raw.length <= 6 ? raw : '')
+    if (mark === '') return ''
+    const projected = line.points
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+      .map(project)
+    return markPositionsAlong(projected, markInterval).map((position) =>
+      `<text data-utility-mark="${xmlText(mark)}" transform="translate(${position.x.toFixed(1)} ${position.y.toFixed(1)}) rotate(${position.angleDeg.toFixed(1)})"`
+      + ` x="0" y="${(-fontSize * 0.35).toFixed(2)}" text-anchor="middle" font-size="${fontSize.toFixed(2)}"`
+      + ` fill="${planColour('existingUtility')}">${xmlText(mark)}</text>`).join('')
+  }
   const constraints = [
-    context,
-    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d7d7d7" stroke="#555"/>`),
-    ...(input.constraints?.buildingPolygons ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d7d7d7" stroke="#555"/>`),
-    ...(input.constraints?.parcelRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#777" stroke-width="0.8" stroke-dasharray="3 2"/>`),
-    ...(input.constraints?.forbiddenRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#f6d7d7" fill-opacity="0.5" stroke="#b42318" stroke-width="1.2"/>`),
-    ...[...(input.constraints?.protectionZoneRings ?? []), ...(input.constraints?.protectionZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="#fff1d6" fill-opacity="0.35" stroke="#c07800" stroke-width="1" stroke-dasharray="7 4"/>`),
-    ...[...(input.constraints?.approvedCrossingRings ?? []), ...(input.constraints?.approvedCrossingZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="#dff5e7" fill-opacity="0.4" stroke="#168047" stroke-width="1.2" stroke-dasharray="5 3"/>`),
-    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
-    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="8 5"/>`),
-    ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#8b734f" stroke-width="3"/>`),
-    ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#2685b5" stroke-width="2"/>`),
-    ...(input.constraints?.utilityLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="6 4"/>`),
-    ...(input.constraints?.redLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#d22" stroke-width="2"/>`),
-    ...(input.constraints?.guideLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#168047" stroke-width="1.3" stroke-dasharray="7 3"/>`),
-    ...(input.constraints?.hardObstacles ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#333" stroke-width="2"/>`),
+    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.buildingPolygons ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.parcelRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.forbiddenRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
+    ...[...(input.constraints?.protectionZoneRings ?? []), ...(input.constraints?.protectionZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
+    ...[...(input.constraints?.approvedCrossingRings ?? []), ...(input.constraints?.approvedCrossingZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('water', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('road', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('water', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.utilityLines ?? []).map((line) =>
+      `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('existingUtility', svgUnitsPerMm)}/>${utilityMarkSvg(line)}`),
+    // Красная линия подписывается словами — так она названа и на эталоне.
+    ...(input.constraints?.redLines ?? []).map((line) => {
+      const projected = line.points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)).map(project)
+      const caption = markPositionsAlong(projected, markInterval * 6).map((position) =>
+        `<text transform="translate(${position.x.toFixed(1)} ${position.y.toFixed(1)}) rotate(${position.angleDeg.toFixed(1)})" x="0" y="${(-fontSize * 0.35).toFixed(2)}" text-anchor="middle" font-size="${fontSize.toFixed(2)}" fill="${planColour('redLine')}">красная линия</text>`).join('')
+      return `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('redLine', svgUnitsPerMm)}/>${caption}`
+    }),
+    ...(input.constraints?.guideLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`),
+    ...(input.constraints?.hardObstacles ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
   ].join('')
   const relief = albumContours(input.surveyPoints)
   const contours = contourSvg(relief, project, {
@@ -380,33 +502,14 @@ function planSvg(
     minY: window.minY,
     maxY: window.maxY,
   })
-  const stride = Math.max(1, Math.ceil(topo.length / 360))
-  const topoSvg = topo.filter((_, index) => index % stride === 0).map((point, index) => {
-    const projected = project(point)
-    const label = index % 14 === 0
-      ? `<text x="${(projected.x + 3).toFixed(1)}" y="${(projected.y - 3).toFixed(1)}" font-size="7" fill="#666">${point.z.toFixed(2)}</text>`
-      : ''
-    return `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="1" fill="#666"/>${label}`
-  }).join('')
   const networkPipes = scene.pipes.map((pipe) => pipe.fragments.map((fragment) => {
     const points = linePoints(fragment)
-    const stroke = pipe.active ? '#1746b5' : '#4776bd'
-    const width = pipe.active ? 3.2 : 1.6
-    return `<polyline data-plan-pipe="${xmlText(pipe.pipeId)}" points="${points}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linejoin="round"/>`
+    // ГОСТ 21.704 п.3.9: видимый проектируемый трубопровод — сплошной толстой
+    // основной линией. Неактивная ветвь того же комплекта остаётся тонкой:
+    // на этом листе она контекст, а не предмет чертежа.
+    const stroke = planStroke(pipe.active ? 'designedPipe' : 'topobase', svgUnitsPerMm)
+    return `<polyline data-plan-pipe="${xmlText(pipe.pipeId)}" points="${points}" fill="none" ${stroke} stroke-linejoin="round"/>`
   }).join('')).join('')
-  const placer = labelPlacer()
-  // Подписи съёмки и обозначения блоков занимают место первыми: это исходные
-  // данные, и закрывать их своими надписями нельзя.
-  for (const entity of (input.constraints?.cadTextEntities ?? [])) {
-    if (!Number.isFinite(entity.x) || !Number.isFinite(entity.y)) continue
-    if (entity.x < window.minX || entity.x > window.maxX) continue
-    if (entity.y < window.minY || entity.y > window.maxY) continue
-    const projected = project(entity)
-    placer.reserveSource({
-      x: projected.x, y: projected.y - 7,
-      w: Math.max(18, String(entity.text ?? '').length * 3.6), h: 9,
-    })
-  }
 
   const nodeMarks = scene.nodes.map((node) => {
     const projected = project(node)
@@ -474,6 +577,38 @@ function planSvg(
     if (box === null) return `${mark}</g>`
     return `${mark}<text x="${box.x.toFixed(1)}" y="${(box.y + 8).toFixed(1)}" font-size="7.5" font-weight="700">${xmlText(station.label)}</text></g>`
   }).join('')
+
+  // Отметки съёмки и подписи подосновы считаются ПОСЛЕ проектных: место сначала
+  // занимает содержание листа, а контекст встаёт в оставшееся. Порядок вывода в
+  // разметке обратный — подоснова уходит под проектную графику.
+  let hiddenSurveyLabels = 0
+  let shownSurveyLabels = 0
+  const surveyDotRadius = Math.max(0.2, 0.25 * svgUnitsPerMm)
+  const topoSvg = topo.map((point) => {
+    const projected = project(point)
+    const text = point.z.toFixed(2)
+    const w = text.length * fontSize * 0.55
+    const h = fontSize * 1.25
+    const box = placer.placeSource([
+      { x: projected.x + surveyDotRadius * 2, y: projected.y - h, w, h },
+      { x: projected.x - w - surveyDotRadius * 2, y: projected.y - h, w, h },
+      { x: projected.x + surveyDotRadius * 2, y: projected.y, w, h },
+      { x: projected.x - w - surveyDotRadius * 2, y: projected.y, w, h },
+    ])
+    if (box === null) hiddenSurveyLabels += 1
+    else shownSurveyLabels += 1
+    const label = box === null
+      ? ''
+      : `<text x="${box.x.toFixed(1)}" y="${(box.y + h * 0.8).toFixed(1)}" font-size="${fontSize.toFixed(2)}" fill="${planColour('topobase')}">${text}</text>`
+    return `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="${surveyDotRadius.toFixed(2)}" fill="${planColour('topobase')}"/>${label}`
+  }).join('')
+  const context = cadContextSvg(input.constraints, project, {
+    minX: window.minX,
+    maxX: window.maxX,
+    minY: window.minY,
+    maxY: window.maxY,
+  }, svgUnitsPerMm, placer)
+
   const missingContext = scene.hasPlanContext ? '' : `<g data-plan-context-missing="true"><rect x="${(canvasWidth / 2 - 170).toFixed(1)}" y="27" width="340" height="30" fill="#fff4dc" stroke="#c07800" stroke-width="1.2"/><text x="${(canvasWidth / 2).toFixed(1)}" y="40" text-anchor="middle" font-size="9" font-weight="700" fill="#8a4c00">НЕПОЛНЫЙ ПЛАН: топографическая/CAD-подоснова отсутствует</text><text x="${(canvasWidth / 2).toFixed(1)}" y="51" text-anchor="middle" font-size="7" fill="#8a4c00">Показана расчётная сеть; финальный выпуск должен оставаться заблокированным</text></g>`
   const overview = sourcePath
   const minX = Math.min(...overview.map((point) => point.x))
@@ -512,7 +647,7 @@ function planSvg(
     .map((points) => `<polyline points="${points.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#dcdcdc" stroke-width="0.4"/>`)
     .join('')
   const insetFrame = `<rect data-inset-sheet-bounds="true" x="${Math.min(ox(insetBounds.minX), ox(insetBounds.maxX)).toFixed(1)}" y="${Math.min(oy(insetBounds.minY), oy(insetBounds.maxY)).toFixed(1)}" width="${Math.max(2, Math.abs(ox(insetBounds.maxX) - ox(insetBounds.minX))).toFixed(1)}" height="${Math.max(2, Math.abs(oy(insetBounds.maxY) - oy(insetBounds.minY))).toFixed(1)}" fill="none" stroke="#d33" stroke-width="1.2" stroke-dasharray="3 2"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" stroke="#111"/><g clip-path="url(#work-${sheet.sheetNumber})">${constraints}${contours}${topoSvg}${networkPipes}<polyline data-plan-route="true" points="${route}" fill="none" stroke="#1746b5" stroke-width="4.8" stroke-linejoin="round"/>${stationMarks}${nodeMarks}${pipeLabels}</g>${missingContext}<g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/>${insetContext}<polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/>${insetFrame}<text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><g transform="translate(42 414)" font-size="7"><rect x="0" y="0" width="310" height="39" fill="#fff" fill-opacity="0.94" stroke="#888"/><line x1="8" y1="11" x2="34" y2="11" stroke="#1746b5" stroke-width="4"/><text x="40" y="14">проектная ось</text><circle cx="132" cy="11" r="3" fill="#fff" stroke="#1746b5"/><text x="140" y="14">колодец / камера</text><line x1="222" y1="11" x2="248" y2="11" stroke="#d33" stroke-dasharray="5 4"/><text x="254" y="14">граница листа</text><line x1="8" y1="28" x2="34" y2="28" stroke="#9b2c8c" stroke-dasharray="5 3"/><text x="40" y="31">существующая сеть</text><line x1="132" y1="28" x2="158" y2="28" stroke="#78906d"/><text x="164" y="31">рельеф / подоснова</text><line x1="222" y1="28" x2="248" y2="28" stroke="#8a6b3d" stroke-width="1.1"/><text x="254" y="31">${relief.lines.length > 0 ? `горизонтали, сечение ${relief.stepM} м` : 'горизонтали не построены'}</text></g><text x="40" y="485" font-size="8">Основание: ${scene.contextFeatureCount} объектов CAD/топоподосновы; ${topo.length} отметок в окне; ${scene.pipes.length} участков сети. ${relief.lines.length > 0 ? `Горизонтали через ${relief.stepM} м выведены по ${input.surveyPoints.length} отметкам съёмки.` : xmlText(relief.reason)} Масштаб 1:${PLAN_SCALE_DENOMINATOR}.</text></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" ${planStroke('sheetFrame', svgUnitsPerMm)}/><g clip-path="url(#work-${sheet.sheetNumber})">${context.svg}${constraints}${contours}${topoSvg}${networkPipes}<polyline data-plan-route="true" points="${route}" fill="none" ${planStroke('routeAxis', svgUnitsPerMm)} stroke-linejoin="round"/>${stationMarks}${nodeMarks}${pipeLabels}</g>${missingContext}<g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/>${insetContext}<polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/>${insetFrame}<text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><g transform="translate(42 414)" font-size="7"><rect x="0" y="0" width="310" height="39" fill="#fff" fill-opacity="0.94" stroke="#888"/><line x1="8" y1="11" x2="34" y2="11" stroke="#1746b5" stroke-width="4"/><text x="40" y="14">проектная ось</text><circle cx="132" cy="11" r="3" fill="#fff" stroke="#1746b5"/><text x="140" y="14">колодец / камера</text><line x1="222" y1="11" x2="248" y2="11" stroke="#d33" stroke-dasharray="5 4"/><text x="254" y="14">граница листа</text><line x1="8" y1="28" x2="34" y2="28" stroke="#9b2c8c" stroke-dasharray="5 3"/><text x="40" y="31">существующая сеть</text><line x1="132" y1="28" x2="158" y2="28" stroke="#78906d"/><text x="164" y="31">рельеф / подоснова</text><line x1="222" y1="28" x2="248" y2="28" stroke="#8a6b3d" stroke-width="1.1"/><text x="254" y="31">${relief.lines.length > 0 ? `горизонтали, сечение ${relief.stepM} м` : 'горизонтали не построены'}</text></g><text x="40" y="485" font-size="8">Основание: ${scene.contextFeatureCount} объектов CAD/топоподосновы; ${topo.length} отметок в окне; ${scene.pipes.length} участков сети. ${relief.lines.length > 0 ? `Горизонтали через ${relief.stepM} м выведены по ${input.surveyPoints.length} отметкам съёмки.` : xmlText(relief.reason)} Масштаб 1:${PLAN_SCALE_DENOMINATOR}. Подписи: отметок съёмки ${shownSurveyLabels} из ${topo.length}, подосновы ${context.shownLabels}; снято из-за тесноты ${hiddenSurveyLabels + context.hiddenLabels}; линий подосновы прорежено ${context.droppedLines}. Шрифт ${PLAN_TEXT_HEIGHT_MM} мм.</text></svg>`
 }
 
 function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
@@ -537,7 +672,7 @@ function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): s
   const linePoints = (points: Array<{ x: number; y: number }>) => points
     .map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`)
     .join(' ')
-  const context = cadContextSvg(input.constraints, project, { minX, maxX, minY, maxY })
+  const context = cadContextSvg(input.constraints, project, { minX, maxX, minY, maxY }).svg
   const constraints = [
     context,
     ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e2e2e2" stroke="#555"/>`),

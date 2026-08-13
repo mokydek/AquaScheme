@@ -228,6 +228,89 @@ describe('project working-drawing album', () => {
     }
   })
 
+  it('ведёт стили плана по ролям из измеренной таблицы и повторяет марку вдоль линии', () => {
+    // Существующая сеть подписана маркой съёмки, и марка повторяется вдоль
+    // линии с шагом 21 мм бумаги — величина измерена по эталону.
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: {
+        corridorRings: [],
+        utilityLines: [{ points: [{ x: 0, y: 40 }, { x: 650, y: 40 }], layer: 'Лив' }],
+      },
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content).replaceAll('\\"', '"')
+    const planSvg = /(<svg[^>]*?data-horizontal-scale-denominator[\s\S]*?<\/svg>)/.exec(serialized)?.[1] ?? ''
+    const unitsPerMm = Number(/data-svg-units-per-mm="([\d.]+)"/.exec(planSvg)?.[1] ?? '0')
+    expect(unitsPerMm).toBeGreaterThan(0)
+
+    // Толщины назначены роли и заданы в миллиметрах бумаги: проектируемый
+    // трубопровод — толстая основная 0,99 мм (ГОСТ 21.704 п.3.9), подоснова —
+    // тонкая 0,127 мм (п.5.1.1).
+    expect(planSvg).toContain(`stroke-width="${(0.99 * unitsPerMm).toFixed(3)}"`)
+    expect(planSvg).toContain(`stroke-width="${(0.127 * unitsPerMm).toFixed(3)}"`)
+    expect(planSvg).toContain('stroke="#b85c00"')
+
+    const marks = [...planSvg.matchAll(/data-utility-mark="[^"]+" transform="translate\((-?[\d.]+) (-?[\d.]+)\)/g)]
+      .map((match) => ({ x: Number(match[1]), y: Number(match[2]) }))
+    expect(marks.length).toBeGreaterThan(2)
+    const steps = marks.slice(1).map((mark, index) => Math.hypot(mark.x - marks[index].x, mark.y - marks[index].y))
+    // Координаты в разметке округлены до десятой единицы холста, поэтому шаг
+    // сверяется с точностью округления, а не буквально.
+    for (const step of steps) expect(step).toBeCloseTo(21 * unitsPerMm, 0)
+  })
+
+  it('снимает подпись подосновы, когда место занято проектной: наложений нет', () => {
+    // Подписи съёмки густо ложатся туда же, куда идут обозначения колодцев.
+    // Приоритет теперь у проектной графики, а подоснова уступает — но уступает
+    // пропуском, а не наложением.
+    const cadTextEntities = Array.from({ length: 120 }, (_, index) => ({
+      x: 20 + index * 5, y: 20 + (index % 7) * 5, text: (686 + index / 100).toFixed(2), layer: 'РЕЛЬЕФ',
+    }))
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: { corridorRings: [], cadTextEntities },
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content).replaceAll('\\"', '"')
+    const planSvg = /(<svg[^>]*?data-horizontal-scale-denominator[\s\S]*?<\/svg>)/.exec(serialized)?.[1] ?? ''
+
+    const nodeBoxes = [...planSvg.matchAll(
+      /<rect x="(-?[\d.]+)" y="(-?[\d.]+)" width="([\d.]+)" height="13" fill="#fff" stroke="#555"/g,
+    )].map((match) => ({ x: Number(match[1]), y: Number(match[2]), w: Number(match[3]), h: 13 }))
+    expect(nodeBoxes.length).toBeGreaterThan(1)
+
+    // Коробка подписи подосновы восстанавливается по той же формуле, по которой
+    // ставилась: ширина по числу знаков, базовая линия на 0,8 высоты сверху.
+    const sourceBoxes = [...planSvg.matchAll(
+      /<text (?:data-cad-context="text" )?x="(-?[\d.]+)" y="(-?[\d.]+)" font-size="([\d.]+)" fill="#000000">([^<]+)<\/text>/g,
+    )].map((match) => {
+      const size = Number(match[3])
+      const height = size * 1.25
+      return {
+        x: Number(match[1]),
+        y: Number(match[2]) - height * 0.8,
+        w: match[4].length * size * 0.55,
+        h: height,
+      }
+    })
+    expect(sourceBoxes.length).toBeGreaterThan(0)
+
+    const overlaps = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
+      a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    for (const source of sourceBoxes) {
+      for (const node of nodeBoxes) expect(overlaps(source, node)).toBe(false)
+      for (const other of sourceBoxes) {
+        if (other === source) continue
+        expect(overlaps(source, other)).toBe(false)
+      }
+    }
+    // Снятое не замалчивается: лист печатает, сколько подписей не поместилось.
+    expect(planSvg).toContain('снято из-за тесноты')
+  })
+
   it('разводит выноски пересечений профиля по ярусам', () => {
     // Двадцать пересечений подряд: обе строки выноски писались на постоянной
     // высоте, и на плотном участке подписи сливались в нечитаемую полосу.
