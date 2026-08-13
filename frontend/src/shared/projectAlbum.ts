@@ -62,7 +62,16 @@ const PDF_POINTS_PER_MM = 72 / 25.4
 const PAGE_MARGINS: [number, number, number, number] = [30, 28, 30, 52]
 const PLAN_SCALE_DENOMINATOR = 500
 const PROFILE_HORIZONTAL_SCALE_DENOMINATOR = 500
-const PROFILE_VERTICAL_SCALE_DENOMINATOR = 100
+/**
+ * Вертикальные масштабы профиля — ряд ГОСТ 21.704—2011, таблица 2, строка 4.
+ *
+ * Норматив даёт три величины, и это не украшение: полоса чертежа у эталона
+ * 129 мм, что при 1:100 вмещает 12,9 м перепада. Профиль нашего объекта уходит
+ * на глубину до 47 м, и при 1:100 он в полосу не ложится — линия просто
+ * пропадала бы за рамкой. Масштаб выбирается наименьшим из ряда, в который
+ * профиль укладывается, и подписывается на листе.
+ */
+const PROFILE_VERTICAL_SCALE_DENOMINATORS = [100, 200, 500] as const
 
 /**
  * Пределы прореживания подосновы на листе.
@@ -76,6 +85,47 @@ const PROFILE_VERTICAL_SCALE_DENOMINATOR = 100
  * Отброшенное не замалчивается: `cadContextSvg` возвращает счётчики, и лист
  * печатает их в строке основания.
  */
+/**
+ * Боковик продольного профиля: состав, порядок и высоты граф.
+ *
+ * Измерено по эталону — страницы 34 и 40 PDF (листы 33 и 39). Разделители граф
+ * сняты по линиям постоянной координаты поперёк листа и легли на круглые
+ * миллиметры: 15, 20, 25, 35, 45, 50, 55, 70, 85, 100, 115. Заголовки взяты
+ * дословно из текстового слоя тех же страниц; их порядок — порядок координат.
+ *
+ * Полоса 50…55 мм на обеих страницах пуста: разделители есть, заголовка и
+ * значений нет. Она сохранена как есть — выдумывать ей назначение не из чего.
+ *
+ * Поле чертежа начинается на 115 мм и кончается на 244 мм: 129 мм при
+ * вертикальном 1:100 — это 12,9 м перепада, и шкала отметок эталона на стр. 34
+ * идёт ровно от 335,00 до 348,00, то есть 13 м. Совпадение подтверждает замер.
+ */
+const PROFILE_SIDEBAR_ROWS = [
+  { title: 'Пикеты', fromMm: 5, toMm: 15, vertical: false },
+  { title: 'Номер колодца, точки, угла поворота', fromMm: 15, toMm: 25, vertical: false },
+  { title: 'Расстояние, м', fromMm: 25, toMm: 35, vertical: false },
+  { title: 'Уклон, ‰; длина, м', fromMm: 35, toMm: 45, vertical: false },
+  { title: 'Основание', fromMm: 45, toMm: 50, vertical: false },
+  { title: '', fromMm: 50, toMm: 55, vertical: false },
+  { title: 'Обозначение трубы и тип изоляции', fromMm: 55, toMm: 70, vertical: false },
+  { title: 'Натурная отметка земли, м', fromMm: 70, toMm: 85, vertical: true },
+  { title: 'Проектная отметка земли, м', fromMm: 85, toMm: 100, vertical: true },
+  { title: 'Проектная отметка низа трубы или низа лотка колодца, м', fromMm: 100, toMm: 115, vertical: true },
+] as const
+
+/** Поле чертежа профиля, мм от нижней кромки листа. */
+const PROFILE_FIELD_FROM_MM = 115
+const PROFILE_FIELD_TO_MM = 244
+
+/**
+ * Кегль боковика, мм.
+ *
+ * Взят прямо из матрицы шрифта эталона: 10,46 pt = 3,69 мм. Отметки набраны
+ * чуть мельче (10,12 pt), примечания у колодцев — 4,47 pt; эта разница здесь не
+ * воспроизводится, потому что назначения мелкого кегля мы не знаем.
+ */
+const PROFILE_TEXT_HEIGHT_MM = 3.7
+
 const CONTEXT_LINE_LIMIT = 6000
 const TERRAIN_LINE_LIMIT = 3000
 const CONTEXT_LABEL_LIMIT = 900
@@ -831,7 +881,17 @@ function profileSvg(
   // и колонки скважин, выходящие за полосу, обрезаются рамкой чертежа: их
   // включение в подбор базы дробило бы лист на десятки горизонтов.
   const horizontalUnitsPerMetre = scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR) * svgUnitsPerMm
-  const verticalUnitsPerMetre = scaleMillimetresPerMetre(PROFILE_VERTICAL_SCALE_DENOMINATOR) * svgUnitsPerMm
+  const fieldHeightMm = PROFILE_FIELD_TO_MM - PROFILE_FIELD_FROM_MM
+  // Перепад, который лист обязан вместить: самая высокая и самая низкая точка
+  // всех станций плюс метр на базу условного горизонта.
+  const requiredSpanM = stations.reduce((span, station) => Math.max(
+    span,
+    Math.abs(station.groundElevationM - station.invertElevationM),
+  ), 0) + 1
+  const verticalDenominator = PROFILE_VERTICAL_SCALE_DENOMINATORS
+    .find((denominator) => fieldHeightMm * denominator / 1000 >= requiredSpanM)
+    ?? PROFILE_VERTICAL_SCALE_DENOMINATORS[PROFILE_VERTICAL_SCALE_DENOMINATORS.length - 1]
+  const verticalUnitsPerMetre = scaleMillimetresPerMetre(verticalDenominator) * svgUnitsPerMm
   const x = (chainageM: number) => 185 + (chainageM - fromM) * horizontalUnitsPerMetre
   if (x(toM) > canvasWidth - 35 + 1e-6) {
     throw new Error(`Лист ${sheet.sheetNumber}: ширины рулонного листа недостаточно для масштаба профиля 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}.`)
@@ -850,7 +910,13 @@ function profileSvg(
    * Базы кратны пяти метрам — так они читаются и так подписаны у эталона
    * (330, 333, 335 на разных листах его альбома).
    */
-  const bandMetres = (330 - 35) / verticalUnitsPerMetre
+  // Поле чертежа задаётся в миллиметрах от нижней кромки листа, а не числами по
+  // месту: у эталона оно 115…244 мм, и переносить эти границы в единицы холста
+  // должен один пересчёт, иначе при другой высоте листа полоса разъедется.
+  const across = (millimetresFromBottom: number) => 500 - millimetresFromBottom * svgUnitsPerMm
+  const fieldBottom = across(PROFILE_FIELD_FROM_MM)
+  const fieldTop = across(PROFILE_FIELD_TO_MM)
+  const bandMetres = (fieldBottom - fieldTop) / verticalUnitsPerMetre
   const DATUM_STEP_M = 5
   const roundDatum = (elevationM: number) => Math.floor(elevationM / DATUM_STEP_M) * DATUM_STEP_M
   type DatumSegment = {
@@ -892,7 +958,7 @@ function profileSvg(
     return segments[0]?.datumM ?? 0
   }
   const y = (elevationM: number, chainageM: number) =>
-    330 - (elevationM - datumAt(chainageM)) * verticalUnitsPerMetre
+    fieldBottom - (elevationM - datumAt(chainageM)) * verticalUnitsPerMetre
 
   // Каждый сегмент — своя ломаная: разрыв между ними и есть скачок горизонта.
   const polyline = (pick: (station: typeof stations[number]) => number) => segments
@@ -904,23 +970,79 @@ function profileSvg(
   const invert = polyline((station) => station.invertElevationM)
   const datumMarks = segments.map((segment) => {
     const markX = x(segment.fromM)
-    return `<line data-datum-break="true" x1="${markX.toFixed(1)}" y1="35" x2="${markX.toFixed(1)}" y2="330" stroke="#c07800" stroke-width="0.8" stroke-dasharray="4 3"/>`
-      + `<text data-datum-label="true" x="${(markX + 3).toFixed(1)}" y="46" font-size="7" fill="#8a4c00">УГ ${segment.datumM.toFixed(2)}</text>`
+    return `<line data-datum-break="true" x1="${markX.toFixed(1)}" y1="${fieldTop.toFixed(1)}" x2="${markX.toFixed(1)}" y2="${fieldBottom.toFixed(1)}" stroke="#c07800" stroke-width="0.8" stroke-dasharray="4 3"/>`
+      + `<text data-datum-label="true" x="${(markX + 3).toFixed(1)}" y="${(fieldTop + 11).toFixed(1)}" font-size="7" fill="#8a4c00">УГ ${segment.datumM.toFixed(2)}</text>`
   }).join('')
   const manholeByNodeId = new Map(input.schedule.manholes.flatMap((manhole) => (
     manhole.nodeId ? [[manhole.nodeId, manhole.label] as const] : []
   )))
+  /**
+   * Значения боковика.
+   *
+   * Формат записи взят у эталона: отметки и расстояния — с запятой, отметки с
+   * двумя знаками, расстояния с одним, уклон с одним. Значения — наши, из
+   * расчёта профиля; из эталона взято только КАК их писать.
+   */
+  const decimal = (value: number, digits: number) => value.toFixed(digits).replace('.', ',')
+  const rowBounds = new Map(PROFILE_SIDEBAR_ROWS.map((row) => [row.title || `пусто-${row.fromMm}`, {
+    top: across(row.toMm), bottom: across(row.fromMm), middle: across((row.fromMm + row.toMm) / 2),
+  }]))
+  const sidebarFont = PROFILE_TEXT_HEIGHT_MM * svgUnitsPerMm
+  const at = (title: string) => rowBounds.get(title)!
+  const cell = (title: string, centreX: number, text: string, vertical: boolean) => {
+    const bounds = at(title)
+    const baseline = bounds.middle + sidebarFont * 0.35
+    if (!vertical) {
+      return `<text data-sidebar-row="${xmlText(title)}" x="${centreX.toFixed(1)}" y="${baseline.toFixed(1)}" text-anchor="middle" font-size="${sidebarFont.toFixed(2)}">${xmlText(text)}</text>`
+    }
+    // Отметки в трёх нижних графах эталона стоят поперёк графы — оттого эти
+    // графы и втрое выше остальных.
+    return `<text data-sidebar-row="${xmlText(title)}" transform="translate(${centreX.toFixed(1)} ${(bounds.bottom - 2).toFixed(1)}) rotate(-90)" x="0" y="${(sidebarFont * 0.35).toFixed(1)}" font-size="${sidebarFont.toFixed(2)}">${xmlText(text)}</text>`
+  }
   const columns = stations.map((station) => {
-    const stationPicket = picket(station.chainageM)
+    const stationX = x(station.chainageM)
     const label = manholeByNodeId.get(station.nodeId) ?? station.nodeId
-    return `<line x1="${x(station.chainageM)}" y1="${y(station.groundElevationM, station.chainageM)}" x2="${x(station.chainageM)}" y2="${y(station.invertElevationM, station.chainageM)}" stroke="#111"/><line x1="${x(station.chainageM)}" y1="350" x2="${x(station.chainageM)}" y2="500" stroke="#bbb"/><text x="${x(station.chainageM)}" y="367" text-anchor="middle" font-size="8">${station.invertElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="392" text-anchor="middle" font-size="8">${station.groundElevationM.toFixed(2)}</text><text x="${x(station.chainageM)}" y="417" text-anchor="middle" font-size="8">${station.diameterMm}</text><text x="${x(station.chainageM)}" y="484" text-anchor="middle" font-size="7">${xmlText(label)}</text><text x="${x(station.chainageM)}" y="496" text-anchor="middle" font-size="7">${stationPicket}</text>`
+    // Ордината: от низа боковика до линии лотка. У эталона она сквозная по
+    // всем графам и обрывается на чертеже, а не рисуется постоянным шагом —
+    // ординаты стоят на колодцах и пикетах, потому что графы привязаны к ним.
+    return `<line data-profile-ordinate="${station.chainageM.toFixed(2)}" x1="${stationX.toFixed(1)}" y1="${y(station.invertElevationM, station.chainageM).toFixed(1)}" x2="${stationX.toFixed(1)}" y2="${across(PROFILE_SIDEBAR_ROWS[0].fromMm).toFixed(1)}" stroke="#111" stroke-width="0.4"/>`
+      + cell('Пикеты', stationX, picket(station.chainageM), false)
+      + cell('Номер колодца, точки, угла поворота', stationX, String(label), false)
+      + cell('Натурная отметка земли, м', stationX, decimal(station.groundElevationM, 2), true)
+      // Проектной отметки земли у нас нет — вертикальная планировка не наша
+      // часть. У эталона в этой графе стоит прочерк, и он же стоит здесь.
+      + cell('Проектная отметка земли, м', stationX, '-', true)
+      + cell('Проектная отметка низа трубы или низа лотка колодца, м', stationX, decimal(station.invertElevationM, 2), true)
   }).join('')
+  /**
+   * Целые пикеты подписываются каждые 100 м.
+   *
+   * Измерено по эталону, стр. 34: в графе «Пикеты» стоят ПК 9, ПК 10 … ПК 15 с
+   * шагом 566,5 pt = 200 мм = 100 м при 1:500, и отдельно — положения колодцев
+   * форматом ПК10+10.53. Прежде наш лист подписывал только станции, и пикетаж
+   * между колодцами читать было не по чему.
+   */
+  const wholePickets: string[] = []
+  for (let metre = Math.ceil(fromM / 100) * 100; metre <= toM + 1e-9; metre += 100) {
+    const picketX = x(metre)
+    wholePickets.push(
+      `<line data-profile-picket="${metre}" x1="${picketX.toFixed(1)}" y1="${across(PROFILE_SIDEBAR_ROWS[0].toMm).toFixed(1)}" x2="${picketX.toFixed(1)}" y2="${across(PROFILE_SIDEBAR_ROWS[0].fromMm).toFixed(1)}" stroke="#111" stroke-width="0.4"/>`
+      + cell('Пикеты', picketX, `ПК ${metre / 100}`, false),
+    )
+  }
   const segmentValues = stations.slice(1).map((station, index) => {
     const previous = stations[index]
     const lengthM = Math.max(station.chainageM - previous.chainageM, 0)
     const slopePermille = lengthM > 0 ? ((previous.invertElevationM - station.invertElevationM) / lengthM) * 1000 : 0
-    const centerX = x((previous.chainageM + station.chainageM) / 2)
-    return `<text x="${centerX}" y="442" text-anchor="middle" font-size="7">${slopePermille.toFixed(2)}‰ / ${lengthM.toFixed(2)} м</text><text x="${centerX}" y="467" text-anchor="middle" font-size="7">${lengthM.toFixed(2)}</text>`
+    const centreX = x((previous.chainageM + station.chainageM) / 2)
+    const slopeRow = at('Уклон, ‰; длина, м')
+    return cell('Расстояние, м', centreX, decimal(lengthM, 1), false)
+      // Графа уклона несёт две величины: у эталона уклон и длина стоят в одной
+      // полосе на разной высоте, разделённые чертой.
+      + `<text data-sidebar-row="Уклон, ‰; длина, м" x="${centreX.toFixed(1)}" y="${(slopeRow.top + sidebarFont).toFixed(1)}" text-anchor="middle" font-size="${sidebarFont.toFixed(2)}">${decimal(slopePermille, 1)}</text>`
+      + `<line x1="${(centreX - sidebarFont).toFixed(1)}" y1="${slopeRow.middle.toFixed(1)}" x2="${(centreX + sidebarFont).toFixed(1)}" y2="${slopeRow.middle.toFixed(1)}" stroke="#111" stroke-width="0.4"/>`
+      + `<text data-sidebar-row="Уклон, ‰; длина, м" x="${centreX.toFixed(1)}" y="${(slopeRow.bottom - sidebarFont * 0.3).toFixed(1)}" text-anchor="middle" font-size="${sidebarFont.toFixed(2)}">${decimal(lengthM, 1)}</text>`
+      + cell('Обозначение трубы и тип изоляции', centreX, `∅${station.diameterMm} L=${decimal(lengthM, 1)} м`, false)
   }).join('')
   // Выноски пересечений разводятся по ярусам.
   //
@@ -932,12 +1054,12 @@ function profileSvg(
   const crossings = activeCrossings
     .map((crossing) => {
       const crossingX = x(crossing.stationM)
-      const designY = Number.isFinite(crossing.designInvertElevationM) ? y(crossing.designInvertElevationM!, crossing.stationM) : 315
-      const existingY = Number.isFinite(crossing.existingElevationM) ? y(crossing.existingElevationM!, crossing.stationM) : 65
+      const designY = Number.isFinite(crossing.designInvertElevationM) ? y(crossing.designInvertElevationM!, crossing.stationM) : fieldBottom - 15
+      const existingY = Number.isFinite(crossing.existingElevationM) ? y(crossing.existingElevationM!, crossing.stationM) : fieldTop + 30
       const title = `${crossing.id} · ${crossing.kind}`
       const clearance = `просвет ${Number.isFinite(crossing.clearanceM) ? crossing.clearanceM!.toFixed(2) + ' м' : 'нет данных'}`
       const width = Math.max(title.length, clearance.length) * 3.5 + 6
-      const lanes = [48, 72, 96, 120, 144, 168]
+      const lanes = [0, 1, 2, 3, 4, 5].map((lane) => fieldTop + 13 + lane * 24)
       const candidates = lanes.map((top) => ({ x: crossingX + 5, y: top, w: width, h: 22 }))
       const box = crossingPlacer.place(candidates) ?? candidates[0]
       return `<line x1="${crossingX}" y1="45" x2="${crossingX}" y2="335" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 4"/>`
@@ -964,9 +1086,19 @@ function profileSvg(
       : ''
     return [`<line x1="${boreholeX}" y1="${y(mouthElevationM, chainageM)}" x2="${boreholeX}" y2="${y(mouthElevationM - deepest, chainageM)}" stroke="#7a5a32" stroke-width="2"/>${layerLines}${water}<text x="${boreholeX}" y="${y(mouthElevationM, chainageM) - 5}" text-anchor="middle" font-size="7" fill="#6b4c2b">${xmlText(borehole.label)}</text>`]
   }).join('')
-  const rows = ['Отметка лотка, м', 'Отметка земли, м', 'Диаметр, мм', 'Уклон / длина', 'Расстояние, м', 'Колодец / ПК']
-  const table = rows.map((label, index) => `<rect x="35" y="${350 + index * 25}" width="${canvasWidth - 70}" height="25" fill="none" stroke="#111"/><line x1="160" y1="${350 + index * 25}" x2="160" y2="${375 + index * 25}" stroke="#111"/><text x="42" y="${367 + index * 25}" font-size="8">${label}</text>`).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR)}" data-vertical-scale-denominator="${PROFILE_VERTICAL_SCALE_DENOMINATOR}" data-vertical-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_VERTICAL_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="35" width="${canvasWidth - 195}" height="300"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${segments.map((segment) => segment.datumM.toFixed(2)).join(', ')} м · масштаб гор. 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}, верт. 1:${PROFILE_VERTICAL_SCALE_DENOMINATOR}</text><g clip-path="url(#profile-${sheet.sheetNumber})">${ground.map((points) => `<polyline data-profile-ground="true" points="${points}" fill="none" stroke="#6c5134" stroke-width="2.5"/>`).join('')}${invert.map((points) => `<polyline data-profile-invert="true" points="${points}" fill="none" stroke="#1746b5" stroke-width="3.5"/>`).join('')}${datumMarks}${geology}${crossings}</g>${columns}${table}${segmentValues}</svg>`
+  // Заголовки боковика стоят в начале листа, каждый в своей полосе, и читаются
+  // вдоль листа — так они набраны и у эталона.
+  const headerRight = 185
+  const table = PROFILE_SIDEBAR_ROWS.map((row) => {
+    const top = across(row.toMm)
+    const height = (row.toMm - row.fromMm) * svgUnitsPerMm
+    const title = row.title === ''
+      ? ''
+      : `<text data-sidebar-title="${xmlText(row.title)}" x="40" y="${(top + height / 2 + sidebarFont * 0.35).toFixed(1)}" font-size="${Math.min(sidebarFont, height * 0.7).toFixed(2)}">${xmlText(row.title)}</text>`
+    return `<rect data-sidebar-band="${row.fromMm}-${row.toMm}" x="35" y="${top.toFixed(1)}" width="${(canvasWidth - 70).toFixed(1)}" height="${height.toFixed(1)}" fill="none" stroke="#111" stroke-width="0.5"/>`
+      + `<line x1="${headerRight}" y1="${top.toFixed(1)}" x2="${headerRight}" y2="${(top + height).toFixed(1)}" stroke="#111" stroke-width="0.5"/>${title}`
+  }).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR)}" data-vertical-scale-denominator="${verticalDenominator}" data-vertical-mm-per-meter="${scaleMillimetresPerMetre(verticalDenominator)}" data-svg-units-per-mm="${svgUnitsPerMm}"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="${fieldTop.toFixed(1)}" width="${canvasWidth - 195}" height="${(fieldBottom - fieldTop).toFixed(1)}"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${segments.map((segment) => segment.datumM.toFixed(2)).join(', ')} м · масштаб гор. 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}, верт. 1:${verticalDenominator}</text><g clip-path="url(#profile-${sheet.sheetNumber})">${ground.map((points) => `<polyline data-profile-ground="true" points="${points}" fill="none" stroke="#6c5134" stroke-width="2.5"/>`).join('')}${invert.map((points) => `<polyline data-profile-invert="true" points="${points}" fill="none" stroke="#1746b5" stroke-width="3.5"/>`).join('')}${datumMarks}${geology}${crossings}</g>${columns}${wholePickets.join('')}${table}${segmentValues}</svg>`
 }
 
 function basicTable(headers: string[], rows: Array<Array<string | number>>, widths?: Array<number | string>): PdfNode {

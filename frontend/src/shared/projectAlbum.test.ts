@@ -389,7 +389,10 @@ describe('project working-drawing album', () => {
     const serialized = JSON.stringify(doc.content)
     expect(serialized).not.toContain('R01')
     expect(serialized).not.toContain('фиктив')
-    expect(serialized).toContain('2.99‰ / 670.00 м')
+    // Уклон и длина стоят в графе «Уклон, ‰; длина, м» — состав и запись
+    // измерены по эталону: одна десятая, разделитель запятая.
+    expect(serialized).toContain('data-sidebar-row=\\"Уклон, ‰; длина, м\\"')
+    expect(serialized).toContain('>670,0<')
     expect(serialized).toContain('X-1')
     expect(serialized).toContain('BH-1')
     expect(serialized).toContain('CAD-CONTEXT-LABEL')
@@ -484,7 +487,7 @@ describe('project working-drawing album', () => {
     expect(albumText).toContain('X-1')
     expect(albumText).toContain('BH-1')
     const normalizedAlbumText = albumText.replace(/\s+/g, '')
-    expect(normalizedAlbumText).toContain('2.99‰/670.00м')
+    expect(normalizedAlbumText).toContain('670,0')
     expect(normalizedAlbumText).toContain('Общиеданные')
     expect(normalizedAlbumText).toContain('Точкитопографическойсъёмки')
     const structuresPage = await pdf.getPage(pdf.numPages - 1)
@@ -783,18 +786,63 @@ describe('условный горизонт меняется внутри лис
     for (const datum of labels) expect(datum % 5).toBeCloseTo(0, 9)
   })
 
+  it('боковик несёт графы эталона в измеренном порядке и с измеренными высотами', () => {
+    // Порядок и высоты сняты по эталону (стр. 34 и 40): разделители граф лежат
+    // на 15, 20, 25, 35, 45, 50, 55, 70, 85, 100, 115 мм от нижней кромки листа.
+    const { svg } = sheetSvg(6)
+    const unitsPerMm = Number(/data-svg-units-per-mm="([\d.]+)"/.exec(svg)?.[1] ?? '0')
+    expect(unitsPerMm).toBeGreaterThan(0)
+    const bands = [...svg.matchAll(/data-sidebar-band="(\d+)-(\d+)" x="35" y="([\d.]+)" width="[\d.]+" height="([\d.]+)"/g)]
+      .map((match) => ({
+        fromMm: Number(match[1]), toMm: Number(match[2]), y: Number(match[3]), height: Number(match[4]),
+      }))
+    expect(bands.map((band) => [band.fromMm, band.toMm])).toEqual([
+      [5, 15], [15, 25], [25, 35], [35, 45], [45, 50], [50, 55], [55, 70], [70, 85], [85, 100], [100, 115],
+    ])
+    for (const band of bands) {
+      expect(band.height).toBeCloseTo((band.toMm - band.fromMm) * unitsPerMm, 1)
+      // Полоса отсчитывается от нижней кромки листа: холст 500 единиц высотой.
+      expect(band.y).toBeCloseTo(500 - band.toMm * unitsPerMm, 1)
+    }
+    // Заголовки — дословно из текстового слоя эталона.
+    expect(svg).toContain('data-sidebar-title="Уклон, ‰; длина, м"')
+    expect(svg).toContain('data-sidebar-title="Натурная отметка земли, м"')
+    expect(svg).toContain('data-sidebar-title="Проектная отметка низа трубы или низа лотка колодца, м"')
+    // Полоса 50…55 мм у эталона пуста: разделители есть, заголовка нет.
+    expect(svg).not.toContain('data-sidebar-title=""')
+  })
+
+  it('целые пикеты подписаны каждые 100 м, ординаты стоят на станциях', () => {
+    const { svg } = sheetSvg(6)
+    const picketMarks = [...svg.matchAll(/data-profile-picket="(\d+)" x1="([\d.]+)"/g)]
+      .map((match) => ({ metre: Number(match[1]), x: Number(match[2]) }))
+    // Лист испытания идёт от ПК0 до ПК6+70 — семь целых пикетов.
+    expect(picketMarks.map((mark) => mark.metre)).toEqual([0, 100, 200, 300, 400, 500, 600])
+    const unitsPerMm = Number(/data-svg-units-per-mm="([\d.]+)"/.exec(svg)?.[1] ?? '0')
+    const steps = picketMarks.slice(1).map((mark, index) => mark.x - picketMarks[index].x)
+    // 100 м при 1:500 — это 200 мм бумаги, и шаг обязан быть ровно таким.
+    for (const step of steps) expect(step).toBeCloseTo(200 * unitsPerMm, 1)
+    expect(svg).toContain('>ПК 3<')
+    // Ординаты — на станциях, а не постоянным шагом: графы привязаны к ним.
+    const ordinates = [...svg.matchAll(/data-profile-ordinate="([\d.]+)"/g)].map((match) => Number(match[1]))
+    // Станции профиля плюс замыкающая станция на конце листа.
+    expect(ordinates.slice(0, 6)).toEqual([0, 100, 200, 300, 400, 500])
+    expect(ordinates.at(-1)).toBeCloseTo(670, 2)
+  })
+
   it('отметки боковика абсолютные и от смены базы не зависят', () => {
     // Числа в графах «лоток» и «земля» — проектные величины; смена условного
     // горизонта это подача, а не расчёт, и трогать их она не смеет.
     const shallow = sheetSvg(6).svg
     const deep = sheetSvg(48).svg
-    const inverts = (svg: string) => [...svg.matchAll(/y="367" text-anchor="middle" font-size="8">([\d.]+)</g)]
-      .map((match) => match[1])
+    const inverts = (svg: string) => [...svg.matchAll(
+      /data-sidebar-row="Проектная отметка низа трубы или низа лотка колодца, м"[^>]*>([\d,]+)</g,
+    )].map((match) => match[1])
     expect(inverts(shallow).length).toBeGreaterThan(0)
     // Профили разные, поэтому сравниваем не значения, а то, что подписи
     // соответствуют СВОИМ станциям в обоих случаях.
-    expect(inverts(deep)[0]).toBe('98.00')
-    expect(inverts(shallow)[0]).toBe('98.00')
+    expect(inverts(deep)[0]).toBe('98,00')
+    expect(inverts(shallow)[0]).toBe('98,00')
   })
 })
 
