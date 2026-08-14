@@ -89,13 +89,23 @@ export function KitWizardPanel({
                   <span className="hint">{slot.hint}</span>
                 </td>
                 <td>
-                  <input
-                    type="file"
-                    accept={slot.accept}
-                    aria-label={t(`project.kit.slot.${slot.id}`)}
-                    disabled={busySlotId !== null}
-                    onChange={(event) => onPick(slot.id, event)}
-                  />
+                  {/*
+                    Идентификатор и имя обязательны по контракту форм проекта:
+                    без них поле не адресуемо ни подписью, ни автотестом. Имя
+                    берётся из идентификатора слота, а не из порядкового номера —
+                    порядок может измениться, слот нет.
+                  */}
+                  <label className="field" htmlFor={`kit-file-${slot.id}`}>
+                    <span className="field-label">{t(`project.kit.slot.${slot.id}`)}</span>
+                    <input
+                      id={`kit-file-${slot.id}`}
+                      name={`kit-file-${slot.id}`}
+                      type="file"
+                      accept={slot.accept}
+                      disabled={busySlotId !== null}
+                      onChange={(event) => onPick(slot.id, event)}
+                    />
+                  </label>
                   <span className="hint">{picked[slot.id] ?? t('project.kit.notPicked')}</span>
                 </td>
                 <td>{busySlotId === slot.id ? <span className="hint">{t('project.kit.running')}</span> : status(slot)}</td>
