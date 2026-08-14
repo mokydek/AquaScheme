@@ -9,19 +9,77 @@
  * as a final normative value.
  */
 
-export type ExistingMaterial = 'steel' | 'cast_iron' | 'concrete' | 'asbestos' | 'pe' | 'pvc' | 'unknown'
+import { justified, type Justified } from './normregistry'
+import roughnessTable from './norms/data/table-5-18-roughness.json'
+
+export type ExistingMaterial =
+  'steel' | 'cast_iron' | 'concrete' | 'asbestos' | 'ceramic' | 'pe' | 'pvc' | 'unknown'
 
 export type PipeDecision = 'keep' | 'rehabilitate' | 'replace'
 
-/** Equivalent absolute roughness, mm: new pipe and fully worn (wear 100%). */
-const ROUGHNESS_PROFILE: Record<ExistingMaterial, { fresh: number; worn: number }> = {
+/**
+ * Equivalent absolute roughness, mm: new pipe and fully worn (wear 100%).
+ *
+ * Ряд ОЦЕНОЧНЫЙ, а не нормативный: норма (табл. 5.18) даёт одну величину на
+ * материал и износа не описывает вовсе, а здесь нужна зависимость от износа.
+ * Значения `fresh` с табл. 5.18 не сверены и от неё отличаются — нормативную
+ * величину со ссылкой отдаёт `normativeRoughnessMm`, и путать их нельзя.
+ *
+ * `null` означает: кривой износа для материала НЕТ. Тихого падения в `unknown`
+ * при этом не происходит — расчёт возвращает отсутствие величины, и принимает
+ * её инженер с источником.
+ */
+const ROUGHNESS_PROFILE: Record<ExistingMaterial, { fresh: number; worn: number } | null> = {
   steel: { fresh: 0.1, worn: 2.0 },
   cast_iron: { fresh: 0.3, worn: 2.5 },
   concrete: { fresh: 0.5, worn: 3.0 },
   asbestos: { fresh: 0.6, worn: 3.0 },
+  // Керамика названа актом технического обследования по ул. Станкевича, и это
+  // настоящий материал самотёчных сетей: СН РК 4.01-03-2013* п. 7.3.1 а) прямо
+  // разрешает керамические трубы для самотёчных трубопроводов.
+  //
+  // Кривой износа у неё нет, и выдумать её нельзя. Нормативная величина
+  // 1,35 мм (табл. 5.18) относится к трубе как таковой, а сеть на Станкевича
+  // эксплуатируется больше 70 лет при износе 80 % и категории III. Поставить
+  // сюда пару оценочных чисел значило бы выдать догадку за расчёт, а взять
+  // 1,35 мм как есть — посчитать столетнюю трубу новой.
+  ceramic: null,
   pe: { fresh: 0.02, worn: 0.2 },
   pvc: { fresh: 0.02, worn: 0.2 },
   unknown: { fresh: 0.5, worn: 2.0 },
+}
+
+/** Названия строк табл. 5.18 для материалов существующей сети. */
+const TABLE_5_18_NAMES: Partial<Record<ExistingMaterial, string>> = {
+  concrete: 'бетонные и железобетонные',
+  ceramic: 'керамические',
+  cast_iron: 'чугунные',
+  steel: 'стальные',
+  asbestos: 'асбестоцементные',
+  pvc: 'ПВХ с клееными соединениями',
+  pe: 'полиэтиленовые со сваркой встык',
+}
+
+/**
+ * Нормативная эквивалентная шероховатость трубы, мм — табл. 5.18.
+ *
+ * Величина относится к трубе МАТЕРИАЛА, а не к изношенной трубе: износа норма
+ * не описывает. Поэтому она отдаётся отдельно и со ссылкой — как ориентир для
+ * инженера, а не как принятое значение расчёта. Для материала, которого в
+ * таблице нет, возвращается `null`: ближайшая строка «на глаз» не берётся.
+ */
+export function normativeRoughnessMm(material: ExistingMaterial): Justified<number> | null {
+  const name = TABLE_5_18_NAMES[material]
+  if (!name) return null
+  const row = (roughnessTable.pipes as Array<{ material: string; deltaCm: number }>)
+    .find((pipe) => pipe.material === name)
+  if (!row) return null
+  return justified(
+    Math.round(row.deltaCm * 10 * 1000) / 1000,
+    ['sewer.roughness'],
+    'normative',
+    `${row.deltaCm} см по ${roughnessTable.table} (${roughnessTable.document}), строка «${row.material}»`,
+  )
 }
 
 function clamp(value: number, lo: number, hi: number): number {
@@ -32,13 +90,18 @@ function clamp(value: number, lo: number, hi: number): number {
  * Estimated equivalent roughness of an existing pipe, mm. Interpolates
  * between the fresh and worn roughness by wear, then adds an increment for
  * internal overgrowth (incrustation).
+ *
+ * `null` — у материала нет кривой износа. Раньше здесь стояло падение в
+ * `unknown`, то есть керамике молча выдавались бы чужие 0,5…2,0 мм; теперь
+ * отсутствие величины называется отсутствием, и её вводит инженер с источником.
  */
 export function estimateRoughnessMm(
   material: ExistingMaterial,
   wearPercent: number,
   overgrowthPercent = 0,
-): number {
-  const profile = ROUGHNESS_PROFILE[material] ?? ROUGHNESS_PROFILE.unknown
+): number | null {
+  const profile = ROUGHNESS_PROFILE[material]
+  if (!profile) return null
   const wear = clamp(wearPercent, 0, 100) / 100
   const overgrowth = clamp(overgrowthPercent, 0, 100) / 100
   const base = profile.fresh + (profile.worn - profile.fresh) * wear

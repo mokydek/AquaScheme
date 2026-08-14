@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { parseGeoJsonNetwork, summarizeAct } from '@aquascheme/engine'
+import {
+  estimateRoughnessMm, normativeRoughnessMm, parseGeoJsonNetwork, summarizeAct,
+} from '@aquascheme/engine'
 import type {
   ExistingMaterial, ImportSegment, PipeDecision, SurveyActFacts, SurveyPoint,
 } from '@aquascheme/engine'
@@ -15,7 +17,9 @@ import { Panel } from './Panel'
 import { SurveyActValues } from './SurveyActValues'
 import type { SurveyActRow } from './SurveyActValues'
 
-const MATERIALS: ExistingMaterial[] = ['steel', 'cast_iron', 'concrete', 'asbestos', 'pe', 'pvc', 'unknown']
+const MATERIALS: ExistingMaterial[] = [
+  'steel', 'cast_iron', 'concrete', 'asbestos', 'ceramic', 'pe', 'pvc', 'unknown',
+]
 const DECISIONS: PipeDecision[] = ['keep', 'rehabilitate', 'replace']
 
 export function ExistingNetworkSection({
@@ -47,6 +51,15 @@ export function ExistingNetworkSection({
   const [actId, setActId] = useState<string | null>(null)
   const [actFileName, setActFileName] = useState<string>('')
   const [actConfirmed, setActConfirmed] = useState<string[]>([])
+  /**
+   * Черновик принимаемой шероховатости: величина и источник.
+   *
+   * Хранится до нажатия «Принять», потому что величина без источника не
+   * сохраняется вовсе, а поля заполняются по одному.
+   */
+  const [roughnessDraft, setRoughnessDraft] = useState<
+    Record<string, { value?: string; source?: string }>
+  >({})
 
   const importFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -260,7 +273,61 @@ export function ExistingNetworkSection({
                         onBlur={(e) => void patchPipe(row, { wear_percent: e.target.value ? Number(e.target.value) : null })}
                       />
                     </td>
-                    <td className="num">{(row.roughness_mm ?? 0).toFixed(2)}</td>
+                    {/*
+                      Шероховатость: считается там, где есть кривая износа, и
+                      принимается инженером там, где её нет. Нуль вместо
+                      непосчитанной величины больше не показывается — пустая
+                      графа честнее выдуманной.
+                    */}
+                    <td className="num" data-roughness-cell={row.id}>
+                      {estimateRoughnessMm((row.material as ExistingMaterial) ?? 'unknown', row.wear_percent ?? 0, row.meta?.overgrowthPercent ?? 0) != null
+                        ? (row.roughness_mm ?? 0).toFixed(2)
+                        : (
+                          <span>
+                            <span className="mono">{row.roughness_mm != null ? row.roughness_mm.toFixed(2) : '—'}</span>
+                            <input
+                              id={`existing-roughness-${encodeURIComponent(row.id)}`}
+                              name={`existing-roughness-${encodeURIComponent(row.id)}`}
+                              aria-label={`${t('project.existing.thRoughness')} ${i + 1}`}
+                              className="input input-sm"
+                              style={{ width: 70 }}
+                              defaultValue={row.roughness_mm ?? ''}
+                              onBlur={(e) => setRoughnessDraft((current) => ({
+                                ...current, [row.id]: { ...current[row.id], value: e.target.value },
+                              }))}
+                            />
+                            <input
+                              id={`existing-roughness-source-${encodeURIComponent(row.id)}`}
+                              name={`existing-roughness-source-${encodeURIComponent(row.id)}`}
+                              aria-label={t('project.existing.roughnessSourceLabel')}
+                              className="input input-sm"
+                              placeholder={t('project.existing.roughnessSourcePlaceholder')}
+                              defaultValue={row.meta?.roughnessSource ?? ''}
+                              onBlur={(e) => setRoughnessDraft((current) => ({
+                                ...current, [row.id]: { ...current[row.id], source: e.target.value },
+                              }))}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={busy
+                                || !roughnessDraft[row.id]?.value?.trim()
+                                || !roughnessDraft[row.id]?.source?.trim()}
+                              onClick={() => void patchPipe(row, {
+                                roughness_mm: Number(roughnessDraft[row.id]?.value),
+                                roughnessSource: roughnessDraft[row.id]?.source,
+                              })}
+                            >
+                              {t('project.existing.roughnessAccept')}
+                            </button>
+                            <span className="hint">
+                              {t('project.existing.roughnessByEngineer', {
+                                normative: normativeRoughnessMm((row.material as ExistingMaterial) ?? 'unknown')?.value ?? '—',
+                              })}
+                            </span>
+                          </span>
+                        )}
+                    </td>
                     <td>
                       <select
                         id={`existing-decision-${encodeURIComponent(row.id)}`}

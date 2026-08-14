@@ -42,6 +42,7 @@ const { SourceBundleRunSection } = await import('./SourceBundleRunSection')
 const { StankevichaDemoView, PARSED_KIT_SLOT_IDS } = await import('./StankevichaDemoView')
 const { KitWizardPanel } = await import('./KitWizardPanel')
 const { SurveyActValues, surveyActRows } = await import('./SurveyActValues')
+const { ExistingNetworkSection } = await import('./ExistingNetworkSection')
 const { STANKEVICHA_KIT_SLOTS, emptyKitState } = await import('../../shared/kitWizard')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
@@ -698,5 +699,47 @@ describe('экран подтверждения величин из акта о�
       facts, fileName: 'ТО.pdf', confirmed: ['diameterMm-0'], onConfirm: () => {},
     }))
     expect(confirmed).toContain('project.existing.act.confirmed')
+  })
+})
+
+describe('шероховатость керамики принимается инженером, а не подставляется', () => {
+  const pipe = (material: string, roughnessMm: number | null) => ({
+    id: 'p1',
+    project_id: 'pr1',
+    length_m: 458.94,
+    diameter_mm: 450,
+    material,
+    laid_year: null,
+    wear_percent: 80,
+    roughness_mm: roughnessMm,
+    decision: 'replace' as const,
+    meta: { ax: 0, ay: 0, bx: 1, by: 0 },
+  })
+  const section = (material: string, roughnessMm: number | null) => html(createElement(ExistingNetworkSection, {
+    projectId: 'pr1',
+    existing: [pipe(material, roughnessMm)],
+    points: [],
+    designedLengthM: 458.94,
+    onChanged: async () => {},
+  }))
+
+  it('керамика показывает прочерк и поля «величина + источник», а не число', () => {
+    const markup = section('ceramic', null)
+    expect(markup).toContain('existing-roughness-source-p1')
+    expect(markup).toContain('project.existing.roughnessAccept')
+    // Нуля вместо непосчитанной величины больше нет: пустая графа честнее.
+    expect(markup).toContain('—')
+    // Норматив на трубу как таковую назван ориентиром — 1,35 мм по табл. 5.18.
+    expect(markup).toContain('1.35')
+  })
+
+  it('материал с кривой износа считается как считался, без ручного ввода', () => {
+    const markup = section('steel', 1.62)
+    expect(markup).not.toContain('existing-roughness-source-p1')
+    expect(markup).toContain('1.62')
+  })
+
+  it('керамика есть в списке материалов: акт назвал её прямым текстом', () => {
+    expect(section('ceramic', null)).toContain('project.existing.material.ceramic')
   })
 })

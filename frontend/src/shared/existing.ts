@@ -1,4 +1,5 @@
 import { estimateRoughnessMm, importNetwork } from '@aquascheme/engine'
+
 import type { ExistingMaterial, ImportSegment, PipeDecision, SurveyPoint } from '@aquascheme/engine'
 import { supabase } from './supabase'
 
@@ -9,6 +10,13 @@ export interface ExistingPipeMeta {
   by: number
   overgrowthPercent?: number
   defects?: string
+  /**
+   * Откуда взята шероховатость, введённая рукой.
+   *
+   * Обязателен: у материала без кривой износа величину принимает инженер, а
+   * принятая без источника величина неотличима от выдуманной.
+   */
+  roughnessSource?: string
 }
 
 export interface ExistingPipeRow {
@@ -58,9 +66,14 @@ export async function replaceExisting(
         {
           project_id: projectId,
           length_m: p.lengthM,
-          material: 'steel',
-          wear_percent: 50,
-          roughness_mm: estimateRoughnessMm('steel', 50, 0),
+          // Импорт линий чертежа о трубе не знает НИЧЕГО: ни материала, ни
+          // износа. Здесь стояли «сталь, износ 50 %» и посчитанная по ним
+          // шероховатость — три выдуманные величины на каждый участок, и на
+          // Станкевича они были бы прямо неверны: труба керамическая. Пустая
+          // графа честнее: материал и износ заполняет инженер по акту.
+          material: null,
+          wear_percent: null,
+          roughness_mm: null,
           decision: 'keep' as PipeDecision,
           meta: { ax: a.x, ay: a.y, bx: b.x, by: b.y },
         },
@@ -83,9 +96,19 @@ export interface ExistingPipePatch {
   decision?: PipeDecision
   overgrowthPercent?: number | null
   defects?: string
+  /** Шероховатость, принятая инженером: только вместе с источником. */
+  roughness_mm?: number | null
+  roughnessSource?: string
 }
 
-/** Update one existing pipe and recompute its equivalent roughness. */
+/**
+ * Обновляет участок существующей сети и пересчитывает шероховатость.
+ *
+ * У материала без кривой износа — керамика — расчётной величины НЕТ, и
+ * подставить её нечем: величину принимает инженер и обязан назвать источник.
+ * Значение без источника не сохраняется вовсе: принятая без источника величина
+ * в проекте неотличима от выдуманной.
+ */
 export async function updateExistingPipe(
   row: ExistingPipeRow,
   patch: ExistingPipePatch,
@@ -93,7 +116,17 @@ export async function updateExistingPipe(
   const material = (patch.material ?? (row.material as ExistingMaterial) ?? 'unknown') as ExistingMaterial
   const wear = patch.wear_percent ?? row.wear_percent ?? 0
   const overgrowth = patch.overgrowthPercent ?? row.meta?.overgrowthPercent ?? 0
-  const roughness = estimateRoughnessMm(material, wear, overgrowth)
+  const estimated = estimateRoughnessMm(material, wear, overgrowth)
+
+  const bySource = patch.roughness_mm != null
+  if (bySource && !patch.roughnessSource?.trim()) {
+    throw new Error('Шероховатость принимается только с источником: величина без него неотличима от выдуманной.')
+  }
+  // Расчёт по кривой износа главнее ручного ввода там, где кривая есть: иначе
+  // однажды введённое значение пережило бы смену материала и износа. Там, где
+  // кривой нет, остаётся принятое инженером — и только оно.
+  const roughness = estimated ?? (bySource ? patch.roughness_mm ?? null : row.meta?.roughnessSource ? row.roughness_mm : null)
+
   const meta: ExistingPipeMeta = {
     ax: row.meta?.ax ?? 0,
     ay: row.meta?.ay ?? 0,
@@ -101,6 +134,11 @@ export async function updateExistingPipe(
     by: row.meta?.by ?? 0,
     overgrowthPercent: overgrowth,
     defects: patch.defects ?? row.meta?.defects,
+    // Источник сохраняется только при принятой руками величине; там, где
+    // считает кривая, он не нужен и не должен оставаться от прошлого материала.
+    ...(estimated == null
+      ? { roughnessSource: bySource ? patch.roughnessSource?.trim() : row.meta?.roughnessSource }
+      : {}),
   }
   const { error } = await supabase
     .from('existing_pipes')
