@@ -135,7 +135,18 @@ describe('parseIgeDescriptions / parseGroundwaterRange (prose reports)', () => {
       Район не сейсмоактивен.`)
     expect(summary.ige.map((item) => item.code)).toEqual(['0', '2', '2-1'])
     expect(summary.groundwater).toEqual({ minDepthM: 0.5, maxDepthM: 5.6 })
-    expect(summary.freezingDepthM).toBe(2.53)
+    // В отчёте коллектора промерзание дано ЧЕТЫРЬМЯ величинами по грунтам.
+    // Прежде извлечение возвращало 2,53 — наибольшую «в запас»; это был
+    // молчаливый выбор за инженера, и его больше нет: величина не определена,
+    // пока инженер не выберет грунт на отметке трубы.
+    expect(summary.freezingDepthM).toBeNull()
+    expect(summary.freezingDepthCandidates.map((item) => [item.soil, item.valueM])).toEqual([
+      ['суглинки и глины', 1.71],
+      ['пески мелкие', 2.08],
+      ['пески крупные', 2.22],
+      ['крупнообломочные грунты', 2.53],
+    ])
+    expect(summary.freezingDepthCandidates.every((item) => item.readAs === 'cm')).toBe(true)
     expect(summary.maxAggressiveness).toBe('high')
     expect(summary.seismicInactive).toBe(true)
   })
@@ -193,5 +204,37 @@ describe('глубины по скважине обязаны расти', () =>
       row('С-2', '0.0', '1.0'), row('С-2', '1.0', '2.0'),
     ])
     expect(parsed.doubtful.map((item) => item.label)).toEqual(['С-1'])
+  })
+})
+
+
+describe('глубина промерзания читается во всех записях и не выбирается молча', () => {
+  it('метры с запятой и точкой приводятся к метрам с указанием прочтения', () => {
+    const summary = parseGeologyReportSummary(`Нормативная глубина промерзания по г. Алматы
+      Нормативная глубина сезонного промерзания для суглинков – 0,79м, для песка пылеватого – 0,96м,
+      для песка средней крупности – 1.03 м.`)
+    expect(summary.freezingDepthCandidates.map((item) => [item.soil, item.valueM, item.readAs])).toEqual([
+      ['суглинков', 0.79, 'm'],
+      ['песка пылеватого', 0.96, 'm'],
+      ['песка средней крупности', 1.03, 'm'],
+    ])
+    // Три величины — значит, не определено: выбирает инженер по грунту на
+    // отметке трубы.
+    expect(summary.freezingDepthM).toBeNull()
+  })
+
+  it('одна величина остаётся значением, как и было', () => {
+    const summary = parseGeologyReportSummary(
+      'Нормативная глубина сезонного промерзания грунтов, см: - суглинки - 171.',
+    )
+    expect(summary.freezingDepthM).toBe(1.71)
+    expect(summary.freezingDepthCandidates).toHaveLength(1)
+    expect(summary.freezingDepthCandidates[0].readAs).toBe('cm')
+  })
+
+  it('без раздела промерзания кандидатов нет', () => {
+    const summary = parseGeologyReportSummary('Грунтовые воды не вскрыты. Район не сейсмоактивен.')
+    expect(summary.freezingDepthM).toBeNull()
+    expect(summary.freezingDepthCandidates).toHaveLength(0)
   })
 })

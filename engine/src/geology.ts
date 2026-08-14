@@ -425,11 +425,38 @@ export function parseGroundwaterRange(text: string): GroundwaterRange | null {
   return { minDepthM: Math.min(a, b), maxDepthM: Math.max(a, b) }
 }
 
+/**
+ * Прочитанная величина промерзания вместе с её контекстом.
+ *
+ * Отчёт даёт глубину промерзания ОТДЕЛЬНО ПО ГРУНТАМ: у Станкевича это суглинки
+ * 0,79 м, песок пылеватый 0,96 м, песок средней крупности 1,03 м; у коллектора —
+ * четыре величины в сантиметрах. Какая из них относится к трубе, зависит от
+ * грунта на её отметке, и это решение инженера.
+ */
+export interface FreezingDepthCandidate {
+  /** Величина в метрах — как бы она ни была записана в отчёте. */
+  valueM: number
+  /** Единица, в которой величина стояла в документе: видно прочтение. */
+  readAs: 'm' | 'cm'
+  /** Грунт, к которому величина отнесена в тексте; `null` — не назван. */
+  soil: string | null
+  /** Цитата, по которой величина прочитана. */
+  quote: string
+}
+
 export interface GeologyReportSummary {
   ige: IgeDescription[]
   groundwater: GroundwaterRange | null
-  /** Conservative design value: the largest reported normative freezing depth. */
+  /**
+   * Глубина промерзания — ТОЛЬКО когда она в отчёте одна.
+   *
+   * Прежде здесь стояла наибольшая из найденных «в запас». Это был молчаливый
+   * выбор за инженера: промерзание под трубой в песке — не осторожность, а
+   * другая отметка заложения. Несколько величин — значит, не определено.
+   */
   freezingDepthM: number | null
+  /** Все прочитанные величины промерзания с грунтами. */
+  freezingDepthCandidates: FreezingDepthCandidate[]
   maxAggressiveness: Aggressiveness | null
   seismicInactive: boolean | null
 }
@@ -441,15 +468,41 @@ export interface GeologyReportSummary {
  */
 export function parseGeologyReportSummary(text: string): GeologyReportSummary {
   const normalized = text.replace(/\s+/g, ' ')
-  const freezingHeading = /нормативн[а-яё]*\s+глубин[а-яё]*\s+сезонн[а-яё]*\s+промерзан[а-яё]*/i.exec(normalized)
-  let freezingDepthM: number | null = null
+  // Заголовок ищется и со словом «сезонного», и без него: у Станкевича в шапке
+  // раздела его нет, а величины там же.
+  const freezingHeading = /нормативн[а-яё]*\s+глубин[а-яё]*\s+(?:сезонн[а-яё]*\s+)?промерзан[а-яё]*/i.exec(normalized)
+  const freezingDepthCandidates: FreezingDepthCandidate[] = []
   if (freezingHeading) {
     const tail = normalized.slice(freezingHeading.index, freezingHeading.index + 700)
-    const depthsCm = [...tail.matchAll(/-\s*(\d{2,3})\s*(?=;|\.|,|см|$)/gi)]
-      .map((m) => Number(m[1]))
-      .filter((value) => value >= 50 && value <= 500)
-    if (depthsCm.length > 0) freezingDepthM = Math.max(...depthsCm) / 100
+    // Грунт называется ПЕРЕД величиной: «для суглинков – 0,79м». Кусок «для …»
+    // подхватывается вместе с числом, чтобы отнести величину к своему грунту.
+    // Грунт стоит перед величиной в обеих принятых записях: «для суглинков –
+    // 0,79м» и «- суглинки и глины - 171». Поэтому слова перед тире берутся
+    // как есть, а служебное «для» снимается уже с прочитанного.
+    const pattern = /([а-яё]+(?:\s+[а-яё]+){0,3})?\s*[–—-]\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*(м|см)?(?=\s|;|\.|,|$)/gi
+    for (const match of tail.matchAll(pattern)) {
+      const raw = Number(match[2].replace(',', '.'))
+      if (!Number.isFinite(raw)) continue
+      // Единица берётся из документа; если её нет — различаем по величине:
+      // метры измеряются десятыми, сантиметры — десятками.
+      const readAs: 'm' | 'cm' = match[3] === 'см' ? 'cm' : match[3] === 'м' ? 'm' : raw >= 20 ? 'cm' : 'm'
+      const valueM = Math.round((readAs === 'cm' ? raw / 100 : raw) * 1000) / 1000
+      if (!(valueM >= 0.3 && valueM <= 5)) continue
+      // Слова заголовка могут прилипнуть спереди («сезонного промерзания для
+      // суглинков»): грунт — то, что стоит ПОСЛЕ последнего «для», а если «для»
+      // нет, то захваченное целиком.
+      const captured = (match[1] ?? '').trim().replace(/\s+/g, ' ')
+      const afterFor = /(?:^|\s)для\s+(.+)$/i.exec(captured)
+      const soil = (afterFor ? afterFor[1] : captured).trim() || null
+      if (freezingDepthCandidates.some((item) => item.valueM === valueM && item.soil === soil)) continue
+      freezingDepthCandidates.push({ valueM, readAs, soil, quote: match[0].trim() })
+    }
   }
+  // Одна величина — она и есть значение, как было раньше. Несколько — величина
+  // НЕ определена до выбора инженера: прежний `Math.max` был молчаливым
+  // выбором за него, а запас по промерзанию — это другая отметка заложения,
+  // а не осторожность.
+  const freezingDepthM = freezingDepthCandidates.length === 1 ? freezingDepthCandidates[0].valueM : null
 
   let maxAggressiveness: Aggressiveness | null = null
   const aggressionText = normalized
@@ -469,6 +522,7 @@ export function parseGeologyReportSummary(text: string): GeologyReportSummary {
     ige: parseIgeDescriptions(text),
     groundwater: parseGroundwaterRange(text),
     freezingDepthM,
+    freezingDepthCandidates,
     maxAggressiveness,
     seismicInactive,
   }
