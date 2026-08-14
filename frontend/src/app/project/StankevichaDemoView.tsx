@@ -93,7 +93,9 @@ export function StankevichaDemoView({
   const handlers: Record<string, (file: File) => Promise<KitSlotState>> = Object.fromEntries(
     STANKEVICHA_KIT_SLOTS.map((slot) => [
       slot.id,
-      slot.id === 'surveyStankevicha'
+      // Полная топооснова и съёмка Станкевича идут одним разбором: это DXF
+      // одного вида, и второго конвейера для них не заводится.
+      slot.id === 'topobaseFull' || slot.id === 'surveyStankevicha'
         ? parseSurvey
         : slot.id === 'technicalConditions'
           ? acceptConditions
