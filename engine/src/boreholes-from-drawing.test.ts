@@ -112,3 +112,38 @@ describe('перенос координат в ведомость', () => {
     expect(result.unmatched).toEqual(['скв-7'])
   })
 })
+
+describe('номер выработки голым числом на своём слое', () => {
+  /**
+   * На съёмке Станкевича номера скважин подписаны «1», «2», «3» без слова
+   * «скв», а рядом на том же слое стоят дата бурения и отметка устья.
+   */
+  const drawing = {
+    textEntities: [
+      { text: '1', layer: 'номер скв', x: 253.71, y: 8134.1 },
+      { text: '06.2025г.', layer: 'номер скв', x: 255.88, y: 8128.25 },
+      { text: '685,13', layer: 'номер скв', x: 325.75, y: 8134.15 },
+      { text: '2', layer: 'номер скв', x: 254.16, y: 8010.71 },
+      { text: '3', layer: 'номер скв', x: 259.38, y: 7884.3 },
+      // Число на постороннем слое номером выработки не становится.
+      { text: '7', layer: 'РЕЛЬЕФ', x: 300, y: 8000 },
+    ],
+  } as never
+
+  it('без объявленного слоя голые числа не берутся', () => {
+    expect(boreholesFromDrawing(drawing).boreholes).toHaveLength(0)
+  })
+
+  it('на объявленном слое берутся только целые номера', () => {
+    const found = boreholesFromDrawing(drawing, { numberLayers: ['номер скв'] })
+    expect(found.boreholes.map((borehole) => borehole.label)).toEqual(['скв-1', 'скв-2', 'скв-3'])
+    // Дата и отметка устья лежат на том же слое и номером не притворяются.
+    expect(found.boreholes.every((borehole) => /^скв-[123]$/.test(borehole.label))).toBe(true)
+    expect(found.boreholes[0].x).toBeCloseTo(253.71, 2)
+  })
+
+  it('число на чужом слое остаётся числом', () => {
+    const found = boreholesFromDrawing(drawing, { numberLayers: ['номер скв'] })
+    expect(found.boreholes.some((borehole) => borehole.y === 8000)).toBe(false)
+  })
+})

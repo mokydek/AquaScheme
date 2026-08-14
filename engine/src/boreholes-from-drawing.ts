@@ -49,10 +49,26 @@ export interface BoreholeExtractionOptions {
   bounds?: Bounds
   /** Своя маска метки, если в комплекте принято иное обозначение. */
   pattern?: RegExp
+  /**
+   * Слои, на которых ГОЛОЕ ЧИСЛО означает номер выработки.
+   *
+   * На съёмке Станкевича номера скважин подписаны просто «1», «2», «3» — без
+   * слова «скв», — и маска по умолчанию их не берёт. Брать голые числа по всему
+   * чертежу нельзя: числами подписаны отметки, длины и годы. Основанием служит
+   * СЛОЙ, роль которому назначил инженер, а не близость к чему-либо: на слое
+   * «номер скв» число — это номер выработки по определению слоя.
+   *
+   * Прочие подписи того же слоя (дата бурения, отметка устья) числом-номером не
+   * притворяются: принимается только целое от 1 до 999 без разделителей.
+   */
+  numberLayers?: readonly string[]
 }
 
 /** «скв-1», «Скв. 2», «скв №3», «с-1». */
 const DEFAULT_PATTERN = /^(?:скв|с)[\s.№-]*(\d{1,3})[а-я]?$/i
+
+/** Голый номер выработки на «номерном» слое: только целое, без хвостов. */
+const BARE_NUMBER = /^(\d{1,3})$/
 
 /** Нормализует метку к виду «скв-1», чтобы связать чертёж с ведомостью. */
 export function normalizeBoreholeLabel(text: string): string | null {
@@ -73,10 +89,12 @@ export function boreholesFromDrawing(
   const pattern = options.pattern ?? DEFAULT_PATTERN
   let outsideBounds = 0
 
+  const numberLayers = new Set((options.numberLayers ?? []).map((name) => name.trim().toLowerCase()))
   const found: DrawingBorehole[] = []
   for (const entity of data.textEntities ?? []) {
     const raw = String(entity.text ?? '').trim()
-    const match = pattern.exec(raw)
+    const onNumberLayer = numberLayers.has(String(entity.layer ?? '').trim().toLowerCase())
+    const match = pattern.exec(raw) ?? (onNumberLayer ? BARE_NUMBER.exec(raw) : null)
     if (!match || !Number.isFinite(entity.x) || !Number.isFinite(entity.y)) continue
     if (options.bounds && !inside(options.bounds, entity.x, entity.y)) {
       outsideBounds += 1
