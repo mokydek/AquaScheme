@@ -479,6 +479,24 @@ export interface GeologyReportSummary {
  * than in the borehole tables. Values remain a review proposal in the UI: a
  * prose report cannot reconstruct per-borehole layer boundaries honestly.
  */
+/**
+ * Названия грунтов, по которым даётся нормативная глубина промерзания.
+ *
+ * Список открытый и пополняется: он не «подгонка под отчёт», а содержательный
+ * критерий. Нормативная глубина промерзания даётся ПО ГРУНТУ, поэтому величина
+ * без названия грунта в контексте — не глубина промерзания, а соседнее число:
+ * «средняя из максимальных», номер ИГЭ, мощность слоя. Отбор идёт по смыслу.
+ */
+const FREEZING_SOIL_WORDS = [
+  'суглин', 'глин', 'супес', 'песок', 'песк', 'крупнооблом', 'торф', 'насыпн', 'гравел', 'галечн', 'щебен',
+] as const
+
+/** Есть ли в контексте кандидата название грунта. */
+function mentionsSoil(text: string): boolean {
+  const lower = text.toLowerCase()
+  return FREEZING_SOIL_WORDS.some((word) => lower.includes(word))
+}
+
 /** Перевод строки в собранном тексте документа. */
 const LINE_BREAK = new RegExp('\r?\n')
 
@@ -509,6 +527,10 @@ export function parseGeologyReportSummary(text: string): GeologyReportSummary {
     // суглинков»): грунт — то, что стоит после последнего «для».
     const afterFor = /(?:^|\s)для\s+(.+)$/i.exec(captured)
     const soil = (afterFor ? afterFor[1] : captured).trim() || null
+    // Кандидат без грунта — не кандидат: глубина промерзания даётся по грунту.
+    // Это отбрасывает «среднюю из максимальных», номера ИГЭ и голые числа по
+    // смыслу, а не по длине окна.
+    if (soil === null || !mentionsSoil(soil)) return
     const twin = freezingDepthCandidates.find((item) => item.valueM === valueM)
     if (twin) {
       // Одна и та же величина из ОБЕИХ форм — это перекрёстное подтверждение,
@@ -532,6 +554,10 @@ export function parseGeologyReportSummary(text: string): GeologyReportSummary {
       }
     }
   }
+  // Подтверждённые обеими формами идут первыми: инженер видит сперва то, что
+  // отчёт сказал дважды и не разошёлся сам с собой.
+  freezingDepthCandidates.sort((left, right) =>
+    Number(right.confirmedByBothForms) - Number(left.confirmedByBothForms) || left.valueM - right.valueM)
   const freezingDepthM = freezingDepthCandidates.length === 1 ? freezingDepthCandidates[0].valueM : null
 
   let maxAggressiveness: Aggressiveness | null = null
