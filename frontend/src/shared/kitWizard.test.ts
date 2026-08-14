@@ -10,10 +10,10 @@ import {
 const file = (name: string) => new File([new Uint8Array([1, 2, 3])], name)
 
 describe('мастер комплекта', () => {
-  it('порядок прогона зафиксирован и начинается со съёмки', () => {
+  it('порядок прогона зафиксирован и начинается с полной топоосновы', () => {
     expect(STANKEVICHA_KIT_SLOTS.map((slot) => slot.id)).toEqual([
+      'topobaseFull',
       'surveyStankevicha',
-      'surveyMoldagalieva',
       'technicalConditions',
       'designBrief',
       'surveyReport',
@@ -21,10 +21,14 @@ describe('мастер комплекта', () => {
       'geologyAppendices',
       'routeScheme',
     ])
-    // На этом этапе разбираются ровно два слота, остальные объявлены basis —
-    // и у каждого назван этап, на котором его разберут.
+    // Разбираются полная топооснова, съёмка (для совместимости) и ТУ;
+    // остальные объявлены basis, и у каждого назван этап разбора.
     const parsed = STANKEVICHA_KIT_SLOTS.filter((slot) => slot.handling === 'parsed')
-    expect(parsed.map((slot) => slot.id)).toEqual(['surveyStankevicha', 'technicalConditions'])
+    expect(parsed.map((slot) => slot.id)).toEqual(['topobaseFull', 'surveyStankevicha', 'technicalConditions'])
+    // Полная топооснова стоит ДО технических условий: диаметр ложится на уже
+    // разобранную основу, а не наоборот.
+    const order = STANKEVICHA_KIT_SLOTS.map((slot) => slot.id)
+    expect(order.indexOf('topobaseFull')).toBeLessThan(order.indexOf('technicalConditions'))
     for (const slot of STANKEVICHA_KIT_SLOTS) {
       expect(slot.parsedAtStage === null).toBe(slot.handling === 'parsed')
     }
@@ -40,7 +44,7 @@ describe('мастер комплекта', () => {
     const state = emptyKitState()
     expect(Object.keys(state)).toHaveLength(STANKEVICHA_KIT_SLOTS.length)
     expect(Object.values(state).every((slot) => slot.kind === 'empty')).toBe(true)
-    expect(kitProgress(state)).toEqual({ filled: 0, total: 8, failed: 0 })
+    expect(kitProgress(state)).toEqual({ filled: 0, total: 8, failed: 0, covered: 0 })
   })
 
   it('слот с ошибкой не роняет остальные и попадает в состояние ошибкой', async () => {
@@ -76,7 +80,7 @@ describe('мастер комплекта', () => {
     })
     // Упавший слот не помешал следующему за ним.
     expect(state.designBrief).toEqual({ kind: 'stored', fileName: 'tz.pdf', parsedAtStage: 4 })
-    expect(kitProgress(state)).toEqual({ filled: 2, total: 8, failed: 1 })
+    expect(kitProgress(state)).toEqual({ filled: 2, total: 8, failed: 1, covered: 0 })
   })
 
   it('слот без обработчика называет причину, а не тихо пропускается', async () => {
@@ -84,6 +88,34 @@ describe('мастер комплекта', () => {
     const slot = state.routeScheme as Extract<KitSlotState, { kind: 'failed' }>
     expect(slot.kind).toBe('failed')
     expect(slot.reason).toContain('routeScheme')
+  })
+
+  it('съёмка Станкевича помечается покрытой только при разобранной полной основе', async () => {
+    const covering = await runKit(
+      { topobaseFull: file('moldagalieva.dxf') },
+      { topobaseFull: async (given) => ({ kind: 'parsed', fileName: given.name, counters: [{ label: 'слоёв', value: 50 }] }) },
+    )
+    expect(covering.surveyStankevicha).toEqual({ kind: 'covered', byId: 'topobaseFull' })
+    // Пока полной основы нет, отсутствие съёмки видно как обычная пустота.
+    const без = await runKit({}, {})
+    expect(без.surveyStankevicha).toEqual({ kind: 'empty' })
+    // Упавшая полная основа тоже не даёт пометки: покрывать нечем.
+    const упала = await runKit(
+      { topobaseFull: file('moldagalieva.dxf') },
+      { topobaseFull: async () => { throw new Error('DXF не разобран') } },
+    )
+    expect(упала.surveyStankevicha).toEqual({ kind: 'empty' })
+  })
+
+  it('свой файл съёмки не затирается пометкой покрытия', async () => {
+    const state = await runKit(
+      { topobaseFull: file('m.dxf'), surveyStankevicha: file('s.dxf') },
+      {
+        topobaseFull: async (g) => ({ kind: 'parsed', fileName: g.name, counters: [] }),
+        surveyStankevicha: async (g) => ({ kind: 'parsed', fileName: g.name, counters: [] }),
+      },
+    )
+    expect(state.surveyStankevicha).toEqual({ kind: 'parsed', fileName: 's.dxf', counters: [] })
   })
 
   it('слот без файла остаётся пустым, а прогон идёт дальше', async () => {

@@ -589,26 +589,28 @@ describe('панель мастера комплекта', () => {
     expect(markup).toContain('ТУ_05-3-2723 (1).pdf')
   })
 
-  it('показывает все четыре состояния и счётчики разбора', () => {
+  it('показывает все пять состояний и счётчики разбора', () => {
     const state = {
       ...emptyKitState(),
-      surveyStankevicha: {
+      surveyStankevicha: { kind: 'covered' as const, byId: 'topobaseFull' },
+      topobaseFull: {
         kind: 'parsed' as const,
         fileName: 'topo_stankevicha.dxf',
         counters: [{ label: 'слоёв', value: 28 }, { label: 'отметок', value: 177 }],
       },
-      surveyMoldagalieva: { kind: 'stored' as const, fileName: 'moldagalieva.dxf', parsedAtStage: 2 },
+      designBrief: { kind: 'stored' as const, fileName: 'ТЗ_5669.pdf', parsedAtStage: 4 },
       technicalConditions: { kind: 'failed' as const, fileName: 'tu.pdf', reason: 'скан без текстового слоя' },
     }
     const markup = panel(state)
     expect(markup).toContain('project.kit.statusParsed')
+    expect(markup).toContain('project.kit.statusCovered')
     expect(markup).toContain('project.kit.statusStored')
     expect(markup).toContain('project.kit.statusFailed')
     expect(markup).toContain('project.kit.statusEmpty')
     // Счётчики выводятся числами, а не прячутся за словом «разобрано».
     expect(markup).toContain('слоёв: 28; отметок: 177')
     // Этап разбора назван, а не подразумевается.
-    expect(markup).toContain('&quot;stage&quot;:2')
+    expect(markup).toContain('&quot;stage&quot;:4')
     // Причина ошибки показана дословно.
     expect(markup).toContain('скан без текстового слоя')
   })
@@ -616,12 +618,14 @@ describe('панель мастера комплекта', () => {
   it('строка готовности считает разобранные, отложенные и упавшие', () => {
     const markup = panel({
       ...emptyKitState(),
-      surveyStankevicha: { kind: 'parsed', fileName: 'a.dxf', counters: [] },
+      topobaseFull: { kind: 'parsed', fileName: 'a.dxf', counters: [] },
+      surveyStankevicha: { kind: 'covered', byId: 'topobaseFull' },
       designBrief: { kind: 'stored', fileName: 'b.pdf', parsedAtStage: 4 },
       routeScheme: { kind: 'failed', fileName: 'c.pdf', reason: 'x' },
     })
     expect(markup).toContain('&quot;filled&quot;:2')
     expect(markup).toContain('&quot;failed&quot;:1')
+    expect(markup).toContain('&quot;covered&quot;:1')
   })
 
   it('кнопка выжимки несёт пометку о неполноте данных', () => {

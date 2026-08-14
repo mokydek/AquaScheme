@@ -879,7 +879,7 @@ export const ru = {
       kit: {
         title: 'Мастер комплекта',
         hint: 'Файлы комплекта выбираются один раз и прогоняются штатными конвейерами в порядке от съёмки к документам. Слот без файла остаётся объявленным: комплект виден целиком.',
-        progress: 'Готово {{filled}} из {{total}}; с ошибкой {{failed}}.',
+        progress: 'Готово {{filled}} из {{total}}; покрыто {{covered}}; с ошибкой {{failed}}.',
         thOrder: '№',
         thSlot: 'Слот комплекта',
         thFile: 'Файл',
@@ -888,6 +888,7 @@ export const ru = {
         running: 'прогон…',
         statusEmpty: 'не загружено',
         statusParsed: 'разобрано: {{file}}',
+        statusCovered: 'покрыт полной топоосновой ({{by}})',
         statusStored: 'сохранено basis-файлом: {{file}}; разбор — этап {{stage}}',
         statusFailed: 'ошибка на {{file}}: {{reason}}',
         run: 'Прогнать комплект ({{count}})',
@@ -902,6 +903,7 @@ export const ru = {
         counterDiameter: 'диаметр, мм',
         seedNote: 'Выжимка: 14 отметок, без подосновы — для быстрого показа. Полные данные загружает мастер комплекта.',
         slot: {
+          topobaseFull: 'Топооснова объекта (полная)',
           surveyStankevicha: 'Съёмка по ул. Станкевича',
           surveyMoldagalieva: 'Съёмка по ул. Молдагалиева',
           technicalConditions: 'Технические условия',

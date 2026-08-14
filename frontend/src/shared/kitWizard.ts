@@ -22,6 +22,16 @@ export type KitSlotHandling =
 
 export interface KitSlotDefinition {
   id: string
+  /**
+   * Слот не обязателен, если его содержимое покрыто другим слотом.
+   *
+   * Съёмка Станкевича целиком лежит внутри полной топоосновы — проверено
+   * фактом: все 177 отметок совпали на 0,000 м. Слот оставлен принимаемым для
+   * совместимости, но требовать его, когда полный файл загружен, незачем.
+   */
+  optional?: boolean
+  /** Слот, который покрывает этот. */
+  coveredBy?: string
   /** Ожидаемое имя файла у владельца — подсказка, а не требование. */
   hint: string
   /** Расширения, которые слот принимает. */
@@ -34,13 +44,19 @@ export interface KitSlotDefinition {
 /**
  * Состав комплекта Станкевича в порядке прогона.
  *
+ * Первым идёт ПОЛНАЯ топооснова объекта. Отдельного слота съёмки Молдагалиевой
+ * больше нет: конвертация ODA показала, что `Молдагалиева.dwg` — это и есть
+ * полная основа обеих улиц (50 слоёв, 754 точки, 13 131 сегмент), а съёмка
+ * Станкевича лежит внутри неё побитово. Слот Станкевича оставлен принимаемым
+ * для совместимости и помечается покрытым, когда полный файл разобран.
+ *
  * Имена-подсказки — те, под которыми файлы лежат у владельца. Эталон РП
  * (`_РП Станкевича — (2).dwg`) в комплект НЕ входит: это мерило, а не исходное
  * данное, и попасть в расчёт он не должен.
  */
 export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
-  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null },
-  { id: 'surveyMoldagalieva', hint: 'Молдагалиева.dwg → .dxf', accept: '.dxf', handling: 'basis', parsedAtStage: 2 },
+  { id: 'topobaseFull', hint: 'Молдагалиева.dwg → .dxf (полная топооснова)', accept: '.dxf', handling: 'parsed', parsedAtStage: null },
+  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull' },
   { id: 'technicalConditions', hint: 'ТУ_05-3-2723 (1).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null },
   { id: 'designBrief', hint: 'ТЗ_5669_Станкевича.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 4 },
   { id: 'surveyReport', hint: 'ТО_5669_Станкевича (2).pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 3 },
@@ -49,12 +65,14 @@ export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
   { id: 'routeScheme', hint: 'Станкевича_ схема трассы.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 5 },
 ] as const
 
-/** Состояние одного слота. Четыре вида, пятого нет. */
+/** Состояние одного слота. Пять видов, шестого нет. */
 export type KitSlotState =
   | { kind: 'empty' }
   | { kind: 'parsed'; fileName: string; counters: Array<{ label: string; value: number }> }
   | { kind: 'stored'; fileName: string; parsedAtStage: number }
   | { kind: 'failed'; fileName: string; reason: string }
+  /** Содержимое слота уже пришло другим файлом — требовать его незачем. */
+  | { kind: 'covered'; byId: string }
 
 export type KitState = Record<string, KitSlotState>
 
@@ -65,14 +83,37 @@ export function emptyKitState(slots: readonly KitSlotDefinition[] = STANKEVICHA_
 
 /** Сколько слотов заполнено — для строки «готово N из M». */
 export function kitProgress(state: KitState, slots: readonly KitSlotDefinition[] = STANKEVICHA_KIT_SLOTS): {
-  filled: number; total: number; failed: number
+  filled: number; total: number; failed: number; covered: number
 } {
   const values = slots.map((slot) => state[slot.id] ?? { kind: 'empty' as const })
   return {
     filled: values.filter((value) => value.kind === 'parsed' || value.kind === 'stored').length,
     total: slots.length,
     failed: values.filter((value) => value.kind === 'failed').length,
+    covered: values.filter((value) => value.kind === 'covered').length,
   }
+}
+
+/**
+ * Помечает покрытые слоты.
+ *
+ * Пометка ставится ТОЛЬКО когда покрывающий слот действительно разобран: пока
+ * полной топоосновы нет, слот съёмки остаётся обычным и его отсутствие видно.
+ */
+export function markCovered(
+  state: KitState,
+  slots: readonly KitSlotDefinition[] = STANKEVICHA_KIT_SLOTS,
+): KitState {
+  const next = { ...state }
+  for (const slot of slots) {
+    if (!slot.optional || !slot.coveredBy) continue
+    const covering = next[slot.coveredBy]
+    const own = next[slot.id] ?? { kind: 'empty' as const }
+    if (covering?.kind === 'parsed' && own.kind === 'empty') {
+      next[slot.id] = { kind: 'covered', byId: slot.coveredBy }
+    }
+  }
+  return next
 }
 
 /**
@@ -106,5 +147,7 @@ export async function runKit(
     state[slot.id] = next
     onSlot?.(slot.id, next)
   }
-  return state
+  // Пометка «покрыт» ставится после прогона: до него неизвестно, разобралась
+  // ли полная топооснова.
+  return markCovered(state, slots)
 }

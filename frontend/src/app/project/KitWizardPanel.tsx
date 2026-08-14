@@ -52,6 +52,13 @@ export function KitWizardPanel({
         </span>
       )
     }
+    if (value.kind === 'covered') {
+      return (
+        <span className="ok">
+          {t('project.kit.statusCovered', { by: t(`project.kit.slot.${value.byId}`) })}
+        </span>
+      )
+    }
     if (value.kind === 'failed') {
       return (
         <span className="error" role="alert">
@@ -67,7 +74,9 @@ export function KitWizardPanel({
       <h4>{t('project.kit.title')}</h4>
       <p className="hint">{t('project.kit.hint')}</p>
       <p className="stat-line">
-        {t('project.kit.progress', { filled: progress.filled, total: progress.total, failed: progress.failed })}
+        {t('project.kit.progress', {
+          filled: progress.filled, total: progress.total, failed: progress.failed, covered: progress.covered,
+        })}
       </p>
 
       <div className="table-wrap">

@@ -879,7 +879,7 @@ export const en = {
       kit: {
         title: 'Source kit wizard',
         hint: 'Kit files are picked once and run through the regular pipelines, survey first and documents after. An empty slot stays listed so the kit is visible as a whole.',
-        progress: 'Done {{filled}} of {{total}}; failed {{failed}}.',
+        progress: 'Done {{filled}} of {{total}}; covered {{covered}}; failed {{failed}}.',
         thOrder: '#',
         thSlot: 'Kit slot',
         thFile: 'File',
@@ -888,6 +888,7 @@ export const en = {
         running: 'running…',
         statusEmpty: 'not loaded',
         statusParsed: 'parsed: {{file}}',
+        statusCovered: 'covered by the full topographic base ({{by}})',
         statusStored: 'stored as a basis file: {{file}}; parsing at stage {{stage}}',
         statusFailed: 'failed on {{file}}: {{reason}}',
         run: 'Run the kit ({{count}})',
@@ -902,6 +903,7 @@ export const en = {
         counterDiameter: 'diameter, mm',
         seedNote: 'Digest: 14 elevations, no topographic base — for a quick showing. Full data is loaded by the wizard.',
         slot: {
+          topobaseFull: 'Site topographic base (full)',
           surveyStankevicha: 'Stankevicha street survey',
           surveyMoldagalieva: 'Moldagalieva street survey',
           technicalConditions: 'Technical conditions',
