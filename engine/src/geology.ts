@@ -391,7 +391,10 @@ function ruNumber(text: string | undefined): number | null {
 export function parseIgeDescriptions(text: string): IgeDescription[] {
   const out: IgeDescription[] = []
   const seen = new Set<string>()
-  const igeRe = /ИГЭ\s*№?\s*(\d+(?:-\d+)?)\s*[–—-]\s*([^.\n]+)[.,]/g
+  // Номер отделён от «ИГЭ» чем угодно: «ИГЭ-1», «ИГЭ - 1», «ИГЭ №1». Название
+  // грунта идёт после тире любого начертания и кончается первой запятой или
+  // точкой: дальше в отчёте идут цвет и код грунта, а не название.
+  const igeRe = /ИГЭ[\s№-]*(\d+(?:-\d+)?)\s*[–—-]\s*([^.,\n]+)[.,:]/g
   let match: RegExpExecArray | null
   while ((match = igeRe.exec(text)) !== null) {
     if (seen.has(match[1])) continue
@@ -442,6 +445,16 @@ export interface FreezingDepthCandidate {
   soil: string | null
   /** Цитата, по которой величина прочитана. */
   quote: string
+  /** Форма записи, из которой величина прочитана. */
+  form: 'prose' | 'table'
+  /**
+   * Величина названа в отчёте и таблицей, и прозой, и формы не разошлись.
+   *
+   * Это перекрёстное подтверждение самим документом: он сказал величину дважды
+   * и не противоречит себе. Расхождение форм подтверждением не считается — оба
+   * кандидата остаются на виду с указанием формы.
+   */
+  confirmedByBothForms: boolean
 }
 
 export interface GeologyReportSummary {
@@ -466,42 +479,59 @@ export interface GeologyReportSummary {
  * than in the borehole tables. Values remain a review proposal in the UI: a
  * prose report cannot reconstruct per-borehole layer boundaries honestly.
  */
+/** Перевод строки в собранном тексте документа. */
+const LINE_BREAK = new RegExp('\r?\n')
+
 export function parseGeologyReportSummary(text: string): GeologyReportSummary {
   const normalized = text.replace(/\s+/g, ' ')
-  // Заголовок ищется и со словом «сезонного», и без него: у Станкевича в шапке
-  // раздела его нет, а величины там же.
-  const freezingHeading = /нормативн[а-яё]*\s+глубин[а-яё]*\s+(?:сезонн[а-яё]*\s+)?промерзан[а-яё]*/i.exec(normalized)
+  // Якорь ищется ВО ВСЕХ вхождениях, а не в первом. В отчёте Станкевича их два:
+  // над таблицей и в прозе, — и окно от первого содержит только табличную
+  // форму без тире, из-за чего кандидатов не находилось вовсе.
   const freezingDepthCandidates: FreezingDepthCandidate[] = []
-  if (freezingHeading) {
-    const tail = normalized.slice(freezingHeading.index, freezingHeading.index + 700)
-    // Грунт называется ПЕРЕД величиной: «для суглинков – 0,79м». Кусок «для …»
-    // подхватывается вместе с числом, чтобы отнести величину к своему грунту.
-    // Грунт стоит перед величиной в обеих принятых записях: «для суглинков –
-    // 0,79м» и «- суглинки и глины - 171». Поэтому слова перед тире берутся
-    // как есть, а служебное «для» снимается уже с прочитанного.
-    const pattern = /([а-яё]+(?:\s+[а-яё]+){0,3})?\s*[–—-]\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*(м|см)?(?=\s|;|\.|,|$)/gi
-    for (const match of tail.matchAll(pattern)) {
-      const raw = Number(match[2].replace(',', '.'))
-      if (!Number.isFinite(raw)) continue
-      // Единица берётся из документа; если её нет — различаем по величине:
-      // метры измеряются десятыми, сантиметры — десятками.
-      const readAs: 'm' | 'cm' = match[3] === 'см' ? 'cm' : match[3] === 'м' ? 'm' : raw >= 20 ? 'cm' : 'm'
-      const valueM = Math.round((readAs === 'cm' ? raw / 100 : raw) * 1000) / 1000
-      if (!(valueM >= 0.3 && valueM <= 5)) continue
-      // Слова заголовка могут прилипнуть спереди («сезонного промерзания для
-      // суглинков»): грунт — то, что стоит ПОСЛЕ последнего «для», а если «для»
-      // нет, то захваченное целиком.
-      const captured = (match[1] ?? '').trim().replace(/\s+/g, ' ')
-      const afterFor = /(?:^|\s)для\s+(.+)$/i.exec(captured)
-      const soil = (afterFor ? afterFor[1] : captured).trim() || null
-      if (freezingDepthCandidates.some((item) => item.valueM === valueM && item.soil === soil)) continue
-      freezingDepthCandidates.push({ valueM, readAs, soil, quote: match[0].trim() })
+  const anchorRe = /нормативн[а-яё]*\s+глубин[а-яё]*\s+(?:сезонн[а-яё]*\s+)?промерзан[а-яё]*/gi
+  // Табличная форма: строка «грунт → величина», разделитель — табуляция,
+  // тире нет, единица написана слитно («0,79м»).
+  const tableRow = /^(.+?)	\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*(м|см)?\s*$/
+  // Прозовая форма: «для суглинков – 0,79м», грунт перед тире.
+  const proseRow = /([а-яё]+(?:\s+[а-яё]+){0,3})?\s*[–—-]\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*(м|см)?(?=\s|;|\.|,|$)/gi
+  const addCandidate = (
+    rawValue: string, unit: string | undefined, rawSoil: string | null, quote: string, form: 'prose' | 'table',
+  ) => {
+    const raw = Number(rawValue.replace(',', '.'))
+    if (!Number.isFinite(raw)) return
+    // Единица берётся из документа; без неё различаем по величине: метры
+    // измеряются десятыми, сантиметры — десятками.
+    const readAs: 'm' | 'cm' = unit === 'см' ? 'cm' : unit === 'м' ? 'm' : raw >= 20 ? 'cm' : 'm'
+    const valueM = Math.round((readAs === 'cm' ? raw / 100 : raw) * 1000) / 1000
+    if (!(valueM >= 0.3 && valueM <= 5)) return
+    const captured = (rawSoil ?? '').trim().replace(/\s+/g, ' ')
+    // Слова заголовка могут прилипнуть спереди («сезонного промерзания для
+    // суглинков»): грунт — то, что стоит после последнего «для».
+    const afterFor = /(?:^|\s)для\s+(.+)$/i.exec(captured)
+    const soil = (afterFor ? afterFor[1] : captured).trim() || null
+    const twin = freezingDepthCandidates.find((item) => item.valueM === valueM)
+    if (twin) {
+      // Одна и та же величина из ОБЕИХ форм — это перекрёстное подтверждение,
+      // а не дубликат: отчёт сказал её дважды и не разошёлся сам с собой.
+      if (twin.form !== form) twin.confirmedByBothForms = true
+      if (twin.soil === null && soil !== null) twin.soil = soil
+      return
+    }
+    freezingDepthCandidates.push({ valueM, readAs, soil, quote, form, confirmedByBothForms: false })
+  }
+  for (const anchor of text.matchAll(anchorRe)) {
+    const window = text.slice(anchor.index ?? 0, (anchor.index ?? 0) + 900)
+    for (const line of window.split(LINE_BREAK)) {
+      const asTable = tableRow.exec(line)
+      if (asTable && !/^наименование/i.test(asTable[1].trim())) {
+        addCandidate(asTable[2], asTable[3], asTable[1], line.trim(), 'table')
+        continue
+      }
+      for (const asProse of line.matchAll(proseRow)) {
+        addCandidate(asProse[2], asProse[3], asProse[1] ?? null, asProse[0].trim(), 'prose')
+      }
     }
   }
-  // Одна величина — она и есть значение, как было раньше. Несколько — величина
-  // НЕ определена до выбора инженера: прежний `Math.max` был молчаливым
-  // выбором за него, а запас по промерзанию — это другая отметка заложения,
-  // а не осторожность.
   const freezingDepthM = freezingDepthCandidates.length === 1 ? freezingDepthCandidates[0].valueM : null
 
   let maxAggressiveness: Aggressiveness | null = null
