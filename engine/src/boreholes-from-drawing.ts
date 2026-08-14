@@ -28,7 +28,7 @@ export interface DrawingBorehole {
 export interface BoreholeExtraction {
   boreholes: DrawingBorehole[]
   /** Метки, встреченные более одного раза внутри границ. */
-  ambiguous: Array<{ label: string; positions: Array<{ x: number; y: number }> }>
+  ambiguous: Array<{ label: string; positions: Array<{ x: number; y: number; layer: string }> }>
   /** Подписи, отброшенные как лежащие вне границ площадки. */
   outsideBounds: number
   reason: string
@@ -64,8 +64,17 @@ export interface BoreholeExtractionOptions {
   numberLayers?: readonly string[]
 }
 
-/** «скв-1», «Скв. 2», «скв №3», «с-1». */
-const DEFAULT_PATTERN = /^(?:скв|с)[\s.№-]*(\d{1,3})[а-я]?$/i
+/**
+ * «скв-1», «Скв. 2», «скв №3», «скважина 4».
+ *
+ * Одиночная «с» из маски убрана намеренно. На городской съёмке одна буква перед
+ * числом означает что угодно — сокращение улицы, секции, стороны, — и на
+ * настоящем чертеже Станкевича она давала каждой скважине вторую позицию из
+ * посторонней подписи. Метка становилась «встреченной дважды», защита от врезки
+ * срабатывала, и все три скважины уходили в неоднозначные. Защита была
+ * исправна: ей подавали мусор.
+ */
+const DEFAULT_PATTERN = /^(?:скв(?:ажина)?)[\s.№-]*(\d{1,3})[а-я]?$/i
 
 /** Голый номер выработки на «номерном» слое: только целое, без хвостов. */
 const BARE_NUMBER = /^(\d{1,3})$/
@@ -122,11 +131,21 @@ export function boreholesFromDrawing(
     // что одна из них во врезке. Какая — решает инженер, а не эвристика.
     const distinct = items.filter((item, index) => items.findIndex((other) =>
       Math.hypot(other.x - item.x, other.y - item.y) < 1) === index)
-    if (distinct.length > 1) {
-      ambiguous.push({ label, positions: distinct.map(({ x, y }) => ({ x, y })) })
+
+    // Коллизия между слоями решается ролью, а не расстоянием: слой, которому
+    // инженер назначил роль плана выработок, — прямое утверждение инженера, и
+    // подпись оттуда сильнее случайного совпадения на слое рельефа или зданий.
+    // Тот же принцип, что «имя слоя — утверждение съёмщика» в разборе ролей.
+    const onDeclared = distinct.filter((item) => numberLayers.has(item.layer.trim().toLowerCase()))
+    // А вот коллизию ВНУТРИ слоя выработок разводить нечем: две метки «1» на
+    // одном плане — это вопрос к чертежу, и решает его инженер.
+    const resolved = onDeclared.length === 1 ? onDeclared : distinct
+
+    if (resolved.length > 1) {
+      ambiguous.push({ label, positions: resolved.map(({ x, y, layer }) => ({ x, y, layer })) })
       continue
     }
-    boreholes.push(distinct[0])
+    boreholes.push(resolved[0])
   }
 
   const reason = boreholes.length === 0 && ambiguous.length === 0

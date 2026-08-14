@@ -19,14 +19,16 @@ const SITE = { minX: -300, minY: 7800, maxX: 120, maxY: 8200 }
 
 describe('метки скважин', () => {
   it('приводятся к общему виду независимо от записи', () => {
-    for (const raw of ['скв-1', 'Скв. 1', 'скв №1', 'с-1', 'СКВ1']) {
+    for (const raw of ['скв-1', 'Скв. 1', 'скв №1', 'скважина 1', 'СКВ1']) {
       expect(normalizeBoreholeLabel(raw)).toBe('скв-1')
     }
     expect(normalizeBoreholeLabel('скв-012')).toBe('скв-12')
   })
 
   it('не принимает произвольный текст за метку', () => {
-    for (const raw of ['Скважина N ___', 'План расположения скважин', 'сеть', '1']) {
+    // «с-1» больше не метка: одиночная буква на городской съёмке означает что
+    // угодно, и на настоящем чертеже она давала каждой скважине лишнюю позицию.
+    for (const raw of ['Скважина N ___', 'План расположения скважин', 'сеть', '1', 'с-1', 'с 12']) {
       expect(normalizeBoreholeLabel(raw)).toBeNull()
     }
   })
@@ -145,5 +147,66 @@ describe('номер выработки голым числом на своём 
   it('число на чужом слое остаётся числом', () => {
     const found = boreholesFromDrawing(drawing, { numberLayers: ['номер скв'] })
     expect(found.boreholes.some((borehole) => borehole.y === 8000)).toBe(false)
+  })
+})
+
+describe('коллизии меток разводятся ролью слоя', () => {
+  const PLAN = 'номер скв'
+
+  it('метка на слое выработок побеждает такую же на постороннем слое', () => {
+    const drawing = {
+      textEntities: [
+        { text: '1', layer: PLAN, x: 253.71, y: 8134.1 },
+        // Такое же число на рельефе — это отметка или номер горизонтали.
+        { text: '1', layer: 'РЕЛЬЕФ', x: 700, y: 7800 },
+      ],
+    } as never
+    const found = boreholesFromDrawing(drawing, { numberLayers: [PLAN] })
+    expect(found.ambiguous).toHaveLength(0)
+    expect(found.boreholes).toHaveLength(1)
+    expect(found.boreholes[0].x).toBeCloseTo(253.71, 2)
+    expect(found.boreholes[0].layer).toBe(PLAN)
+  })
+
+  it('две метки на самом слое выработок остаются неоднозначностью со слоями', () => {
+    const drawing = {
+      textEntities: [
+        { text: '1', layer: PLAN, x: 253.71, y: 8134.1 },
+        { text: '1', layer: PLAN, x: 900, y: 7700 },
+      ],
+    } as never
+    const found = boreholesFromDrawing(drawing, { numberLayers: [PLAN] })
+    expect(found.boreholes).toHaveLength(0)
+    expect(found.ambiguous).toHaveLength(1)
+    // Инженер должен видеть, откуда каждая позиция.
+    expect(found.ambiguous[0].positions.map((position) => position.layer)).toEqual([PLAN, PLAN])
+  })
+
+  it('одиночная «с» перед числом больше не кандидат', () => {
+    const drawing = {
+      textEntities: [
+        { text: 'с 12', layer: 'NAD_MУЛИЦЫ', x: 10, y: 10 },
+        { text: 'с-3', layer: 'ЗДАНИЯ', x: 20, y: 20 },
+      ],
+    } as never
+    expect(boreholesFromDrawing(drawing).boreholes).toHaveLength(0)
+    expect(boreholesFromDrawing(drawing).ambiguous).toHaveLength(0)
+  })
+
+  it('слово «скважина» целиком принимается', () => {
+    const drawing = { textEntities: [{ text: 'скважина 4', layer: 'X', x: 1, y: 2 }] } as never
+    expect(boreholesFromDrawing(drawing).boreholes.map((borehole) => borehole.label)).toEqual(['скв-4'])
+  })
+
+  it('дата бурения и отметка устья со слоя выработок номером не становятся', () => {
+    const drawing = {
+      textEntities: [
+        { text: '1', layer: PLAN, x: 253.71, y: 8134.1 },
+        { text: '06.2025г.', layer: PLAN, x: 255.88, y: 8128.25 },
+        { text: '685,13', layer: PLAN, x: 325.75, y: 8134.15 },
+      ],
+    } as never
+    const found = boreholesFromDrawing(drawing, { numberLayers: [PLAN] })
+    expect(found.boreholes.map((borehole) => borehole.label)).toEqual(['скв-1'])
   })
 })
