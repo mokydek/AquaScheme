@@ -14,6 +14,19 @@ import { saveBasisFile } from '../../shared/basisFiles'
 import { KitWizardPanel } from './KitWizardPanel'
 
 /**
+ * Слоты, у которых в этом виде есть разбор.
+ *
+ * Объявлено списком и связано двумя проверками. Тест сверяет список с составом
+ * комплекта, а тип `PARSING_HANDLERS` требует обработчик на каждый пункт
+ * списка. Без этой пары слот, объявленный разбираемым и оставшийся без
+ * обработчика, молча уходил в ветку basis-файла — «разобрано» превращалось в
+ * «отложено» так, что заметить это можно было только глазами.
+ */
+export const PARSED_KIT_SLOT_IDS = [
+  'topobaseFull', 'surveyStankevicha', 'technicalConditions', 'surveyReport',
+] as const
+
+/**
  * Демонстрация на настоящем объекте.
  *
  * Учебная сеть показывает, что расчёт работает. Настоящий объект показывает
@@ -84,23 +97,65 @@ export function StankevichaDemoView({
     }
   }
 
+  /**
+   * Акт технического обследования: слот считает, подтверждает секция.
+   *
+   * Тот же уговор, что и с ТУ. Экран подтверждения величин акта уже есть в
+   * секции «Существующая сеть и АТО», и второй такой же стал бы вторым
+   * источником правды. Слот показывает, СКОЛЬКО величин нашлось в документе, —
+   * этого хватает, чтобы владелец увидел, что файл прочитан, а не проглочен.
+   */
+  const acceptSurveyReport = async (file: File): Promise<KitSlotState> => {
+    if (!projectId) throw new Error(t('project.kit.noProject'))
+    await saveBasisFile(projectId, 'stankevicha_surveyReport', file.name, { fileName: file.name })
+    const { loadPdfTextByPage } = await import('../../shared/pdfText')
+    const pages = (await loadPdfTextByPage(file)).map((page, index) => ({
+      page: index + 1,
+      text: page.items.map((item) => item.str).join(' '),
+    }))
+    if (pages.every((page) => page.text.trim() === '')) {
+      throw new Error(t('project.existing.act.noTextLayer'))
+    }
+    const { countSurveyActValues, extractSurveyActFacts } = await import('@aquascheme/engine')
+    const facts = extractSurveyActFacts(pages)
+    return {
+      kind: 'parsed',
+      fileName: file.name,
+      counters: [
+        { label: t('project.kit.counterActValues'), value: countSurveyActValues(facts) },
+        { label: t('project.kit.counterPages'), value: pages.length },
+      ],
+    }
+  }
+
   const storeAsBasis = (slotId: string, stage: number) => async (file: File): Promise<KitSlotState> => {
     if (!projectId) throw new Error(t('project.kit.noProject'))
     await saveBasisFile(projectId, `stankevicha_${slotId}`, file.name, { fileName: file.name })
     return { kind: 'stored', fileName: file.name, parsedAtStage: stage }
   }
 
+  // Полная топооснова и съёмка Станкевича идут одним разбором: это DXF одного
+  // вида, и второго конвейера для них не заводится.
+  const PARSING_HANDLERS: Record<
+    (typeof PARSED_KIT_SLOT_IDS)[number], (file: File) => Promise<KitSlotState>
+  > = {
+    topobaseFull: parseSurvey,
+    surveyStankevicha: parseSurvey,
+    technicalConditions: acceptConditions,
+    surveyReport: acceptSurveyReport,
+  }
+
   const handlers: Record<string, (file: File) => Promise<KitSlotState>> = Object.fromEntries(
-    STANKEVICHA_KIT_SLOTS.map((slot) => [
-      slot.id,
-      // Полная топооснова и съёмка Станкевича идут одним разбором: это DXF
-      // одного вида, и второго конвейера для них не заводится.
-      slot.id === 'topobaseFull' || slot.id === 'surveyStankevicha'
-        ? parseSurvey
-        : slot.id === 'technicalConditions'
-          ? acceptConditions
-          : storeAsBasis(slot.id, slot.parsedAtStage ?? 2),
-    ]),
+    STANKEVICHA_KIT_SLOTS.map((slot) => {
+      const parsing = (PARSING_HANDLERS as Record<string, ((file: File) => Promise<KitSlotState>) | undefined>)[slot.id]
+      if (slot.handling !== 'parsed') return [slot.id, storeAsBasis(slot.id, slot.parsedAtStage ?? 2)]
+      // Слот объявлен разбираемым, а разбирать нечем. Это дефект сборки, а не
+      // повод тихо сохранить файл basis-файлом и отчитаться «отложено».
+      if (!parsing) {
+        return [slot.id, async () => { throw new Error(t('project.kit.handlerMissing', { slot: slot.id })) }]
+      }
+      return [slot.id, parsing]
+    }),
   )
 
   const pick = (slotId: string, event: ChangeEvent<HTMLInputElement>) => {

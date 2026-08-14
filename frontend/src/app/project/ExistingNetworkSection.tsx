@@ -2,13 +2,18 @@ import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseGeoJsonNetwork, summarizeAct } from '@aquascheme/engine'
-import type { ExistingMaterial, ImportSegment, PipeDecision, SurveyPoint } from '@aquascheme/engine'
+import type {
+  ExistingMaterial, ImportSegment, PipeDecision, SurveyActFacts, SurveyPoint,
+} from '@aquascheme/engine'
 import { supabase } from '../../shared/supabase'
 import { useAuth } from '../../shared/auth'
 import { replaceExisting, updateExistingPipe } from '../../shared/existing'
 import type { ExistingPipeRow } from '../../shared/existing'
+import { confirmSurveyActValue, createSurveyAct } from '../../shared/surveyActs'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
+import { SurveyActValues } from './SurveyActValues'
+import type { SurveyActRow } from './SurveyActValues'
 
 const MATERIALS: ExistingMaterial[] = ['steel', 'cast_iron', 'concrete', 'asbestos', 'pe', 'pvc', 'unknown']
 const DECISIONS: PipeDecision[] = ['keep', 'rehabilitate', 'replace']
@@ -31,6 +36,17 @@ export function ExistingNetworkSection({
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<'imported' | 'invalid' | 'scan' | 'error' | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  /**
+   * Разобранный акт технического обследования.
+   *
+   * Акт даёт то, чего нет ни в ТУ, ни в геологии: материал и диаметр уложенной
+   * трубы, протяжённость, глубину заложения и категорию состояния. До сих пор
+   * он только прикреплялся сканом и лежал мёртвым грузом.
+   */
+  const [actFacts, setActFacts] = useState<SurveyActFacts | null>(null)
+  const [actId, setActId] = useState<string | null>(null)
+  const [actFileName, setActFileName] = useState<string>('')
+  const [actConfirmed, setActConfirmed] = useState<string[]>([])
 
   const importFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -69,19 +85,47 @@ export function ExistingNetworkSection({
     await onChanged()
   }
 
+  /**
+   * Загрузка акта: файл прикрепляется И разбирается.
+   *
+   * Раньше здесь заканчивалось всё — скан ложился в хранилище, а цифры из него
+   * инженер перепечатывал руками. Теперь текстовый слой читается тем же путём,
+   * что и ТУ, и величины попадают на экран подтверждения с цитатами.
+   *
+   * Распознавания образов здесь нет: акт без текстового слоя честно объявляется
+   * нечитаемым и остаётся прикреплённым сканом. Заводить второе распознавание
+   * ради этого нельзя — величины акта инженер вычитает глазами, а угадывать за
+   * него программа не станет.
+   */
   const uploadScan = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file || !session) return
     setBusy(true)
     setNotice(null)
     setUploadMessage(null)
+    setActFacts(null)
+    setActConfirmed([])
     try {
       const routed = await routeUpload(file, ['pdf'])
       const path = `${session.user.id}/${projectId}/act_${routed.file.name}`
       const up = await supabase.storage.from('source-files').upload(path, routed.file, { upsert: true, contentType: 'application/pdf' })
       if (up.error) throw up.error
-      await supabase.from('survey_acts').insert({ project_id: projectId, scan_path: path })
+      const id = await createSurveyAct(projectId, path, routed.file.name)
+      setActId(id)
+      setActFileName(routed.file.name)
       setNotice('scan')
+
+      const { loadPdfTextByPage } = await import('../../shared/pdfText')
+      const pages = (await loadPdfTextByPage(routed.file)).map((page, index) => ({
+        page: index + 1,
+        text: page.items.map((item) => item.str).join(' '),
+      }))
+      if (pages.every((page) => page.text.trim() === '')) {
+        setUploadMessage(t('project.existing.act.noTextLayer'))
+        return
+      }
+      const { extractSurveyActFacts } = await import('@aquascheme/engine')
+      setActFacts(extractSurveyActFacts(pages))
     } catch (error) {
       const message = uploadErrorText(t, error)
       if (message) setUploadMessage(message)
@@ -89,6 +133,30 @@ export function ExistingNetworkSection({
     } finally {
       setBusy(false)
       event.target.value = ''
+    }
+  }
+
+  /** Подтверждение поштучное: величина ложится в модель АТО с цитатой. */
+  const confirmActValue = async (row: SurveyActRow) => {
+    if (!actId) return
+    setBusy(true)
+    try {
+      await confirmSurveyActValue(actId, {
+        key: row.key,
+        value: row.value,
+        quote: row.quote,
+        page: row.page,
+        file: actFileName,
+        fromNormReference: row.fromNormReference,
+      })
+      setActConfirmed((previous) => [...previous, row.id])
+      await onChanged()
+    } catch (error) {
+      const message = uploadErrorText(t, error)
+      if (message) setUploadMessage(message)
+      else setNotice('error')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -113,6 +181,16 @@ export function ExistingNetworkSection({
       {notice === 'scan' && <span className="stat-line ok">{t('project.existing.scanDone')}</span>}
       {notice === 'invalid' && <p className="notice error">{t('project.existing.invalid')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
+
+      {actFacts && (
+        <SurveyActValues
+          facts={actFacts}
+          fileName={actFileName}
+          confirmed={actConfirmed}
+          busy={busy}
+          onConfirm={(row) => void confirmActValue(row)}
+        />
+      )}
 
       {existing.length > 0 && (
         <>

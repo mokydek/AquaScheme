@@ -21,10 +21,12 @@ describe('мастер комплекта', () => {
       'geologyAppendices',
       'routeScheme',
     ])
-    // Разбираются полная топооснова, съёмка (для совместимости) и ТУ;
-    // остальные объявлены basis, и у каждого назван этап разбора.
+    // Разбираются полная топооснова, съёмка (для совместимости), ТУ и акт
+    // технического обследования; остальные объявлены basis, и у каждого назван
+    // этап разбора.
     const parsed = STANKEVICHA_KIT_SLOTS.filter((slot) => slot.handling === 'parsed')
-    expect(parsed.map((slot) => slot.id)).toEqual(['topobaseFull', 'surveyStankevicha', 'technicalConditions'])
+    expect(parsed.map((slot) => slot.id))
+      .toEqual(['topobaseFull', 'surveyStankevicha', 'technicalConditions', 'surveyReport'])
     // Полная топооснова стоит ДО технических условий: диаметр ложится на уже
     // разобранную основу, а не наоборот.
     const order = STANKEVICHA_KIT_SLOTS.map((slot) => slot.id)

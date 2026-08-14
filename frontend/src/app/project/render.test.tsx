@@ -39,15 +39,19 @@ const { LinetypeRolesTable } = await import('./LinetypeRolesTable')
 const { DxfLayerRoleTable } = await import('./DxfLayerRoleTable')
 const { MasterPlanView } = await import('./MasterPlanView')
 const { SourceBundleRunSection } = await import('./SourceBundleRunSection')
-const { StankevichaDemoView } = await import('./StankevichaDemoView')
+const { StankevichaDemoView, PARSED_KIT_SLOT_IDS } = await import('./StankevichaDemoView')
 const { KitWizardPanel } = await import('./KitWizardPanel')
+const { SurveyActValues, surveyActRows } = await import('./SurveyActValues')
 const { STANKEVICHA_KIT_SLOTS, emptyKitState } = await import('../../shared/kitWizard')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
 const { DeliverablesSection } = await import('./DeliverablesSection')
 const { ReconstructionSurveySection } = await import('./ReconstructionSurveySection')
 const { TuImportSection } = await import('./TuImportSection')
-const { maxFilling, auditProjectProvenance, planBasinPressureLinks, extractConditionsFromTu } = await import('@aquascheme/engine')
+const {
+  maxFilling, auditProjectProvenance, planBasinPressureLinks, extractConditionsFromTu,
+  extractSurveyActFacts,
+} = await import('@aquascheme/engine')
 const { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } = await import('../../shared/stankevichaDemo')
 
 const html = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element)
@@ -633,5 +637,66 @@ describe('панель мастера комплекта', () => {
     expect(markup).toContain('data-kit-seed-note')
     expect(markup).toContain('project.kit.seedNote')
     expect(markup).toContain('data-kit-wizard')
+  })
+
+  it('у каждого разбираемого слота есть разбор, а не тихий уход в basis', () => {
+    // Слот `topobaseFull` однажды был объявлен разбираемым и остался без
+    // обработчика: файл молча сохранялся basis-файлом, и «разобрано»
+    // превращалось в «отложено» незаметно. Список связывает состав комплекта с
+    // видом, а тип `PARSING_HANDLERS` требует обработчик на каждый его пункт.
+    const declared = STANKEVICHA_KIT_SLOTS
+      .filter((slot) => slot.handling === 'parsed')
+      .map((slot) => slot.id)
+      .sort()
+    expect([...PARSED_KIT_SLOT_IDS].sort()).toEqual(declared)
+  })
+})
+
+describe('экран подтверждения величин из акта обследования', () => {
+  const facts = extractSurveyActFacts([{
+    page: 9,
+    text: `Материал канализационной сети – керамическая труба.
+Керамическая труба Ø 45 0 мм, протяженностью 458,94 метров, без учета врезок.
+Для керамических, асбоцементных трубопроводов – в соответствии со СН РК 1.04-26-2022 составляет 30 лет.`,
+  }])
+  const labels = {
+    diameterMm: 'd', material: 'm', lengthM: 'l', depthRangeM: 'h', category: 'c', verdict: 'v',
+  } as const
+
+  const markup = html(createElement(SurveyActValues, {
+    facts, fileName: 'ТО.pdf', confirmed: [], onConfirm: () => {},
+  }))
+
+  it('каждый кандидат показан с цитатой, страницей и кнопкой подтверждения', () => {
+    expect(markup).toContain('project.existing.act.thQuote')
+    expect(markup).toContain('Материал канализационной сети')
+    // Диаметр дошёл, хотя в тексте он разорван кернингом.
+    expect(markup).toContain('450')
+    expect((markup.match(/project\.existing\.act\.confirm</g) ?? []).length)
+      .toBe(surveyActRows(facts, labels).length)
+  })
+
+  it('кандидат из ссылки на норматив помечен, а не выброшен и не приравнен', () => {
+    // Асбоцемент назван только в ссылке на срок службы по норме; труба по
+    // описанию керамическая. Выбросить — спрятать противоречие акта, принять
+    // молча — подменить материал объекта материалом нормы.
+    expect(markup).toContain('project.existing.act.fromNorm')
+    expect(markup).toContain('асбестоцементная')
+    const own = surveyActRows(facts, labels)
+      .filter((row) => row.key === 'material' && !row.fromNormReference)
+    expect(own.map((row) => row.shown)).toEqual(['керамическая', 'керамическая'])
+  })
+
+  it('отсутствие шероховатости названо вслух, а не подставлено', () => {
+    expect(markup).toContain('data-survey-act-missing')
+    expect(markup).toContain('шероховатость')
+    expect(markup).toContain('принимает инженер')
+  })
+
+  it('подтверждённая строка больше не предлагает подтверждение', () => {
+    const confirmed = html(createElement(SurveyActValues, {
+      facts, fileName: 'ТО.pdf', confirmed: ['diameterMm-0'], onConfirm: () => {},
+    }))
+    expect(confirmed).toContain('project.existing.act.confirmed')
   })
 })

@@ -59,7 +59,10 @@ export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
   { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull' },
   { id: 'technicalConditions', hint: 'ТУ_05-3-2723 (1).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null },
   { id: 'designBrief', hint: 'ТЗ_5669_Станкевича.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 4 },
-  { id: 'surveyReport', hint: 'ТО_5669_Станкевича (2).pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 3 },
+  // Акт технического обследования разбирается текстовым слоем: он даёт материал
+  // и диаметр уложенной трубы, протяжённость, глубину заложения и категорию
+  // состояния — то, чего нет ни в ТУ, ни в геологии.
+  { id: 'surveyReport', hint: 'ТО_5669_Станкевича (2).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null },
   { id: 'geologyReport', hint: 'Геологический Отчет.docx', accept: '.docx', handling: 'basis', parsedAtStage: 3 },
   { id: 'geologyAppendices', hint: 'Приложения 3, 4, 5 (.xls)', accept: '.xls,.xlsx', handling: 'basis', parsedAtStage: 3 },
   { id: 'routeScheme', hint: 'Станкевича_ схема трассы.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 5 },
