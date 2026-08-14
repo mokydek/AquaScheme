@@ -40,6 +40,8 @@ const { DxfLayerRoleTable } = await import('./DxfLayerRoleTable')
 const { MasterPlanView } = await import('./MasterPlanView')
 const { SourceBundleRunSection } = await import('./SourceBundleRunSection')
 const { StankevichaDemoView } = await import('./StankevichaDemoView')
+const { KitWizardPanel } = await import('./KitWizardPanel')
+const { STANKEVICHA_KIT_SLOTS, emptyKitState } = await import('../../shared/kitWizard')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
 const { DeliverablesSection } = await import('./DeliverablesSection')
@@ -564,5 +566,68 @@ describe('распознанное со скана отличимо от циф�
     expect(conditions.designDiameterMm?.origin).toBe('ocr')
     // Цитата хранится как распозналась: инженер видит, что именно прочитано.
     expect(conditions.designDiameterMm?.quote).toContain('450')
+  })
+})
+
+describe('панель мастера комплекта', () => {
+  const panel = (state: Parameters<typeof KitWizardPanel>[0]['state']) => html(createElement(KitWizardPanel, {
+    state,
+    picked: {},
+    busySlotId: null,
+    onPick: () => {},
+    onRun: () => {},
+  }))
+
+  it('показывает слоты в порядке ядра и объявляет каждый пустой', () => {
+    const markup = panel(emptyKitState())
+    const order = [...markup.matchAll(/data-kit-slot="([^"]+)"/g)].map((match) => match[1])
+    expect(order).toEqual(STANKEVICHA_KIT_SLOTS.map((slot) => slot.id))
+    // Пустой слот не пропадает из списка: комплект виден целиком.
+    expect((markup.match(/project\.kit\.statusEmpty/g) ?? []).length).toBe(STANKEVICHA_KIT_SLOTS.length)
+    // Подсказка с ожидаемым файлом стоит у каждого слота.
+    expect(markup).toContain('_топо станкевича.dwg')
+    expect(markup).toContain('ТУ_05-3-2723 (1).pdf')
+  })
+
+  it('показывает все четыре состояния и счётчики разбора', () => {
+    const state = {
+      ...emptyKitState(),
+      surveyStankevicha: {
+        kind: 'parsed' as const,
+        fileName: 'topo_stankevicha.dxf',
+        counters: [{ label: 'слоёв', value: 28 }, { label: 'отметок', value: 177 }],
+      },
+      surveyMoldagalieva: { kind: 'stored' as const, fileName: 'moldagalieva.dxf', parsedAtStage: 2 },
+      technicalConditions: { kind: 'failed' as const, fileName: 'tu.pdf', reason: 'скан без текстового слоя' },
+    }
+    const markup = panel(state)
+    expect(markup).toContain('project.kit.statusParsed')
+    expect(markup).toContain('project.kit.statusStored')
+    expect(markup).toContain('project.kit.statusFailed')
+    expect(markup).toContain('project.kit.statusEmpty')
+    // Счётчики выводятся числами, а не прячутся за словом «разобрано».
+    expect(markup).toContain('слоёв: 28; отметок: 177')
+    // Этап разбора назван, а не подразумевается.
+    expect(markup).toContain('&quot;stage&quot;:2')
+    // Причина ошибки показана дословно.
+    expect(markup).toContain('скан без текстового слоя')
+  })
+
+  it('строка готовности считает разобранные, отложенные и упавшие', () => {
+    const markup = panel({
+      ...emptyKitState(),
+      surveyStankevicha: { kind: 'parsed', fileName: 'a.dxf', counters: [] },
+      designBrief: { kind: 'stored', fileName: 'b.pdf', parsedAtStage: 4 },
+      routeScheme: { kind: 'failed', fileName: 'c.pdf', reason: 'x' },
+    })
+    expect(markup).toContain('&quot;filled&quot;:2')
+    expect(markup).toContain('&quot;failed&quot;:1')
+  })
+
+  it('кнопка выжимки несёт пометку о неполноте данных', () => {
+    const markup = html(createElement(StankevichaDemoView))
+    expect(markup).toContain('data-kit-seed-note')
+    expect(markup).toContain('project.kit.seedNote')
+    expect(markup).toContain('data-kit-wizard')
   })
 })
