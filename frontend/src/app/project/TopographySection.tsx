@@ -106,7 +106,7 @@ export function TopographySection({
   }
 
   return (
-    <Panel title={t('project.topo.title')} status={dataset ? 'filled' : 'empty'}>
+    <Panel anchor="topography" title={t('project.topo.title')} status={dataset ? 'filled' : 'empty'}>
       <p className="hint">{t('project.topo.hint')}</p>
       {meta && (
         <p className="stat-line">

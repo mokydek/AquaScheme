@@ -39,14 +39,25 @@ export function ReadinessView({ drawingSet }: { drawingSet: WorkingDrawingSet })
                 <th>{t('project.readiness.thReason')}</th>
                 <th className="num">{t('project.readiness.thSheets')}</th>
                 <th>{t('project.readiness.thSection')}</th>
+                <th>{t('project.readiness.thAction')}</th>
                 <th>{t('project.readiness.thCode')}</th>
               </tr>
             </thead>
+            {/*
+              Причина → раздел → действие, и раздел — ССЫЛКА, а не подпись.
+              Названный словами раздел владелец искал прокруткой, а действие не
+              называлось вовсе: «не решено» так и оставалось «не решено».
+            */}
             <tbody>{readiness.issues.map((issue) => (
               <tr key={issue.code} className={issue.blocking ? 'row-warn' : undefined}>
                 <td>{issue.message}</td>
                 <td className="num">{issue.sheetCount}</td>
-                <td>{issue.section ?? '—'}</td>
+                <td>
+                  {issue.anchor
+                    ? <a href={`#${issue.anchor}`} data-readiness-jump={issue.code}>{issue.section}</a>
+                    : issue.section ?? '—'}
+                </td>
+                <td className="hint">{issue.action ?? '—'}</td>
                 <td className="mono">{issue.code}</td>
               </tr>
             ))}</tbody>

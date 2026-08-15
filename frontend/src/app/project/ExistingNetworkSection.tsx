@@ -178,7 +178,7 @@ export function ExistingNetworkSection({
   )
 
   return (
-    <Panel title={t('project.existing.title')} status={existing.length > 0 ? 'filled' : 'empty'}>
+    <Panel anchor="existing" title={t('project.existing.title')} status={existing.length > 0 ? 'filled' : 'empty'}>
       <p className="hint">{t('project.existing.hint')}</p>
       <div className="section-actions">
         <label className="stat-line" htmlFor="existing-network-file" style={{ marginTop: 0 }}>{t('project.existing.importLabel')}</label>

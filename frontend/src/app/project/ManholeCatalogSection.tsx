@@ -76,7 +76,7 @@ export function ManholeCatalogSection({
   }
 
   return (
-    <Panel title={t('project.manholeCatalog.title')} status={verified > 0 ? 'filled' : entries.length > 0 ? 'default' : 'empty'}>
+    <Panel anchor="manhole-catalog" title={t('project.manholeCatalog.title')} status={verified > 0 ? 'filled' : entries.length > 0 ? 'default' : 'empty'}>
       <p className="hint">{t('project.manholeCatalog.hint')}</p>
       <div className="section-actions">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>{t('project.manholeCatalog.template')}</button>

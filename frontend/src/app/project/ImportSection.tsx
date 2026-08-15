@@ -510,7 +510,7 @@ export function ImportSection({
   const persistedLengthM = existingPipes.reduce((sum, pipe) => sum + (pipe.length_m ?? 0), 0)
 
   return (
-    <Panel title={t('project.import.title')} status={(report && notice === 'done') || existingPipes.length > 0 ? 'filled' : 'empty'}>
+    <Panel anchor="import" title={t('project.import.title')} status={(report && notice === 'done') || existingPipes.length > 0 ? 'filled' : 'empty'}>
       <p className="hint">{t('project.import.hint')}</p>
       {!canImport && <p className="stat-line warn">{t('project.import.needSource')}</p>}
       {existingPipes.length > 0 && !report && (

@@ -141,14 +141,14 @@ export function CrossingsSection({
 
   if (rows.length === 0) {
     return (
-      <Panel title={t('project.crossings.title')} status="empty">
+      <Panel anchor="crossings" title={t('project.crossings.title')} status="empty">
         <p className="hint">{t('project.crossings.empty')}</p>
       </Panel>
     )
   }
 
   return (
-    <Panel title={t('project.crossings.title')} status={incomplete === 0 ? 'filled' : 'empty'}>
+    <Panel anchor="crossings" title={t('project.crossings.title')} status={incomplete === 0 ? 'filled' : 'empty'}>
       <p className="hint">{t('project.crossings.hint')}</p>
       <p className="stat-line">
         {t('project.crossings.count', { total: rows.length, incomplete })}

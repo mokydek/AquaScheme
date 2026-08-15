@@ -169,6 +169,7 @@ export function DeliverablesSection({
 
   return (
     <Panel
+      anchor="deliverables"
       title={t('project.deliverables.title')}
       status={content.deliverableRequirements?.verified ? 'filled' : 'empty'}
     >

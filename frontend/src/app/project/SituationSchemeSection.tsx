@@ -337,7 +337,7 @@ export function SituationSchemeSection({
   }, [model, surveyPoints])
 
   return (
-    <Panel title={t('project.situationScheme.title')} status={model ? 'filled' : 'empty'}>
+    <Panel anchor="situation" title={t('project.situationScheme.title')} status={model ? 'filled' : 'empty'}>
       <p className="hint">
         {t('project.situationScheme.hint')}
       </p>

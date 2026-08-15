@@ -771,6 +771,7 @@ export const ru = {
         thReason: 'Причина',
         thSheets: 'Листов',
         thSection: 'Где снимается',
+        thAction: 'Что сделать',
         thCode: 'Код',
       },
       albumSheets: {

@@ -430,7 +430,7 @@ export function ExportSection({
   ) : t(key)
 
   return (
-    <Panel title={t('project.export.title')} status={canExport ? 'filled' : 'empty'}>
+    <Panel anchor="export" title={t('project.export.title')} status={canExport ? 'filled' : 'empty'}>
       <p className="hint">{t('project.export.hint')}</p>
       {!canExport && <p className="stat-line warn">{t('project.export.needData')}</p>}
 

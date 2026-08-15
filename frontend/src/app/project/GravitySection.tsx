@@ -1264,7 +1264,7 @@ export function GravitySection({
   }
 
   return (
-    <Panel title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
+    <Panel anchor="gravity" title={t('project.gravity.title')} status={result ? 'filled' : 'empty'}>
       <p className="hint">{t('project.gravity.hint')}</p>
 
       {/*

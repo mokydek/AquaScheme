@@ -87,7 +87,7 @@ export function CatalogSection({
   }
 
   return (
-    <Panel title={t('project.catalog.title')} status={activeCatalogId ? 'filled' : 'default'}>
+    <Panel anchor="catalog" title={t('project.catalog.title')} status={activeCatalogId ? 'filled' : 'default'}>
       <p className="hint">{t('project.catalog.hint')}</p>
       <div className="section-actions">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void downloadTemplate()}>

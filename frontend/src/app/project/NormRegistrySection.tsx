@@ -116,7 +116,7 @@ export function NormRegistrySection({
   }
 
   return (
-    <Panel title={t('project.norm.registry.title')} status={unverified.length === 0 ? 'filled' : 'default'}>
+    <Panel anchor="norms-registry" title={t('project.norm.registry.title')} status={unverified.length === 0 ? 'filled' : 'default'}>
       <p className="hint">{t('project.norm.registry.hint')}</p>
       <p className={`stat-line${unverified.length === 0 ? ' ok' : ' warn'}`}>
         {unverified.length === 0

@@ -113,7 +113,7 @@ export function DrainageSection({
   ]
 
   return (
-    <Panel title={t('project.drainage.title')} status={demandBuildings.length > 0 ? 'filled' : 'empty'}>
+    <Panel anchor="drainage" title={t('project.drainage.title')} status={demandBuildings.length > 0 ? 'filled' : 'empty'}>
       <p className="hint">{t('project.drainage.hint')}</p>
 
       <label className="field" style={{ maxWidth: 420 }}>

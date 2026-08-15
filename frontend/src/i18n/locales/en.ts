@@ -771,6 +771,7 @@ export const en = {
         thReason: 'Reason',
         thSheets: 'Sheets',
         thSection: 'Where it is cleared',
+        thAction: 'What to do',
         thCode: 'Code',
       },
       albumSheets: {

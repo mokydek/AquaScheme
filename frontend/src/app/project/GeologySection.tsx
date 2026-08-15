@@ -397,7 +397,7 @@ export function GeologySection({
   }
 
   return (
-    <Panel title={t('project.geology.title')} status={dataset || boreholes.length > 0 ? 'filled' : 'empty'}>
+    <Panel anchor="geology" title={t('project.geology.title')} status={dataset || boreholes.length > 0 ? 'filled' : 'empty'}>
       <p className="hint">{t('project.geology.hint')}</p>
 
       <div className="section-actions">
