@@ -515,6 +515,15 @@ export function NormsSection(props: {
   projectId: string
   dataset: DatasetRow | undefined
   onSaved: () => Promise<void>
+  /**
+   * Тип системы проекта.
+   *
+   * Нужен, чтобы не показывать водопроводные параметры там, где их не бывает.
+   * В проекте К2 на экране висели свободный напор по этажности и расход на
+   * пожаротушение — для ливневого коллектора это шум, который инженер
+   * пролистывает.
+   */
+  systemType?: 'water' | 'sewer' | 'storm'
 }) {
   const { t } = useTranslation()
   const form = useDatasetForm(
@@ -525,16 +534,32 @@ export function NormsSection(props: {
     props.onSaved,
   )
   // Метод — не число, поэтому в общий список числовых полей не входит.
-  const fields: Array<{ key: 'perCapitaDemandLpd' | 'dayMaxCoefficient' | 'alphaMax'
-    | 'fireFlowLps' | 'minFreeHeadBaseM' | 'freeHeadPerFloorM' | 'maxFreeHeadM'; label: string }> = [
+  const allFields: Array<{
+    key: 'perCapitaDemandLpd' | 'dayMaxCoefficient' | 'alphaMax'
+      | 'fireFlowLps' | 'minFreeHeadBaseM' | 'freeHeadPerFloorM' | 'maxFreeHeadM'
+    label: string
+    /** Параметр относится только к напорному водоснабжению. */
+    waterOnly?: boolean
+  }> = [
     { key: 'perCapitaDemandLpd', label: 'perCapita' },
     { key: 'dayMaxCoefficient', label: 'kDayMax' },
     { key: 'alphaMax', label: 'alphaMax' },
-    { key: 'fireFlowLps', label: 'fireFlow' },
-    { key: 'minFreeHeadBaseM', label: 'minHead' },
-    { key: 'freeHeadPerFloorM', label: 'perFloor' },
-    { key: 'maxFreeHeadM', label: 'maxHead' },
+    { key: 'fireFlowLps', label: 'fireFlow', waterOnly: true },
+    { key: 'minFreeHeadBaseM', label: 'minHead', waterOnly: true },
+    { key: 'freeHeadPerFloorM', label: 'perFloor', waterOnly: true },
+    { key: 'maxFreeHeadM', label: 'maxHead', waterOnly: true },
   ]
+  /*
+   * Свободный напор по этажности и расход на пожаротушение — величины
+   * водопровода. В самотёчной канализации напора нет вовсе, а пожаротушение к
+   * ней не относится: показывать эти поля в К1/К2 значит предлагать инженеру
+   * ввести то, что никуда не пойдёт.
+   *
+   * Удельное водопотребление остаётся: в водоотведении оно и есть удельное
+   * водоотведение (см. раздел «Водоотведение»), только читается иначе.
+   */
+  const isWaterProject = (props.systemType ?? 'water') === 'water'
+  const fields = allFields.filter((field) => isWaterProject || field.waterOnly !== true)
 
   return (
     <Panel title={t('project.norms.title')} status={props.dataset ? 'filled' : 'default'}>

@@ -8,9 +8,18 @@ import { supabase } from '../shared/supabase'
 import { saveDataset } from '../shared/datasets'
 import type { RegionDatasetContent } from '../shared/regions'
 import { useAuth } from '../shared/auth'
+import { waterSupplyEnabled } from '../shared/features'
 
 const WORK_TYPES: WorkType[] = ['new', 'reconstruction']
-const SYSTEM_TYPES: SystemType[] = ['water', 'sewer', 'storm']
+/**
+ * Типы систем, предлагаемые мастером.
+ *
+ * В1 показывается только с включённым флагом: его нормативная опора не сверена
+ * (см. `shared/features`). Канализация и ливневая доступны всегда.
+ */
+export const systemTypes = (): SystemType[] => (
+  waterSupplyEnabled() ? ['water', 'sewer', 'storm'] : ['sewer', 'storm']
+)
 const SYSTEM_MARKS: Record<SystemType, string> = { water: 'В1', sewer: 'К1', storm: 'К2' }
 
 /**
@@ -109,7 +118,7 @@ export function NewProjectPage() {
         {step === 2 && (
           <>
             <div className="option-grid">
-              {SYSTEM_TYPES.map((st) => (
+              {systemTypes().map((st) => (
                 <button
                   key={st}
                   type="button"

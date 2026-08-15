@@ -32,6 +32,7 @@ import { ReconstructionSurveySection } from './project/ReconstructionSurveySecti
 import { SourceBundleRunSection } from './project/SourceBundleRunSection'
 import { TuImportSection } from './project/TuImportSection'
 import { StankevichaDemoView } from './project/StankevichaDemoView'
+import { trainingScreensEnabled, waterSupplyEnabled } from '../shared/features'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
 import { GeologySection } from './project/GeologySection'
@@ -538,7 +539,14 @@ export function ProjectPage() {
 
   const systemType = project?.system_type ?? 'water'
   const workType = project?.work_type ?? 'new'
-  const isWater = systemType === 'water'
+  /**
+   * Ветка В1 на экране проекта.
+   *
+   * Закрыта флагом: расчёт водоснабжения опирается на несверенные пункты
+   * реестра. Проект В1, созданный до скрытия, при выключенном флаге показывает
+   * только общие разделы — данные при этом не трогаются и не теряются.
+   */
+  const isWater = systemType === 'water' && waterSupplyEnabled()
   const isSewer = systemType === 'sewer'
   const isStorm = systemType === 'storm'
   const effectiveRouteStatus = (isSewer || isStorm)
@@ -659,7 +667,8 @@ export function ProjectPage() {
             <StankevichaDemoView />
           </div>
         )}
-        {demoChoiceOpen && !demoBusy && <p className="hint">{t('project.demoChoice.hint')}</p>}
+        {demoChoiceOpen && !demoBusy && trainingScreensEnabled()
+          && <p className="hint">{t('project.demoChoice.hint')}</p>}
         <p className="hint">{t('project.pipeline.hint')}</p>
         {datasetsLoadError && (
           <p className="notice error" role="alert">
@@ -964,7 +973,7 @@ export function ProjectPage() {
             designDiameterMm={designDiameterForCrossings}
             onSaved={load}
           />
-          <NormsSection projectId={project.id} dataset={datasets.normative} onSaved={load} />
+          <NormsSection projectId={project.id} dataset={datasets.normative} systemType={systemType as 'water' | 'sewer' | 'storm'} onSaved={load} />
           {isWater && <DemandSection buildings={buildings} normsDataset={datasets.normative} />}
           <NormRegistrySection
             projectId={project.id}

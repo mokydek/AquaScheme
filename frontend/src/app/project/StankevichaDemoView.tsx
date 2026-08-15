@@ -11,6 +11,7 @@ import {
 import { STANKEVICHA_KIT_SLOTS, emptyKitState, runKit } from '../../shared/kitWizard'
 import type { KitSlotState, KitState } from '../../shared/kitWizard'
 import { saveBasisFile } from '../../shared/basisFiles'
+import { trainingScreensEnabled } from '../../shared/features'
 import { KitWizardPanel } from './KitWizardPanel'
 
 /**
@@ -190,6 +191,14 @@ export function StankevichaDemoView({
       <p className="hint" data-kit-seed-note="true">{t('project.kit.seedNote')}</p>
       <p className="hint">{t('project.stankevicha.sources')}</p>
 
+      {/*
+        Ниже — УЧЕБНАЯ выжимка: сравнение величин выжимки с документами. Она
+        показывает, что расчёт сходится, но проектом не является и в продовой
+        навигации не нужна. Мастер комплекта выше — наоборот, рабочий путь
+        загрузки настоящего объекта, и он остаётся всегда.
+      */}
+      {trainingScreensEnabled() && (
+      <>
       <div className="table-wrap">
         <table className="data-table">
           <thead>
@@ -251,6 +260,8 @@ export function StankevichaDemoView({
         })}
       </p>
       <p className="stat-line">{t('project.stankevicha.customer', { customer: TU.customer })}</p>
+      </>
+      )}
     </div>
   )
 }

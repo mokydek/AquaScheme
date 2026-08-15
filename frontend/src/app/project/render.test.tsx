@@ -52,6 +52,7 @@ const { TopographySection } = await import('./TopographySection')
 const { DeliverablesSection } = await import('./DeliverablesSection')
 const { ReconstructionSurveySection } = await import('./ReconstructionSurveySection')
 const { TuImportSection } = await import('./TuImportSection')
+const { NormsSection } = await import('./FormSections')
 const {
   maxFilling, auditProjectProvenance, planBasinPressureLinks, extractConditionsFromTu,
   extractSurveyActFacts,
@@ -892,5 +893,43 @@ describe('ситуационная схема строится по топоос
     const markup = view({ constraints })
     expect(markup).not.toContain('replay')
     expect(markup).not.toContain('builder.pause')
+  })
+})
+
+describe('продовая навигация: В1 и учебные экраны скрыты', () => {
+  const norms = (systemType: 'water' | 'sewer' | 'storm') => html(createElement(NormsSection, {
+    projectId: 'p1', dataset: undefined, systemType, onSaved: async () => {},
+  }))
+
+  it('в проекте К2 водопроводных нормпараметров нет', () => {
+    // Владелец видел на экране ливневого проекта свободный напор по этажности и
+    // расход на пожаротушение. В самотёчной канализации напора нет вовсе.
+    const markup = norms('storm')
+    expect(markup).not.toContain('project.norms.fireFlow')
+    expect(markup).not.toContain('project.norms.minHead')
+    expect(markup).not.toContain('project.norms.perFloor')
+    expect(markup).not.toContain('project.norms.maxHead')
+    // Общие параметры остаются: удельное потребление в водоотведении читается
+    // как удельное водоотведение.
+    expect(markup).toContain('project.norms.perCapita')
+    expect(markup).toContain('project.norms.kDayMax')
+  })
+
+  it('в проекте К1 их тоже нет', () => {
+    expect(norms('sewer')).not.toContain('project.norms.fireFlow')
+  })
+
+  it('в проекте В1 они на месте: ветка не сломана, а скрыта', () => {
+    const markup = norms('water')
+    expect(markup).toContain('project.norms.fireFlow')
+    expect(markup).toContain('project.norms.maxHead')
+  })
+
+  it('мастер комплекта Станкевича остаётся: это рабочий путь, а не учебный экран', () => {
+    // Учебная выжимка уходит из продовой сборки, мастер — нет: им грузят
+    // настоящий объект.
+    const markup = html(createElement(StankevichaDemoView))
+    expect(markup).toContain('data-kit-wizard')
+    expect(markup).toContain('kit-file-topobaseFull')
   })
 })
