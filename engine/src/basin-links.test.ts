@@ -11,6 +11,15 @@ const catalogue = [
   { designation: 'НС-2', flowLps: 40, headM: 25, powerKw: 15 },
 ]
 
+/**
+ * Материал перемычки задаётся явно там, где ожидается посчитанный напор.
+ *
+ * Раньше шероховатость и коэффициент местных потерь подставлялись сами — 0,3 мм
+ * и 1,5 скоростного напора, — и «напор посчитан» означало «посчитан на двух
+ * выдуманных величинах». Теперь они перечислены, и видно, на чём стоит цифра.
+ */
+const pipeMaterial = { roughnessMm: 0.1, localLossCoefficient: 1.5 }
+
 describe('напорные перемычки между бассейнами', () => {
   it('без перекачек перемычек не требуется', () => {
     const plan = planBasinPressureLinks({ lifts: [] })
@@ -42,7 +51,7 @@ describe('напорные перемычки между бассейнами', 
       lifts: [lift('K-9', 540, 4.2)],
       designFlowLps: 35,
       pressureLengthM: 220,
-      pressureDiameterMm: 200,
+      pressureDiameterMm: 200, ...pipeMaterial,
       catalogue,
       category: 'first',
       effluent: 'domestic',
@@ -62,7 +71,7 @@ describe('напорные перемычки между бассейнами', 
       lifts: [lift('K-9', 540, 4.2)],
       designFlowLps: 35,
       pressureLengthM: 220,
-      pressureDiameterMm: 200,
+      pressureDiameterMm: 200, ...pipeMaterial,
       category: 'first',
       effluent: 'domestic',
     })
@@ -76,7 +85,7 @@ describe('напорные перемычки между бассейнами', 
       lifts: [lift('K-9', 540, 4.2), lift('K-18', 1100, 6.1)],
       designFlowLps: 35,
       pressureLengthM: 220,
-      pressureDiameterMm: 200,
+      pressureDiameterMm: 200, ...pipeMaterial,
       catalogue,
       category: 'first',
       effluent: 'domestic',
@@ -126,7 +135,7 @@ describe('выводимое у перемычки выводится', () => {
     const plan = planBasinPressureLinks({
       lifts: [lift('K-9', 540, 4.2)], ...geometry, designFlowLps: 35,
       availableDiametersMm: [200, 315],
-      catalogue, category: 'first', effluent: 'domestic',
+      catalogue, category: 'first', effluent: 'domestic', ...pipeMaterial,
     })
     expect(plan.links[0].requiredHeadM).toBeGreaterThan(4.2)
     expect(plan.missing).toEqual([])

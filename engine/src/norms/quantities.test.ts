@@ -155,3 +155,26 @@ describe('ведомость объёмов работ', () => {
     expect(empty.gaps.some((item) => item.name.includes('Разработка грунта'))).toBe(true)
   })
 })
+
+describe('протяжённость трассы в ведомости', () => {
+  it('без длины профиля ведомость называет пробел, а не печатает ноль', () => {
+    // Ведомость уходит в экспертизу и в смету: нулевая протяжённость там
+    // читается как «работ нет», а не как «величина не посчитана».
+    const bill = buildQuantityBill({
+      profile: { stations: [], pipeIds: [] } as never,
+      schedule: { manholes: [], pipes: [] } as never,
+    })
+    const gap = bill.gaps.find((item) => item.name === 'Протяжённость трассы')
+    expect(gap).toBeDefined()
+    expect(gap!.missing).toContain('Самотёчный расчёт')
+  })
+
+  it('с длиной профиля пробела нет', () => {
+    const bill = buildQuantityBill({
+      profile: { stations: [], pipeIds: [], totalLengthM: 458.94 } as never,
+      schedule: { manholes: [], pipes: [] } as never,
+    })
+    expect(bill.gaps.find((item) => item.name === 'Протяжённость трассы')).toBeUndefined()
+    expect(bill.totalLengthM).toBeCloseTo(458.94, 2)
+  })
+})

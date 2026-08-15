@@ -110,7 +110,7 @@ describe('готовность к выпуску на экране', () => {
 
 describe('напорный участок на экране', () => {
   const pressure = solvePressureMain({
-    pipes: [{ id: 'НВ-1', lengthM: 1200, diameterMm: 400, flowLps: 69 }],
+    pipes: [{ id: 'НВ-1', lengthM: 1200, diameterMm: 400, flowLps: 69, roughnessMm: 0.1 }],
     inletElevationM: 100,
     outletElevationM: 112,
     availablePumpHeadM: 25,
@@ -484,6 +484,8 @@ describe('напорные перемычки между бассейнами н
       designFlowLps: 35,
       pressureLengthM: 220,
       pressureDiameterMm: 200,
+      // Шероховатость задаётся явно: решатель её больше не подставляет.
+      roughnessMm: 0.1,
       catalogue: [{ designation: 'НС-2', flowLps: 40, headM: 25, powerKw: 15 }],
       category: 'first',
       effluent: 'domestic',

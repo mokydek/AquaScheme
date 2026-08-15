@@ -7,6 +7,14 @@ export interface PressurePipeInput {
   flowLps: number
   /** Number of identical parallel barrels sharing the total flow. */
   parallelCount?: number
+  /**
+   * Эквивалентная шероховатость трубы, мм.
+   *
+   * Отсутствие — это ОТСУТСТВИЕ, а не повод взять типовое значение: величина
+   * уходит в коэффициент трения, оттуда в потери напора, в требуемый напор
+   * насоса и в подбор оборудования. Участок без неё не считается и называется
+   * в стоп-факторах.
+   */
   roughnessMm?: number
 }
 export interface PressurePipeResult extends PressurePipeInput {
@@ -49,7 +57,10 @@ export function solvePressureMain(input: {
     const areaM2 = Math.PI * diameterM ** 2 / 4
     const velocityMs = areaM2 > 0 ? flowM3s / areaM2 : 0
     const reynolds = velocityMs * diameterM / 1.004e-6
-    const relativeRoughness = (pipe.roughnessMm ?? 0.3) / 1000 / Math.max(diameterM, 1e-9)
+    // Здесь стояло `?? 0.3`: участку без шероховатости молча доставалась чужая.
+    // Ошибиться в ней вдвое — ошибиться в потерях напора вдвое, и заметить это
+    // на экране было нечем. Потери по такому участку теперь не считаются.
+    const relativeRoughness = (pipe.roughnessMm ?? 0) / 1000 / Math.max(diameterM, 1e-9)
     const frictionFactor = reynolds > 0
       ? 0.25 / Math.log10(relativeRoughness / 3.7 + 5.74 / Math.max(reynolds, 1) ** 0.9) ** 2
       : 0
@@ -68,11 +79,28 @@ export function solvePressureMain(input: {
   for (const pipe of pipes) {
     if (!(pipe.diameterMm > 0)) blockers.push(`Для участка ${pipe.id} не задан внутренний диаметр.`)
     if (!(pipe.flowLps >= 0)) blockers.push(`Для участка ${pipe.id} не задан расчётный расход.`)
+    if (!(typeof pipe.roughnessMm === 'number' && pipe.roughnessMm > 0)) {
+      blockers.push(`Для участка ${pipe.id} не задана шероховатость трубы: `
+        + 'величину принимает инженер по материалу — раздел «Каталог труб и материалов».')
+    }
   }
   const staticHeadM = Math.max(0, input.outletElevationM - input.inletElevationM)
   const frictionHeadM = pipes.reduce((sum, pipe) => sum + pipe.headlossM, 0)
   const last = pipes[pipes.length - 1]
   const velocityHeadM = last ? last.velocityMs ** 2 / (2 * 9.80665) : 0
+  /**
+   * Местные потери — доля скоростного напора, и её принимает инженер.
+   *
+   * ЭТО ИНЖЕНЕРНЫЙ FALLBACK, И ОН ЗДЕСЬ ОСТАЁТСЯ ОСОЗНАННО. Полтора скоростных
+   * напора появляются сами и уходят в требуемый напор насоса; величина зависит
+   * от арматуры и поворотов участка, вывести её из чертежа нечем.
+   *
+   * Заменить её стоп-фактором прямо сейчас нельзя: поля для ввода нет ни на
+   * одном экране, и стоп получился бы без пути — ровно то, что запрещает
+   * правило достижимости. Замена идёт вместе с полем; до тех пор подстановка
+   * учтена аудитом `npm run audit:fallbacks` и записана в FALLBACKS.md как
+   * незакрытая.
+   */
   const localHeadM = (input.localLossCoefficient ?? 1.5) * velocityHeadM
   const requiredPumpHeadM = blockers.length === 0 ? round(staticHeadM + frictionHeadM + localHeadM) : null
   const availablePumpHeadM = input.availablePumpHeadM ?? null

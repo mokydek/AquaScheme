@@ -1,0 +1,16 @@
+{
+  "_comment": "Молчаливые подстановки в критических путях. Может только снижаться; обновляется через npm run audit:fallbacks -- --write-baseline. Законные подстановки перечислены в docs/fallback-allowed.json с обоснованием у каждой.",
+  "fallbacks": 21,
+  "files": [
+    "engine/src/basin-links.ts",
+    "engine/src/consumption.ts",
+    "engine/src/demand.ts",
+    "engine/src/existing-condition.ts",
+    "engine/src/norms/drop-wells.ts",
+    "engine/src/norms/gravity.ts",
+    "engine/src/norms/storm-runoff.ts",
+    "engine/src/pressure.ts",
+    "frontend/src/shared/existing.ts",
+    "frontend/src/shared/network.ts"
+  ]
+}

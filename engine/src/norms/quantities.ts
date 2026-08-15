@@ -77,7 +77,23 @@ export function buildQuantityBill(input: QuantityBillInput): QuantityBill {
   const rows: QuantityRow[] = []
   const gaps: QuantityGap[] = []
   const stations = input.profile.stations ?? []
-  const totalLengthM = input.profile.totalLengthM ?? 0
+  /**
+   * Протяжённость трассы: величина ведомости, а не служебный ноль.
+   *
+   * Здесь стояло `?? 0`. Ведомость объёмов уходит в экспертизу и в смету, и
+   * нулевая протяжённость там читается как «работ нет», а не как «величина не
+   * посчитана». Отсутствие теперь называется пробелом и видно рядом со
+   * строками.
+   */
+  const statedLengthM = input.profile.totalLengthM
+  const hasLength = typeof statedLengthM === 'number' && statedLengthM > 0
+  const totalLengthM = hasLength ? statedLengthM : 0
+  if (!hasLength) {
+    gaps.push({
+      name: 'Протяжённость трассы',
+      missing: 'профиль не дал общей длины: запустите самотёчный расчёт — раздел «Самотёчный расчёт»',
+    })
+  }
 
   // 1. Трубы по диаметрам — выводятся полностью.
   // Строка «Укладка трубопровода Øundefined» — не позиция, а дыра, выданная за

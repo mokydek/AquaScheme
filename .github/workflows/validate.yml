@@ -47,6 +47,13 @@ jobs:
       - name: Audit hardcoded interface text
         run: npm run audit:i18n
 
+      # Подстановка вместо отсутствия — самый дорогой класс ошибок этого
+      # проекта: `ground_elevation ?? 0` дал подряд четыре симптома, притом что
+      # настоящие отметки лежали рядом нетронутыми. Число может только
+      # снижаться; законные подстановки перечислены с обоснованием.
+      - name: Audit silent fallbacks in critical paths
+        run: npm run audit:fallbacks
+
       - name: Build production frontend
         run: npm run build
 

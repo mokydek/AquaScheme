@@ -6,7 +6,7 @@ import type { PumpCatalogContent } from './PumpCatalogSection'
 
 /** Напорный участок 1200 м Ø400 на 69 л/с с подъёмом 12 м. */
 const pressure = (): PressureMainResult => solvePressureMain({
-  pipes: [{ id: 'НВ-1', lengthM: 1200, diameterMm: 400, flowLps: 69 }],
+  pipes: [{ id: 'НВ-1', lengthM: 1200, diameterMm: 400, flowLps: 69, roughnessMm: 0.1 }],
   inletElevationM: 100,
   outletElevationM: 112,
   availablePumpHeadM: 25,
@@ -63,7 +63,7 @@ describe('подбор насосов ЛНС', () => {
   it('незавершённый напорный расчёт подбор не запускает', () => {
     // Без диаметра требуемый напор не считается: подбирать не по чему.
     const blocked = solvePressureMain({
-      pipes: [{ id: 'НВ-1', lengthM: 1200, diameterMm: 0, flowLps: 69 }],
+      pipes: [{ id: 'НВ-1', lengthM: 1200, diameterMm: 0, flowLps: 69, roughnessMm: 0.1 }],
       inletElevationM: 100,
       outletElevationM: 112,
       availablePumpHeadM: 25,

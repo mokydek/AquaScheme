@@ -198,6 +198,9 @@ export function SituationSchemeSection({
         diameterMm: pipe.diameterMm ?? 0,
         flowLps: totalFlow,
         parallelCount: pipe.parallelCount,
+        // Шероховатость идёт из строки трубы, а не подставляется решателем:
+        // участок без неё объявляется стоп-фактором поимённо.
+        roughnessMm: pipe.roughnessMm,
       })),
       inletElevationM: lns?.groundElevation ?? 0,
       outletElevationM: outlet?.groundElevation ?? 0,

@@ -57,7 +57,10 @@ export interface BasinPressureLinkInput {
   catalogue?: PumpCatalogueItem[]
   category?: Parameters<typeof selectPumps>[0]['category']
   effluent?: Parameters<typeof selectPumps>[0]['effluent']
+  /** Шероховатость напорной трубы, мм: по материалу перемычки, без дефолта. */
   roughnessMm?: number
+  /** Коэффициент местных потерь: по арматуре участка, без дефолта. */
+  localLossCoefficient?: number
 }
 
 export interface BasinPressureLink {
@@ -153,12 +156,21 @@ export function planBasinPressureLinks(input: BasinPressureLinkInput): BasinPres
     const suggestion = suggestDiameter(flowLps)
     const suggestedDiameterMm = suggestion?.diameterMm ?? null
     const diameterMm = input.pressureDiameterMm ?? suggestedDiameterMm ?? 0
-    const computable = flowLps > 0 && (lengthM ?? 0) > 0 && diameterMm > 0
+    /**
+     * Шероховатость перемычки: своя величина, а не константа расчёта.
+     *
+     * Здесь стояло `?? 0.3` прямо в вызове решателя. Материал перемычки к
+     * этому моменту не выбран — его выбирает инженер вместе с диаметром, — а
+     * подставленная шероховатость уходила в потери напора и в подбор насоса.
+     */
+    const hasRoughness = typeof input.roughnessMm === 'number' && input.roughnessMm > 0
+    const computable = flowLps > 0 && (lengthM ?? 0) > 0 && diameterMm > 0 && hasRoughness
 
     if (!computable) {
       const own = [
         ...missing,
         ...(lengthOrigin === 'unknown' ? ['длина участка: границы бассейнов не переданы'] : []),
+        ...(hasRoughness ? [] : ['шероховатость напорной трубы: принимается по материалу перемычки']),
       ]
       return {
         liftNodeId: lift.nodeId,
@@ -182,8 +194,11 @@ export function planBasinPressureLinks(input: BasinPressureLinkInput): BasinPres
         diameterMm,
         flowLps,
         parallelCount: input.parallelCount ?? 1,
-        roughnessMm: input.roughnessMm ?? 0.3,
+        roughnessMm: input.roughnessMm,
       }],
+      // Местные потери на перемычке: без арматуры участка их вывести нечем,
+      // и решатель объявит это стоп-фактором вместо подстановки.
+      localLossCoefficient: input.localLossCoefficient,
       // Отсчёт от нуля: важна разность, а она и есть геометрический подъём.
       inletElevationM: 0,
       outletElevationM: geometricLiftM,
