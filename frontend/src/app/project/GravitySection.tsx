@@ -16,6 +16,7 @@ import {
   plannedSurfaceAlong,
   selectManholeConstructions,
   solveGravityNetwork,
+  assessExistingInvertTie,
   assessGravityFeasibility,
   auditProjectProvenance,
   summarizeRouteCoverage,
@@ -563,6 +564,25 @@ export function GravitySection({
     const feasibility = assessGravityFeasibility(profile, design, {
       diameterAdoptedWithoutFlow: adoptedWithoutFlow,
     })
+    /**
+     * Стыковка с существующими колодцами на реконструкции.
+     *
+     * Найдено сравнением с рабочим проектом того же объекта: наш профиль
+     * выходит на 1,95 м, а уложенная труба лежит на 2,01…5,63 м. Уклоны по
+     * норме исправны — неверна постановка: реконструкция обязана состыковаться
+     * с измеренными лотками, а не проектироваться от промерзания вниз.
+     */
+    const existingInvertByNodeId = new Map(
+      network.nodes.flatMap((node) => (typeof node.invertElevationM === 'number'
+        ? [[node.id, node.invertElevationM] as const]
+        : [])),
+    )
+    const invertTie = assessExistingInvertTie({
+      stations: profile.stations.map((station) => ({
+        nodeId: station.nodeId, invertElevationM: station.invertElevationM,
+      })),
+      existingInvertByNodeId,
+    })
     const catalogMaxDepthM = manholeCatalog.reduce((deepest, entry) => Math.max(deepest, entry.maxDepthM), 0)
     // Разбивка считается вместе с пересчётом профиля: одни только места
     // перекачек ничего не меняли, и инженер не видел, на какую глубину труба
@@ -577,8 +597,8 @@ export function GravitySection({
     const basinDepthLine = outcome && outcome.plan.lifts.length > 0
       ? `${outcome.profile.maxDepthM} м / ${catalogMaxDepthM} м`
       : null
-    return { feasibility, basins, catalogMaxDepthM, basinDepthLine }
-  }, [result, manholeCatalog, freezingDepth])
+    return { feasibility, invertTie, basins, catalogMaxDepthM, basinDepthLine }
+  }, [result, manholeCatalog, freezingDepth, network])
   /**
    * Напорные перемычки между бассейнами.
    *
@@ -1315,6 +1335,17 @@ export function GravitySection({
         <div className="drawing-audit" style={{ marginBottom: 12 }}>
           <div>
             <h5>{t('project.gravity.feasibilityTitle')}</h5>
+            {/* Стыковка с существующими колодцами: на реконструкции она
+                главнее вывода об осуществимости — труба, пришедшая выше
+                существующего лотка, не ляжет вовсе. */}
+            {gravityPlan.invertTie.comparedNodes > 0 && (
+              <p
+                className={`stat-line${gravityPlan.invertTie.tied ? ' ok' : ' warn'}`}
+                data-invert-tie="true"
+              >
+                {gravityPlan.invertTie.reason}
+              </p>
+            )}
             <p className={`stat-line${gravityPlan.feasibility.feasible ? ' ok' : ' warn'}`}>
               {gravityPlan.feasibility.reason}
             </p>
