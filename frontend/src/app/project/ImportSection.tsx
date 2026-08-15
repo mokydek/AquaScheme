@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { corridorAxis, importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform, traceConstrainedNetwork } from '@aquascheme/engine'
+import { assessAxisContinuity, corridorAxis, detectSurveyGrid, importNetwork, lonLatToLocal, parseGeoJsonNetwork, similarityTransform, traceConstrainedNetwork } from '@aquascheme/engine'
 import type { ConstrainedRouteReport, ImportReport, ImportSegment, SurveyPoint } from '@aquascheme/engine'
 import type { DxfConstraintData, DxfLayerRole, DxfNetworkData } from '@aquascheme/engine/dxfread'
 import { replaceNetwork, routeInputHash } from '../../shared/network'
@@ -23,7 +23,7 @@ type Parsed =
   | { kind: 'dxf'; data: DxfNetworkData; constraints: DxfConstraintData }
   | { kind: 'geojson'; segments: ImportSegment[]; treatedAsLonLat: boolean }
 
-type GeorefMode = 'none' | 'points' | 'proj4'
+type GeorefMode = 'none' | 'grid' | 'points' | 'proj4'
 type SourceConfirmationKey = 'buildings' | 'utilities' | 'roads' | 'hydrography' | 'parcels' | 'protectionZones'
 
 
@@ -165,6 +165,20 @@ export function ImportSection({
       .sort((left, right) => right.lengthM - left.lengthM)[0]
     return best ?? null
   }, [parsed])
+
+  /**
+   * Координатная сетка чертежа.
+   *
+   * Сообщение о геопривязке предлагало ровно два пути — две контрольные точки
+   * и proj4, — а найденную в самом чертеже сетку не предлагало вовсе, хотя
+   * поиск сетки в проекте есть и работает. Владелец оставлял «без привязки»,
+   * и шлюз держал листы стоп-фактором GEOREFERENCE_MISSING при том, что
+   * привязка лежала в загруженном файле.
+   */
+  const surveyGrid = useMemo(
+    () => (parsed && parsed.kind === 'dxf' ? detectSurveyGrid(parsed.data) : null),
+    [parsed],
+  )
 
   const num = (value: string): number => Number(value.trim().replace(',', '.'))
 
@@ -351,7 +365,15 @@ export function ImportSection({
         ),
         georeference: georefMode === 'none'
           ? { kind: 'unreferenced' as const, source: 'DWG импортирован без геопривязки' }
-          : { kind: 'local_anchor' as const, source: georefMode === 'proj4' ? `proj4: ${projString}` : 'две контрольные точки пользователя' },
+          // Сетка чертежа — свой вид привязки, а не «локальный якорь»: она
+          // измерена по самому чертежу, и в аудите это должно быть видно.
+          : georefMode === 'grid' && surveyGrid?.detected
+            ? {
+              kind: 'survey_grid' as const,
+              pitchM: surveyGrid.pitchX ?? undefined,
+              source: surveyGrid.reason,
+            }
+            : { kind: 'local_anchor' as const, source: georefMode === 'proj4' ? `proj4: ${projString}` : 'две контрольные точки пользователя' },
         redLines: mapSegments(parsed.constraints.redLines),
         utilityLines: mapSegments(parsed.constraints.utilityLines),
         roadLines: mapSegments([...parsed.constraints.roadLines, ...parsed.constraints.railwayLines]),
@@ -508,15 +530,49 @@ export function ImportSection({
     setCp((prev) => ({ ...prev, [key]: e.target.value }))
 
   const persistedLengthM = existingPipes.reduce((sum, pipe) => sum + (pipe.length_m ?? 0), 0)
+  /**
+   * Связность загруженных участков.
+   *
+   * Экран отчитывался «Загружена трасса: 13 участков» зелёной пометкой, а шлюз
+   * в тот же момент держал плановые листы стоп-фактором «нет непрерывной
+   * проектной оси». Оба были по-своему правы, а вместе давали неправду.
+   */
+  const axis = useMemo(
+    () => assessAxisContinuity(existingPipes.map((pipe) => ({
+      fromNodeId: pipe.from_node, toNodeId: pipe.to_node,
+    }))),
+    [existingPipes],
+  )
 
   return (
-    <Panel anchor="import" title={t('project.import.title')} status={(report && notice === 'done') || existingPipes.length > 0 ? 'filled' : 'empty'}>
+    <Panel
+      anchor="import"
+      title={t('project.import.title')}
+      /*
+        «ЗАПОЛНЕНО» рядом с «Сначала задайте источник (точка А)» — противоречие:
+        обязательный шаг раздела не закрыт, и заполненным он не считается.
+        Загруженные участки при этом не пропадают — они видны строкой ниже.
+      */
+      status={!canImport
+        ? 'default'
+        : (report && notice === 'done') || existingPipes.length > 0 ? 'filled' : 'empty'}
+    >
       <p className="hint">{t('project.import.hint')}</p>
       {!canImport && <p className="stat-line warn">{t('project.import.needSource')}</p>}
       {existingPipes.length > 0 && !report && (
-        <p className="stat-line ok">
-          Загружена трасса: {existingNodes} узлов, {existingPipes.length} участков, {Math.round(persistedLengthM)} м
-        </p>
+        <>
+          <p className={`stat-line${axis.continuous ? ' ok' : ' warn'}`}>
+            {t('project.import.loadedRoute', {
+              nodes: existingNodes,
+              pipes: existingPipes.length,
+              lengthM: Math.round(persistedLengthM),
+            })}
+          </p>
+          {/* Причина названа поимённо: не «оси нет», а где именно обрыв. */}
+          <p className={`stat-line${axis.continuous ? ' ok' : ' warn'}`} data-axis-continuity="true">
+            {axis.reason}
+          </p>
+        </>
       )}
       <div className="section-actions">
         <input
@@ -689,11 +745,26 @@ export function ImportSection({
                 onChange={(e) => setGeorefMode(e.target.value as GeorefMode)}
               >
                 <option value="none">{t('project.import.georefNone')}</option>
+                {/* Сетка предлагается только когда она действительно найдена:
+                    пункт, ведущий в никуда, хуже отсутствующего. */}
+                {surveyGrid?.detected && (
+                  <option value="grid">{t('project.import.georefGrid')}</option>
+                )}
                 <option value="points">{t('project.import.georefPoints')}</option>
                 <option value="proj4">{t('project.import.georefProj')}</option>
               </select>
             </label>
           </div>
+
+          {surveyGrid?.detected && (
+            <p className="stat-line ok" data-survey-grid-found="true">
+              {t('project.import.georefGridFound', {
+                layer: surveyGrid.layer ?? '—',
+                pitch: surveyGrid.pitchX ?? 0,
+                nodes: surveyGrid.nodeCount,
+              })}
+            </p>
+          )}
 
           {georefMode === 'proj4' && (
             <label className="field" htmlFor="import-proj4" style={{ maxWidth: 560 }}>

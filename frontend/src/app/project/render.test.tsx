@@ -43,6 +43,7 @@ const { StankevichaDemoView, PARSED_KIT_SLOT_IDS } = await import('./Stankevicha
 const { KitWizardPanel } = await import('./KitWizardPanel')
 const { SurveyActValues, surveyActRows } = await import('./SurveyActValues')
 const { ExistingNetworkSection } = await import('./ExistingNetworkSection')
+const { ImportSection } = await import('./ImportSection')
 const { STANKEVICHA_KIT_SLOTS, emptyKitState } = await import('../../shared/kitWizard')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
@@ -741,5 +742,56 @@ describe('шероховатость керамики принимается и�
 
   it('керамика есть в списке материалов: акт назвал её прямым текстом', () => {
     expect(section('ceramic', null)).toContain('project.existing.material.ceramic')
+  })
+})
+
+describe('статус раздела не спорит с его же текстом', () => {
+  const pipe = (id: string, from: string, to: string) => ({
+    id, from_node: from, to_node: to, length_m: 35, diameter_mm: 450, material: null,
+  })
+  const chain = [pipe('p1', 'К-1', 'К-2'), pipe('p2', 'К-2', 'К-3')]
+  const broken = [...chain, pipe('p3', 'К-7', 'К-8')]
+
+  const section = (options: { source: unknown; pipes: ReturnType<typeof pipe>[] }) =>
+    html(createElement(ImportSection, {
+      projectId: 'p1',
+      buildings: [],
+      source: options.source as never,
+      points: [],
+      existingNodes: 3,
+      existingPipes: options.pipes as never,
+      onChanged: async () => {},
+    }))
+
+  it('«ЗАПОЛНЕНО» не стоит рядом с «Сначала задайте источник»', () => {
+    // Участки загружены, но обязательный шаг раздела не закрыт: заполненным
+    // он не считается. Раньше стояло «ЗАПОЛНЕНО» прямо над требованием
+    // задать источник.
+    const markup = section({ source: null, pipes: chain })
+    expect(markup).toContain('project.import.needSource')
+    expect(markup).not.toContain('project.status.filled')
+    expect(markup).toContain('project.status.default')
+    // Загруженное при этом не пропадает: оно видно строкой ниже.
+    expect(markup).toContain('project.import.loadedRoute')
+  })
+
+  it('с закрытым обязательным шагом раздел объявляется заполненным', () => {
+    const markup = section({ source: { x: 0, y: 0 }, pipes: chain })
+    expect(markup).not.toContain('project.import.needSource')
+    expect(markup).toContain('project.status.filled')
+  })
+
+  it('«Загружена трасса» соседствует с настоящей причиной, а не с молчанием', () => {
+    // «13 участков» зелёной пометкой и «нет непрерывной оси» в шлюзе были
+    // верны порознь и лживы вместе. Теперь причина названа тут же и поимённо.
+    const markup = section({ source: { x: 0, y: 0 }, pipes: broken })
+    expect(markup).toContain('data-axis-continuity')
+    expect(markup).toContain('Ось разрывна')
+    expect(markup).toContain('К-7')
+  })
+
+  it('непрерывная ось так и называется, без ложной тревоги', () => {
+    const markup = section({ source: { x: 0, y: 0 }, pipes: chain })
+    expect(markup).toContain('Ось непрерывна')
   })
 })
