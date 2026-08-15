@@ -204,17 +204,6 @@ export const en = {
       demoHint: 'A synthetic district: survey, 40 buildings, source, geology and code defaults',
       demoDone: 'Synthetic K2 demo loaded. The gravity calculation and outfall check are shown below; final issue is blocked for demo data.',
       demoError: 'Failed to load demo data',
-      moduleSoonTitle: 'Calculation module',
-      moduleSoon: {
-        sewer:
-          'The K1 sewerage module is in development: Manning gravity flow arrives after the water launch. Input data entry is already available',
-        storm:
-          'The K2 storm drainage module is in development: rain runoff calculation arrives after the water launch. Input data entry is already available',
-      },
-      reconstructionSoon: {
-        title: 'Existing network and survey act',
-        hint: 'Existing network import, the technical survey act and per segment decisions arrive in Phase 17',
-      },
       scheme: {
         legend: 'Legend',
         legendBase: 'base map (buildings, red lines)',
@@ -1395,7 +1384,7 @@ export const en = {
         doubtfulTitle: 'Boreholes with inconsistent depths: {{count}}',
         doubtfulRow: '{{label}}: bottom {{depth}} m sits below the top of the next layer. The layers are left as they came — the order was not repaired.',
         discardedInReview: 'Rows discarded while recovering the table: {{count}}. They are listed above, at the upload step.',
-          scan: 'PDF without a text layer (a scan). Automatic table extraction is not available yet: upload a digital PDF with text, an XLSX table or enter the data manually. Scan recognition arrives in a separate phase',
+          scan: 'PDF without a text layer (a scan). Automatic table extraction is not available yet: upload a digital PDF with text, an XLSX table or enter the data manually. Image recognition is wired to the technical-conditions parser, not to borehole logs',
           error: 'Could not read the PDF. Check the file or upload an XLSX table',
           prose: 'The project summary was recognised from the prose geology report. Review the proposed groundwater, freezing depth and aggressiveness below and press Save. Borehole logs in this PDF are drawings and were not imported as a table; use the XLSX template for the full profile.',
           reportIge: 'IGE from the report',
@@ -1617,7 +1606,7 @@ export const en = {
       },
       drainage: {
         title: 'Drainage',
-        hint: 'Unified consumption module: specific wastewater discharge equals specific water demand without the irrigation allowance. The gravity network calculation (module K1) arrives in a separate phase',
+        hint: 'Unified consumption module: specific wastewater discharge equals specific water demand without the irrigation allowance. These flows feed the “Gravity calculation” section',
         source: 'Flow source',
         standalone: 'This project’s own buildings',
         fromWater: 'Flows taken from the water supply calculation',
@@ -1628,7 +1617,7 @@ export const en = {
         residents: 'Total consumption units',
         daily: 'Average daily wastewater, m³/day',
         flow: 'Design wastewater flow, L/s',
-        solverSoon: 'Gravity drainage calculation — module K1, in development',
+        solverSoon: 'The gravity sewer calculation runs in the “Gravity calculation” section: diameters and slopes are selected from these flows',
       },
     },
     notFound: {
