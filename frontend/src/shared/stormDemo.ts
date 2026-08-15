@@ -99,6 +99,43 @@ async function markDemoSeedBlocked(projectId: string, failures: readonly string[
  * any acceptance-object values. The route is preliminary by design; only an
  * imported and classified survey/DWG may become a final engineering result.
  */
+/**
+ * Учебный каталог конструкций колодцев: три типа по глубине.
+ *
+ * Диапазоны перекрываются встык и покрывают демо-профиль целиком, иначе часть
+ * колодцев осталась бы без конструкции и ведомость показала бы пробел. Всё
+ * синтетическое: типоразмеры условные, к производству не допускаются.
+ */
+const DEMO_MANHOLE_CATALOG = [
+  {
+    typeCode: 'КС-10 (демо)',
+    minPipeDiameterMm: 150, maxPipeDiameterMm: 400,
+    minDepthM: 0, maxDepthM: 3,
+    chamberDiameterMm: 1000,
+    components: [],
+    source: 'synthetic-demo: учебный каталог конструкций',
+    verified: false,
+  },
+  {
+    typeCode: 'КС-15 (демо)',
+    minPipeDiameterMm: 150, maxPipeDiameterMm: 600,
+    minDepthM: 3, maxDepthM: 5,
+    chamberDiameterMm: 1500,
+    components: [],
+    source: 'synthetic-demo: учебный каталог конструкций',
+    verified: false,
+  },
+  {
+    typeCode: 'КС-20 (демо)',
+    minPipeDiameterMm: 150, maxPipeDiameterMm: 1200,
+    minDepthM: 5, maxDepthM: 8,
+    chamberDiameterMm: 2000,
+    components: [],
+    source: 'synthetic-demo: учебный каталог конструкций',
+    verified: false,
+  },
+] as const
+
 export async function seedStormProject(projectId: string, callbacks?: {
   onRouteProgress?: (stage: string) => void
   onRouteCancelReady?: (cancel: (() => void) | null) => void
@@ -147,6 +184,24 @@ export async function seedStormProject(projectId: string, callbacks?: {
       protectionZones: 'confirmed_absent',
     },
     completeness: 'synthetic-demo-only',
+    /**
+     * Состав комплекта демо: подтверждён учебным заданием.
+     *
+     * Один этот пробел держал 13 листов из 16 стоп-фактором
+     * DELIVERABLE_REQUIREMENTS_MISSING. Состав — вход задания, а не вывод
+     * расчёта, и в учебном наборе он объявляется прямо: отдельных листов
+     * пересечений и защитной сетки демо не выпускает, профиль по бассейнам,
+     * напорная перемычка на том же листе.
+     */
+    deliverableRequirements: {
+      crossingDetailSheets: false,
+      protectiveGridDetail: false,
+      existingSectionProfile: false,
+      basinProfileLayout: 'per_basin',
+      pressureLinkSheets: 'same_sheet',
+      source: 'synthetic-demo: учебное задание на состав комплекта',
+      verified: true,
+    },
   }, { warning: 'Демо не является инженерными изысканиями и не допускает выпуск рабочей документации.' }))
 
   if (outlet) {
@@ -202,17 +257,49 @@ export async function seedStormProject(projectId: string, callbacks?: {
     }
   })
 
+  /**
+   * Геология демо: величина ЗАДАНА, подписана источником и подтверждена.
+   *
+   * Раньше подтверждения не было вовсе, и демо получало стоп-фактор «глубина
+   * промерзания не подтверждена». Причина при этом называлась неверно:
+   * величина в учебном наборе есть и однозначна, а к выпуску набор не
+   * допускает признак `synthetic`, а не отсутствие подтверждения.
+   *
+   * Промерзание одно, без выбора из кандидатов: демо показывает продукт, а не
+   * упражнение по разбору противоречивого отчёта.
+   */
   await step('geology summary', () => saveDataset(projectId, 'geology', {
     soilType: 'loam',
     groundwaterDepthM: 3.5,
     corrosivity: 'unknown',
     freezingDepthM: 1.8,
+    freezingDepthSource: 'synthetic-demo: учебный набор, СН РК 2.04-01-2017 прил. 2 (значение условное)',
+    freezingDepthVerified: true,
+    // Допуск удаления скважины от трассы: правило пространственного покрытия.
+    geologyCoverage: {
+      maxOffsetM: 120,
+      status: 'verified',
+      source: 'synthetic-demo: учебное правило покрытия',
+    },
     sourceFile: 'synthetic-demo.json',
     synthetic: true,
   }))
   await step('boreholes', () => replaceGeology(projectId, boreholes))
   await step('seismic', () => saveDataset(projectId, 'seismic', { siteIntensityPoints: 6, synthetic: true }))
   await step('norms', () => saveDataset(projectId, 'normative', { ...NORMATIVE_DEFAULTS, demoOnly: true }))
+
+  /**
+   * Каталог конструкций колодцев.
+   *
+   * Без него разбивка на бассейны не считается вовсе: предел глубины берётся
+   * отсюда, и «осуществимость самотёка» оставалась неоценённой. Структура — та
+   * же, что у каталога коллектора: тип, диапазон диаметров трубы, диапазон
+   * глубин, диаметр камеры.
+   */
+  await step('manhole catalog', () => saveDataset(projectId, 'manhole_catalog', {
+    entries: DEMO_MANHOLE_CATALOG,
+    synthetic: true,
+  }, { entries: DEMO_MANHOLE_CATALOG.length }, 'synthetic-demo-manholes.json'))
 
   await step('parcels', async () => {
     const existing = await supabase.from('parcels').select('id').eq('project_id', projectId)

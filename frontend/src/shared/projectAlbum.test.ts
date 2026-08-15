@@ -3,6 +3,7 @@ import { buildWorkingDrawingSet, workingDrawingSpecificationItemCount } from '@a
 import type { GravityProfile, SelectedManholeConstruction, SewerSchedule, TracedNetwork } from '@aquascheme/engine'
 import { generateProjectAlbumPdf, generateWorkingDrawingSetDxfs, generateWorkingDrawingSheetDxf } from './exporters'
 import {
+  buildAlbumDocument,
   buildProjectAlbumDoc,
   buildProjectSheetDoc,
   crossingBelongsToProfile,
@@ -895,5 +896,50 @@ describe('врезка положения листа', () => {
 
   it('без подосновы врезка всё равно строится', () => {
     expect(planSvg(false)).toContain('Положение листа')
+  })
+})
+
+describe('водяной знак «ДЕМО» ставится только в демо-сборке', () => {
+  const albumInput = (syntheticData: boolean) => ({
+    projectName: 'Демо-объект', projectCode: 'К2', system: 'storm' as const,
+    network, profile, schedule, drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+    pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+    syntheticData,
+  })
+
+  const backgroundOf = (doc: unknown, page = 2) => {
+    const background = (doc as { background?: unknown }).background
+    if (typeof background !== 'function') return ''
+    return JSON.stringify((background as (p: number, s: { width: number; height: number }) => unknown)(
+      page, { width: 1190, height: 842 },
+    ))
+  }
+
+  it('демо-альбом несёт знак на каждом листе', () => {
+    const doc = buildAlbumDocument(albumInput(true), 'demo')
+    for (const page of [2, 5, 12]) {
+      const background = backgroundOf(doc, page)
+      expect(background).toContain('ДЕМО')
+      expect(background).toContain('не для производства')
+    }
+  })
+
+  it('в режиме измерения сходства знака нет: он отравил бы сравнение', () => {
+    // Знак лёг бы поверх графики и испортил само число, ради которого сборка и
+    // делается. Проверка защищает сходство коллектора.
+    expect(backgroundOf(buildAlbumDocument(albumInput(true), 'benchmark'))).not.toContain('ДЕМО')
+  })
+
+  it('на настоящих данных знака нет ни в одном режиме', () => {
+    expect(backgroundOf(buildAlbumDocument(albumInput(false), 'benchmark'))).not.toContain('ДЕМО')
+    // Рамка листа при этом на месте: знак добавляется к ней, а не вместо неё.
+    expect(backgroundOf(buildAlbumDocument(albumInput(false), 'benchmark'))).toContain('canvas')
+  })
+
+  it('знак идёт фоном, то есть под содержанием и штампом листа', () => {
+    const doc = buildAlbumDocument(albumInput(true), 'demo') as { background?: unknown; footer?: unknown }
+    expect(typeof doc.background).toBe('function')
+    // Штамп рисует подвал, и знак его не подменяет.
+    expect(typeof doc.footer).toBe('function')
   })
 })

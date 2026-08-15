@@ -893,3 +893,40 @@ describe('представление профиля при разбивке на
     expect(profileSheet.blockers.map((item) => item.code)).not.toContain('BASIN_PRESENTATION_UNDECIDED')
   })
 })
+
+describe('учебные данные: расчёт доходит до альбома, а выпуск закрыт', () => {
+  /**
+   * Демо демонстрировало блокировки, а не продукт: 16 листов из 16 в BLOCKED.
+   * Причина была не в расчёте — синтетичность подменяла собой «не подтверждено»
+   * и роняла лист стоп-фактором, хотя данные в учебном наборе полны.
+   */
+  const full = (syntheticData: boolean) => buildWorkingDrawingSet({
+    ...readyInput(),
+    syntheticData,
+  })
+
+  it('на полном учебном наборе ни один лист не заблокирован', () => {
+    const set = full(true)
+    const blocked = set.sheets.filter((sheet) => sheet.status === 'BLOCKED')
+    expect(blocked.map((sheet) => sheet.title)).toEqual([])
+    expect(set.summary.blocked).toBe(0)
+  })
+
+  it('листы доходят до CALCULATED, но не выше: подтверждать синтетику нельзя', () => {
+    const set = full(true)
+    expect(set.sheets.every((sheet) => sheet.status === 'CALCULATED')).toBe(true)
+    expect(set.summary.verified).toBe(0)
+    // Черновой выпуск для просмотра разрешён — продукт видно.
+    expect(set.summary.draftExportAllowed).toBe(true)
+    // Инженерный выпуск закрыт: это и есть единственный оставшийся стоп-фактор.
+    expect(set.summary.finalExportAllowed).toBe(false)
+  })
+
+  it('те же данные без пометки «учебные» дают подтверждённые листы', () => {
+    // Разделение проверяется с двух сторон: если бы синтетичность ничего не
+    // меняла, запрет выпуска держался бы ни на чём.
+    const set = full(false)
+    expect(set.sheets.every((sheet) => sheet.status === 'VERIFIED')).toBe(true)
+    expect(set.summary.finalExportAllowed).toBe(true)
+  })
+})

@@ -27,6 +27,14 @@ import { buildTitleBlock } from './titleBlock'
 import type { TitleBlockSignatory } from './titleBlock'
 
 export interface ProjectAlbumInput {
+  /**
+   * Альбом собран на учебных данных.
+   *
+   * Ставит водяной знак на каждый лист и остаётся единственной причиной, по
+   * которой демо не уходит в выпуск. К режиму измерения сходства отношения не
+   * имеет: там знака нет никогда.
+   */
+  syntheticData?: boolean
   projectName: string
   projectCode: string
   system: 'sewer' | 'storm'
@@ -1445,6 +1453,36 @@ function servicePage(page: WorkingDrawingAlbumPage, section: PdfNode): PdfNode {
   }
 }
 
+/**
+ * Диагональный знак «ДЕМО — не для производства».
+ *
+ * Ставится ТОЛЬКО на альбом, собранный на учебных данных. В режиме измерения
+ * сходства его быть не должно: знак лёг бы поверх графики и отравил
+ * попиксельное сравнение с эталоном, то есть испортил бы само число, ради
+ * которого сборка и делается.
+ *
+ * Знак идёт фоном, под содержимым листа: он обязан читаться, но не закрывать
+ * ни графику, ни штамп. Прозрачность и наклон подобраны так, чтобы надпись
+ * была видна на просвет и не спорила с чертежом.
+ */
+const DEMO_WATERMARK_TEXT = 'ДЕМО — не для производства'
+
+function demoWatermark(pageSize: { width: number; height: number }): PdfNode {
+  const angleDeg = -Math.atan2(pageSize.height, pageSize.width) * 180 / Math.PI
+  return {
+    text: DEMO_WATERMARK_TEXT,
+    color: '#c62828',
+    opacity: 0.16,
+    bold: true,
+    fontSize: Math.max(28, Math.round(pageSize.width / 22)),
+    alignment: 'center',
+    absolutePosition: { x: 0, y: pageSize.height / 2 - 30 },
+    width: pageSize.width,
+    // Наклон по диагонали листа: знак пересекает поле, а не строку.
+    angle: angleDeg,
+  } as PdfNode
+}
+
 function engineeringFrame(_currentPage: number, pageSize: { width: number; height: number }): PdfNode {
   return {
     canvas: [{
@@ -1710,7 +1748,19 @@ export function buildProjectSheetDoc(input: ProjectAlbumInput, sheetId: string):
  * сравнение, ради которого альбом и собирается. Отличимость обеспечивается
  * иначе — статусом каждого листа в метаданных PDF.
  */
-export type AlbumBuildMode = 'release' | 'benchmark'
+export type AlbumBuildMode =
+  /** Инженерный выпуск: требует VERIFIED на каждом листе. Правило не ослаблено. */
+  | 'release'
+  /**
+   * Демонстрационная сборка на учебных данных.
+   *
+   * Требует не подтверждения, а РАСЧЁТА: все листы не ниже CALCULATED. Демо
+   * обязано показывать продукт, и запрет выпуска этому не мешает — он запрещает
+   * выпуск, а не просмотр. Каждый лист несёт водяной знак.
+   */
+  | 'demo'
+  /** Сборка для измерения сходства. Знака нет: он отравил бы сравнение. */
+  | 'benchmark'
 
 /**
  * Собирает альбом. Режим `benchmark` доступен только через
@@ -1720,6 +1770,11 @@ export type AlbumBuildMode = 'release' | 'benchmark'
 export function buildAlbumDocument(input: ProjectAlbumInput, mode: AlbumBuildMode): PdfNode {
   if (mode === 'release' && !input.drawingSet.summary.finalExportAllowed) {
     throw new Error(`Финальный выпуск запрещён: заблокировано ${input.drawingSet.summary.blocked}, устарело ${input.drawingSet.summary.stale}.`)
+  }
+  // Демо собирается по расчёту, а не по подтверждению: подтвердить учебные
+  // данные нельзя и не нужно. Заблокированный лист не собирается и здесь.
+  if (mode === 'demo' && !input.drawingSet.summary.draftExportAllowed) {
+    throw new Error(`Демо-альбом не собран: заблокировано ${input.drawingSet.summary.blocked}, устарело ${input.drawingSet.summary.stale}.`)
   }
   const totalSheets = input.drawingSet.manifest.pdfPageCount
   const serviceManifestPages = input.drawingSet.manifest.pages.filter((page) => !page.sheetId)
@@ -1769,7 +1824,15 @@ export function buildAlbumDocument(input: ProjectAlbumInput, mode: AlbumBuildMod
     pageMargins: PAGE_MARGINS,
     defaultStyle: { font: 'Roboto', fontSize: 9, color: '#111' },
     content,
-    background: engineeringFrame,
+    /*
+     * Фон листа. В демо-сборке к рамке добавляется водяной знак; в режиме
+     * измерения сходства — никогда, иначе знак отравил бы сравнение.
+     */
+    background: (currentPage: number, pageSize: { width: number; height: number }) => (
+      mode === 'demo'
+        ? { stack: [engineeringFrame(currentPage, pageSize), demoWatermark(pageSize)] }
+        : engineeringFrame(currentPage, pageSize)
+    ),
     footer: (currentPage: number) => {
       if (currentPage === 1) return { text: '' }
       const page = input.drawingSet.manifest.pages[currentPage - 1]

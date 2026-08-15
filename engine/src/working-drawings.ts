@@ -322,6 +322,16 @@ export interface WorkingDrawingInput {
   }
   /** Final profiles require a non-negative, source-backed and verified design value. */
   freezingDepth?: WorkingDrawingFreezingDepthInput
+  /**
+   * Проект собран на учебных данных.
+   *
+   * Синтетика НЕ делает лист заблокированным: расчёт на ней выполняется
+   * полностью, и владелец обязан увидеть продукт, а не стену стоп-факторов.
+   * Она делает ровно одно — не даёт листу стать VERIFIED, а значит и альбому
+   * уйти в выпуск. Единственный оставшийся стоп-фактор так и называется:
+   * данные учебные.
+   */
+  syntheticData?: boolean
   /** Full source fingerprints are included so same-count edits still invalidate sheets. */
   geologyFingerprint?: unknown
   catalogFingerprint?: unknown
@@ -734,11 +744,19 @@ function sheetStatus(
   blockers: WorkingDrawingIssue[],
   warnings: WorkingDrawingIssue[],
   sources: WorkingDrawingSource[],
+  syntheticData = false,
 ): WorkingDrawingStatus {
   if (routeStatus === 'stale') return 'STALE'
   if (blockers.length > 0 || routeStatus === 'blocked') return 'BLOCKED'
   if (warnings.length > 0 || routeStatus === 'preliminary') return 'PRELIMINARY'
-  return sources.every((source) => source.verified) ? 'VERIFIED' : 'CALCULATED'
+  const status = sources.every((source) => source.verified) ? 'VERIFIED' : 'CALCULATED'
+  /*
+   * Учебные данные не дают листу стать подтверждённым, и через это — альбому
+   * уйти в выпуск: финальный выпуск требует VERIFIED на каждом листе. Ниже
+   * CALCULATED синтетика лист НЕ роняет: расчёт на ней выполнен целиком, и
+   * владелец обязан увидеть продукт, а не стену стоп-факторов.
+   */
+  return syntheticData && status === 'VERIFIED' ? 'CALCULATED' : status
 }
 
 function crossingIssues(input: WorkingDrawingInput): WorkingDrawingIssue[] {
@@ -1176,7 +1194,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       title,
       kind: 'plan',
       variant: 'route_plan',
-      status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+      status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
       blockers,
       warnings,
       requirements: ['route', 'georeference', 'topography', 'dwg_classification'],
@@ -1211,7 +1229,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       title: `Сводный план сетей ${input.system === 'storm' ? 'К2' : 'К1'}. М1:500`,
       kind: 'network_plan',
       variant: 'network_plan',
-      status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+      status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
       blockers,
       warnings,
       requirements: ['route', 'georeference', 'topography', 'dwg_classification'],
@@ -1391,7 +1409,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       title: item.title,
       kind: 'profile',
       variant: 'main_profile',
-      status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+      status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
       blockers,
       warnings,
       requirements: [
@@ -1453,7 +1471,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
         title: `${baseTitle} ${item.interval.label}`,
         kind: 'profile',
         variant: 'branch_profile',
-        status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+        status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
         blockers,
         warnings,
         requirements: mainProfileTemplate?.requirements ?? [
@@ -1517,7 +1535,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       title: `Таблица расхода материалов по сборным канализационным колодцам${materialSheetCount > 1 ? `, часть ${part + 1}` : ''}`,
       kind: 'material_table',
       variant: 'material_schedule',
-      status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+      status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
       blockers,
       warnings,
       requirements: ['manhole_catalog', 'catalog', 'norms'],
@@ -1587,7 +1605,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
         title: `Пересечения с существующими коммуникациями${detailSheetCount > 1 ? `, часть ${part + 1}` : ''}`,
         kind: 'detail',
         variant: 'crossing_detail',
-        status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+        status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
         blockers,
         warnings,
         requirements: ['crossings', 'catalog', 'norms'],
@@ -1630,7 +1648,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       title: 'Защитная сетка для смотровых колодцев',
       kind: 'detail',
       variant: 'protective_grid',
-      status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+      status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
       blockers,
       warnings,
       requirements: ['deliverables', 'protective_grid', 'norms'],
@@ -1668,7 +1686,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
       title: input.existingSectionProfile?.title ?? 'Профиль на участке примыкания к существующей сети',
       kind: 'profile',
       variant: 'existing_section_profile',
-      status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+      status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
       blockers,
       warnings,
       requirements: ['deliverables', 'topography'],
@@ -1721,7 +1739,7 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
         title: `Спецификация оборудования, изделий и материалов${specificationSheetCount > 1 ? `, часть ${specificationNumber}` : ''}`,
         kind: 'specification',
         variant: 'specification',
-        status: sheetStatus(input.routeStatus, blockers, warnings, sources),
+        status: sheetStatus(input.routeStatus, blockers, warnings, sources, input.syntheticData),
         blockers: [...blockers],
         warnings: [...warnings],
         requirements: ['catalog', 'manhole_catalog', 'crossings', 'norms'],

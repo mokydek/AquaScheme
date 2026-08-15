@@ -3,6 +3,8 @@ import type { DatasetRow } from './datasets'
 export interface FreezingDepthStatus {
   available: boolean
   verified: boolean
+  /** Величина взята из учебного набора: к выпуску не допускается. */
+  synthetic: boolean
   valueM: number | null
   source?: string
   detail: string
@@ -39,16 +41,28 @@ export function freezingDepthStatus(dataset?: DatasetRow): FreezingDepthStatus {
   if (content.freezingDepthVerified !== true) {
     blockers.push('Глубина промерзания не подтверждена ответственным инженером.')
   }
-  if (content.synthetic === true) blockers.push('Синтетические демонстрационные данные не допускаются к финальному выпуску.')
+  const synthetic = content.synthetic === true
+  if (synthetic) blockers.push('Синтетические демонстрационные данные не допускаются к финальному выпуску.')
 
+  /**
+   * ПОДТВЕРЖДЁННОСТЬ И СИНТЕТИЧНОСТЬ — РАЗНЫЕ ВЕЩИ.
+   *
+   * Здесь синтетика обнуляла подтверждение, и демо получало стоп-фактор
+   * «глубина промерзания не подтверждена» — при том что в демо-наборе она
+   * задана, подписана источником и подтверждена. Программа врала о причине:
+   * настоящая причина не в промерзании, а в том, что данные учебные.
+   *
+   * Теперь величина подтверждена, если подтверждена, а синтетичность едет
+   * отдельным признаком и запрещает ровно то, что должна, — выпуск.
+   */
   const verified = valueM !== null
     && Boolean(source)
     && content.freezingDepthVerified === true
-    && content.synthetic !== true
 
   return {
     available: valueM !== null,
     verified,
+    synthetic,
     valueM,
     source,
     detail: valueM === null

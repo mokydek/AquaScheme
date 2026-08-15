@@ -44,14 +44,36 @@ describe('freezingDepthStatus', () => {
     expect(status).toMatchObject({ available: true, verified: true, valueM: 2.1 })
   })
 
-  it('never verifies synthetic demo geology', () => {
+  it('синтетичность отделена от подтверждённости, а не подменяет её', () => {
+    /*
+     * Прежде проверка требовала `verified === false` на учебных данных, и через
+     * это демо получало стоп-фактор «глубина промерзания не подтверждена» —
+     * причину, которой не было: величина в наборе задана, подписана и
+     * подтверждена. Две разные вещи были склеены в одну, и программа врала о
+     * себе.
+     *
+     * Теперь подтверждённость отвечает за подтверждённость, а синтетичность
+     * едет своим признаком и запрещает ровно то, что должна: выпуск.
+     */
     const status = freezingDepthStatus(dataset({
       freezingDepthM: 1.8,
       sourceFile: 'synthetic-demo.json',
       freezingDepthVerified: true,
       synthetic: true,
     }))
-    expect(status.verified).toBe(false)
+    expect(status.verified).toBe(true)
+    expect(status.synthetic).toBe(true)
+    // Причина непригодности к выпуску названа и осталась на месте.
     expect(status.blockers.at(-1)).toMatch(/Синтетические/)
+  })
+
+  it('без подтверждения величина не считается подтверждённой и на учебных данных', () => {
+    const status = freezingDepthStatus(dataset({
+      freezingDepthM: 1.8,
+      sourceFile: 'synthetic-demo.json',
+      synthetic: true,
+    }))
+    expect(status.verified).toBe(false)
+    expect(status.synthetic).toBe(true)
   })
 })

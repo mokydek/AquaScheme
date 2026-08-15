@@ -488,6 +488,16 @@ export function GravitySection({
         branchProfiles: branchProfileResolution.branchProfiles.map((branch) => branch.profile),
       })
     : null), [branchProfileResolution.branchProfiles, result])
+  /**
+   * Проект собран на учебных данных.
+   *
+   * Признак ставит демо-посев: геология учебного набора помечена как
+   * синтетическая. Он НЕ блокирует расчёт — листы доходят до CALCULATED,
+   * альбом собирается со знаком «ДЕМО», — а к выпуску набор не допускает,
+   * потому что VERIFIED синтетика не получает.
+   */
+  const syntheticData = ((geologyDataset?.content ?? {}) as { synthetic?: boolean }).synthetic === true
+
   const manholeCatalog = useMemo(
     () => ((manholeCatalogDataset?.content ?? {}) as { entries?: ManholeCatalogEntry[] }).entries ?? [],
     [manholeCatalogDataset],
@@ -763,6 +773,7 @@ export function GravitySection({
         constraints?.hardObstacles,
       ].reduce((total, collection) => total + (collection?.length ?? 0), 0),
       unresolvedLayerCount,
+      syntheticData,
       catalogReady: Boolean(activeCatalogId) && catalogResolution.ready,
       catalogFingerprint: { activeCatalogId, catalogDiameters: currentCatalogDiameters },
       hydraulicsReady: Boolean(result?.profile) && (result?.pipes.every((pipe) => pipe.issues.length === 0) ?? false),
@@ -848,6 +859,8 @@ export function GravitySection({
     return {
       projectName,
       projectCode: systemType === 'storm' ? 'К2' : 'К1',
+      // Учебный набор: водяной знак на каждом листе и запрет выпуска.
+      syntheticData,
       system: systemType,
       network,
       profile: result.profile,
