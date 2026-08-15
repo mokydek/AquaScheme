@@ -29,13 +29,29 @@ export interface StankevichaSeedResult {
 
 export const STANKEVICHA_PROJECT_NAME = 'Реконструкция К1 по ул. Станкевича'
 
-/** Сеть из камер: узел на камеру, труба между соседними. */
+/**
+ * Сеть из камер: узел на камеру, труба между соседними.
+ *
+ * ИМЕНА ПОЛЕЙ ЗДЕСЬ — ЧАСТЬ ДОГОВОРА С БАЗОЙ. Сеть уходит в
+ * `replace_project_network` как JSON, и SQL достаёт из него `groundElevation`,
+ * `invertElevationM`, `kind`. Пока отметка крышки лежала в поле `z`, круг базы
+ * возвращал её нулём: поле было на месте, просто называлось иначе. На этом
+ * стояли все высотные выводы объекта — «Земля 0.00» в профиле, уклон 0,00 ‰,
+ * нехватка падения и «самотёк не обеспечен» при живом рельефе 688,22…685,21 м.
+ * Договор проверяется тестом ЧЕРЕЗ круг базы, а не по объекту в памяти: объект
+ * в памяти был правильным всё это время.
+ */
 export function buildStankevichaNetwork(): TracedNetwork {
   const nodes = STANKEVICHA_CHAMBERS.map((chamber, index) => ({
     id: chamber.label,
+    label: chamber.label,
     x: chamber.x,
     y: chamber.y,
-    z: chamber.rimElevationM,
+    // Отметка крышки камеры — измеренная величина объекта, а не догадка.
+    groundElevation: chamber.rimElevationM,
+    // Отметка лотка тоже измерена и тоже подаётся: без неё существующий профиль
+    // строить нечем, а он и есть предмет реконструкции.
+    invertElevationM: chamber.invertElevationM,
     // Низовой конец — выпуск: по нему конвейер и находит куда считать сток.
     kind: index === STANKEVICHA_CHAMBERS.length - 1 ? 'outlet' : 'manhole',
   }))
@@ -43,6 +59,9 @@ export function buildStankevichaNetwork(): TracedNetwork {
     const from = STANKEVICHA_CHAMBERS[index]
     return {
       id: `У-${index + 1}`,
+      // Без вида участка база возвращала строку как `ring`, и всё, что отбирает
+      // магистрали, её не видело.
+      kind: 'main',
       fromNode: from.label,
       toNode: chamber.label,
       lengthM: Math.round(Math.hypot(chamber.x - from.x, chamber.y - from.y) * 100) / 100,
@@ -114,6 +133,28 @@ export async function seedStankevichaProject(projectId: string): Promise<Stankev
     objectName: TU.objectName,
     stage: TU.stage,
   }, {}, 'stankevicha-title.json'))
+
+  /**
+   * Контрактный диаметр по техническим условиям.
+   *
+   * Раньше посев клал его только в схему генплана, а в `technical_conditions`
+   * — единственный набор, который читает подбор диаметров, — не клал вовсе.
+   * Из-за этого на загруженном объекте расчёт брал ряд каталога и сообщал
+   * «диаметр не подобран, принят наименьший из заданного ряда»: путь ТУ был
+   * исправен, но по нему нечего было вести.
+   *
+   * Происхождение — `ocr`, и это не формальность: у ТУ_05-3-2723 текстового
+   * слоя нет вовсе, величина прочитана распознаванием, и в аудите она обязана
+   * остаться отличимой от цифрового документа.
+   */
+  await step('technical conditions', () => saveDataset(projectId, 'technical_conditions', {
+    designDiameterMm: {
+      value: TU.designDiameterMm,
+      origin: 'ocr',
+      source: `${TU.conditionsNumber}, ${TU.conditionsClause} (распознано со скана)`,
+      quote: TU.designDiameterQuote,
+    },
+  }, { designDiameterMm: TU.designDiameterMm }, 'stankevicha-tu-conditions.json'))
 
   // Диаметры по схеме генплана: ТУ назначают один диаметр на всю трассу,
   // поэтому сверка с генпланом получает строку на каждый участок.

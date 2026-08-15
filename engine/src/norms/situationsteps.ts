@@ -45,7 +45,18 @@ export function buildSituationSteps(input: SituationStepsInput): SituationStep[]
     input.network.pipes.reduce((s, p) => s + p.lengthM, 0),
   )
   const uniqueDiameters = [...new Set([...input.pipeDiameterMm.values()])].sort((a, b) => a - b)
-  const hasOutlet = input.network.nodes.some((n) => n.kind === 'source')
+  /**
+   * Выпуск сети — любой узел, которым сеть заканчивается.
+   *
+   * Проверка знала ровно один вид, `source`, и на реконструкции по ул.
+   * Станкевича схема рапортовала «Выпуск не задан в сети» при живом узле
+   * `outlet` в самом низу цепочки. Виды перечислены те же, что отбирает
+   * самотёчный расчёт: иначе два места проекта отвечают на один вопрос
+   * по-разному.
+   */
+  const hasOutlet = input.network.nodes.some((n) =>
+    n.kind === 'source' || n.kind === 'outlet' || n.kind === 'outfall'
+    || n.kind === 'lns_inlet' || n.kind === 'pumping_station')
   const corridorRings = input.corridorRings ?? 0
 
   const steps: SituationStep[] = [
