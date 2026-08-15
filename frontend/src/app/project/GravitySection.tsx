@@ -273,9 +273,22 @@ export function GravitySection({
   // from sizing the new catalog with diameters left from the previous one.
   const currentCatalogDiameters = catalogLoadedForId === activeCatalogId ? catalogDiameters : undefined
   const currentCatalogError = catalogLoadedForId === activeCatalogId ? catalogError : null
+  /**
+   * Контрактные величины проекта.
+   *
+   * Читаются ДО разрешения ряда диаметров: подтверждённый ряд по ТУ участвует
+   * в нём наравне с каталогом. Раньше набор читался ниже по файлу, ряд шёл
+   * только из каталога, и подтверждённый Д=450 в расчёт не попадал вовсе.
+   */
+  const projectConditions = useMemo(
+    () => readTechnicalConditions(conditionsDataset),
+    [conditionsDataset],
+  )
   const catalogResolution = useMemo(
-    () => resolveGravityCatalog(activeCatalogId, currentCatalogDiameters, currentCatalogError),
-    [activeCatalogId, currentCatalogDiameters, currentCatalogError],
+    () => resolveGravityCatalog(
+      activeCatalogId, currentCatalogDiameters, currentCatalogError, projectConditions,
+    ),
+    [activeCatalogId, currentCatalogDiameters, currentCatalogError, projectConditions],
   )
 
   const labelOfNode = useMemo(() => {
@@ -423,6 +436,7 @@ export function GravitySection({
       stormRainPeriodYears,
       outletNodeId: network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'pumping_station')?.id,
       allowedDiametersMm: catalogResolution.allowedDiametersMm,
+      diametersFromConditions: catalogResolution.fromConditions === true,
     })
   }, [buildings, network, normsDataset, freezingDepth, systemType, strategy, catalogResolution, routeStatus, stormRainPeriodYears, stormRunoffByInflow])
 
@@ -511,8 +525,6 @@ export function GravitySection({
    * производная расчёта: программа предлагает разбивку, а где ставить
    * перекачку — вопрос компоновки площадки и согласований.
    */
-  const projectConditions = readTechnicalConditions(conditionsDataset)
-
   const basinDecision = useMemo(() => {
     if (savedDecision !== undefined) return savedDecision
     const stored = (gravityBasinsDataset?.content ?? null) as

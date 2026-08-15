@@ -11,6 +11,7 @@ import {
 } from '@aquascheme/engine'
 import type { RouteConstraintInput, SurveyPoint } from '@aquascheme/engine'
 import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
+import { readTechnicalConditions } from '../../shared/technicalConditions'
 import { networkFromRows, replaceNetwork, routeInputHash } from '../../shared/network'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import type { BuildingRow, DatasetRow, SourceData } from '../../shared/datasets'
@@ -71,6 +72,7 @@ export function SituationSchemeSection({
   routeAuditDataset,
   sourceDataset,
   pumpCatalogDataset,
+  conditionsDataset,
   parcels,
   activeCatalogId,
   routeState,
@@ -88,6 +90,8 @@ export function SituationSchemeSection({
   routeAuditDataset?: DatasetRow
   sourceDataset?: DatasetRow
   pumpCatalogDataset?: DatasetRow
+  /** Контрактные величины проекта: ряд диаметров по ТУ. */
+  conditionsDataset?: DatasetRow
   parcels?: ParcelRow[]
   activeCatalogId: string | null
   routeState: RouteState
@@ -134,9 +138,18 @@ export function SituationSchemeSection({
 
   const currentCatalogDiameters = catalogLoadedForId === activeCatalogId ? catalogDiameters : undefined
   const currentCatalogError = catalogLoadedForId === activeCatalogId ? catalogError : null
+  // Ряд диаметров разрешается с учётом подтверждённых ТУ — так же, как в
+  // секции самотёка. Иначе один и тот же проект давал бы два разных диаметра
+  // на двух экранах: здесь ряд каталога, там ряд договора.
+  const projectConditions = useMemo(
+    () => readTechnicalConditions(conditionsDataset),
+    [conditionsDataset],
+  )
   const catalogResolution = useMemo(
-    () => resolveGravityCatalog(activeCatalogId, currentCatalogDiameters, currentCatalogError),
-    [activeCatalogId, currentCatalogDiameters, currentCatalogError],
+    () => resolveGravityCatalog(
+      activeCatalogId, currentCatalogDiameters, currentCatalogError, projectConditions,
+    ),
+    [activeCatalogId, currentCatalogDiameters, currentCatalogError, projectConditions],
   )
 
   // Отметки съёмки берутся в одном месте: они приходят либо разобранными
@@ -173,6 +186,7 @@ export function SituationSchemeSection({
       strategy: 'minBurial',
       outletNodeId: lns?.id,
       allowedDiametersMm: catalogResolution.allowedDiametersMm,
+      diametersFromConditions: catalogResolution.fromConditions === true,
     })
     const totalFlow = buildings.reduce((sum, building) => sum + (building.design_flow_lps ?? building.specific_demand_lpd ?? 0), 0)
     const pressureRows = network.pipes.filter((pipe) => pipe.systemType === 'pressure' || pipe.kind === 'pressure_main')

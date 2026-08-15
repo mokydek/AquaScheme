@@ -103,6 +103,17 @@ export type GravityIssueCode =
   | 'noSuitableDiameter'
   /** Расчётного расхода нет — диаметр не подобран, а принят по ряду. */
   | 'noDesignFlow'
+  /**
+   * Расхода нет, но диаметр задан техническими условиями.
+   *
+   * Это ДРУГОЙ случай, а не оттенок предыдущего. `noDesignFlow` значит «данных
+   * нет, взят наименьший из ряда, сравнивать не с чем»; здесь диаметр назван
+   * договором и является таким же исходным данным, как отметка со съёмки.
+   * Отдельный код нужен потому, что от `noDesignFlow` вниз по цепочке висят
+   * запреты: сверка с генпланом объявляется невыполнимой, осуществимость
+   * самотёка — неоценённой. Для диаметра по ТУ оба запрета неверны.
+   */
+  | 'adoptedFromConditions'
 
 export interface GravityIssue {
   code: GravityIssueCode
@@ -142,6 +153,13 @@ export interface GravityDesignOptions {
   strategy?: 'minDiameter' | 'minBurial'
   /** Project catalogue diameters. The solver must not invent absent sizes. */
   allowedDiametersMm?: readonly number[]
+  /**
+   * Ряд диаметров задан подтверждёнными техническими условиями.
+   *
+   * Меняет не подбор, а СМЫСЛ принятого без расхода диаметра: он взят из
+   * договора, а не от безысходности. См. `adoptedFromConditions`.
+   */
+  diametersFromConditions?: boolean
   /** Confirmed design-rain period P; only P=0.33 enables note 3's 0.6 m/s exception. */
   stormRainPeriodYears?: number
 }
@@ -185,12 +203,23 @@ export function designGravitySegment(flowLps: number, opts: GravityDesignOptions
       velocityMs: 0,
       flowLps,
       issues: [
-        {
-          code: 'noDesignFlow',
-          refs: ['sewer.minDiameter'],
-          message: 'Расчётного расхода нет: диаметр не подобран, а принят наименьший из заданного ряда.'
-            + ' Задайте ряд по техническим условиям либо приток по зданиям',
-        },
+        opts.diametersFromConditions === true
+          ? {
+            // Диаметр назван договором. Расхода по-прежнему нет, и об этом
+            // сказано, но «не подобран» здесь неверно: подбирать нечего, ряд
+            // задан техническими условиями, и это исходное данное.
+            code: 'adoptedFromConditions',
+            refs: ['sewer.minDiameter'],
+            message: `Принят Ø${adopted} (ряд по ТУ). Расчётного расхода нет,`
+              + ' поэтому проверка наполнения и самоочищающей скорости не выполнялась:'
+              + ' задайте приток по зданиям, чтобы проверить принятый диаметр расчётом',
+          }
+          : {
+            code: 'noDesignFlow',
+            refs: ['sewer.minDiameter'],
+            message: 'Расчётного расхода нет: диаметр не подобран, а принят наименьший из заданного ряда.'
+              + ' Задайте ряд по техническим условиям либо приток по зданиям',
+          },
       ],
     }
   }
@@ -427,6 +456,8 @@ export function solveGravityNetwork(input: {
   outletNodeId?: string
   /** Project catalogue diameter series. */
   allowedDiametersMm?: readonly number[]
+  /** Ряд задан подтверждёнными ТУ: диаметр без расхода принят, а не «взят». */
+  diametersFromConditions?: boolean
   /** Confirmed storm design-rain period P for the minimum-velocity check. */
   stormRainPeriodYears?: number
 }): GravityNetworkResult {
@@ -453,6 +484,7 @@ export function solveGravityNetwork(input: {
       groundSlope,
       strategy: input.strategy,
       allowedDiametersMm: input.allowedDiametersMm,
+      diametersFromConditions: input.diametersFromConditions,
       stormRainPeriodYears: input.stormRainPeriodYears,
     })
     return { ...design, id: p.id, fromNode: p.fromNode, toNode: p.toNode, lengthM: p.lengthM }

@@ -837,6 +837,7 @@ export function ProjectPage() {
               routeAuditDataset={datasets.route_audit}
               sourceDataset={datasets.source}
               pumpCatalogDataset={datasets.pump_catalog}
+              conditionsDataset={datasets.technical_conditions}
               parcels={parcels}
               activeCatalogId={project.active_catalog_id ?? null}
               routeState={{
