@@ -22,33 +22,40 @@ export function buildSyntheticStormPlanContext() {
     const axis = stormDemoAxisAt(station)
     return { x: axis.x + 22, y: axis.y }
   })
-  const terrainLines = stations.map((station, index) => {
-    const axis = stormDemoAxisAt(station)
-    return {
-      layer: 'DEMO-RELIEF',
-      sourceHandle: `DEMO-TERRAIN-${index}`,
-      points: [
+  const terrainLines = stations.map((station, index) => ({
+    layer: 'DEMO-RELIEF',
+    role: 'terrain' as const,
+    sourceHandle: `DEMO-TERRAIN-${index}`,
+    points: (() => {
+      const axis = stormDemoAxisAt(station)
+      return [
         { x: axis.x - 55, y: axis.y - 3 },
         { x: axis.x, y: axis.y + (index % 2 === 0 ? 2 : -2) },
         { x: axis.x + 55, y: axis.y + 3 },
-      ],
-    }
-  })
+      ]
+    })(),
+  }))
   const parcelLines = stations
     .filter((_, index) => index % 2 === 0)
     .map((station, index) => {
       const axis = stormDemoAxisAt(station)
       return {
         layer: 'DEMO-PARCELS',
+        role: 'parcel' as const,
         sourceHandle: `DEMO-PARCEL-${index}`,
         points: [{ x: axis.x - 58, y: axis.y }, { x: axis.x + 58, y: axis.y }],
       }
     })
   return {
+    // Полный контур учебного чертежа: рельеф ВХОДИТ в него, как и у настоящей
+    // съёмки, где `contextLines` — это все линии чертежа. Отдельный
+    // `terrainLines` остаётся для выгрузки в DXF, которая различает их по
+    // `sourceHandle` и потому не выведет линию дважды.
     cadContextLines: [
-      { layer: 'DEMO-ROAD-EDGE', sourceHandle: 'DEMO-ROAD-L', points: leftRoad },
-      { layer: 'DEMO-ROAD-EDGE', sourceHandle: 'DEMO-ROAD-R', points: rightRoad },
+      { layer: 'DEMO-ROAD-EDGE', role: 'road' as const, sourceHandle: 'DEMO-ROAD-L', points: leftRoad },
+      { layer: 'DEMO-ROAD-EDGE', role: 'road' as const, sourceHandle: 'DEMO-ROAD-R', points: rightRoad },
       ...parcelLines,
+      ...terrainLines,
     ],
     terrainLines,
     cadTextEntities: stations

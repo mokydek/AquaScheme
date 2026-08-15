@@ -361,15 +361,18 @@ describe('sewer K1 longitudinal profile DXF (form 2)', () => {
         cadContextLines: [
           {
             layer: 'GENPLAN',
+            role: 'unknown' as const,
             points: [{ x: -5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 15 }],
           },
           {
             layer: 'BROKEN',
+            role: 'unknown' as const,
             points: [{ x: 1, y: 1 }, { x: Number.NaN, y: Number.NaN }, { x: 9, y: 9 }],
           },
         ],
         terrainLines: [{
           layer: 'RELIEF',
+          role: 'terrain' as const,
           points: [{ x: -5, y: 2 }, { x: 15, y: 2 }],
         }],
         cadTextEntities: [

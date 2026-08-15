@@ -10,6 +10,7 @@ import {
   localAxisCoordinates,
   scaleMillimetresPerMetre,
 } from './projectAlbum'
+import { PLAN_LINE_STYLE } from './planStyles'
 
 const network: TracedNetwork = {
   nodes: [
@@ -184,8 +185,11 @@ describe('project working-drawing album', () => {
     }) as { content: unknown[] }
     const serialized = JSON.stringify(doc.content)
     expect(serialized).not.toContain('data-contour')
-    expect(serialized).toContain('горизонтали не построены')
+    // Причина стоит в примечании листа. В условных обозначениях её больше нет:
+    // обозначения строятся по факту листа, и строке о том, чего на листе нет,
+    // там не место.
     expect(serialized).toContain('Точек съёмки меньше трёх')
+    expect(serialized).not.toContain('data-legend-role=\\"contour\\"')
   })
 
   it('разводит подписи листа и ничего не теряет', () => {
@@ -260,6 +264,83 @@ describe('project working-drawing album', () => {
     // Координаты в разметке округлены до десятой единицы холста, поэтому шаг
     // сверяется с точностью округления, а не буквально.
     for (const step of steps) expect(step).toBeCloseTo(21 * unitsPerMm, 0)
+  })
+
+  it('линия существующей сети выводится один раз и в своём цвете, чёрного двойника нет', () => {
+    // ЭТО И БЫЛ ДВОЙНОЙ СЛЕД. Полный контур чертежа рисовался стилем подосновы
+    // — чёрным 0,127 мм, — а следом та же линия приходила из именованного
+    // набора и ложилась оранжевой поверх собственной чёрной копии. На листе
+    // это выглядело как грязная линия, в бенчмарке — как лишние чернила.
+    const points = [{ x: 0, y: 40 }, { x: 650, y: 40 }]
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: {
+        corridorRings: [],
+        cadContextLines: [{ layer: 'Лив', role: 'utility' as const, points }],
+        utilityLines: [{ layer: 'Лив', points }],
+      },
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content).replaceAll('\\"', '"')
+    const planSvg = /(<svg[^>]*?data-horizontal-scale-denominator[\s\S]*?<\/svg>)/.exec(serialized)?.[1] ?? ''
+    const polylines = [...planSvg.matchAll(/<polyline [^>]*points="([^"]+)"[^>]*stroke="(#[0-9a-f]{6})"/g)]
+      .map((match) => ({ points: match[1], colour: match[2] }))
+    const utility = polylines.filter((line) => line.colour === '#b85c00')
+    expect(utility).toHaveLength(1)
+    // Ни одной чёрной ломаной с той же геометрией: копии больше нет.
+    expect(polylines.filter((line) => line.points === utility[0].points)).toHaveLength(1)
+    expect(planSvg).toContain('data-plan-role="existingUtility"')
+  })
+
+  it('условные обозначения строятся по таблице стилей и по факту листа', () => {
+    // Прежде обозначения были набраны руками и врали: существующая сеть в них
+    // значилась фиолетовой штриховой, а на листе была оранжевой сплошной.
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: {
+        corridorRings: [],
+        cadContextLines: [{ layer: 'Лив', role: 'utility' as const, points: [{ x: 0, y: 40 }, { x: 650, y: 40 }] }],
+      },
+    }) as { content: unknown[] }
+    const planSvg = /(<svg[^>]*?data-horizontal-scale-denominator[\s\S]*?<\/svg>)/
+      .exec(JSON.stringify(doc.content).replaceAll('\\"', '"'))?.[1] ?? ''
+    const legend = /<g data-plan-legend="true"[\s\S]*?<\/g>/.exec(planSvg)?.[0] ?? ''
+    expect(legend).toContain('data-legend-role="existingUtility"')
+    expect(legend).toContain(PLAN_LINE_STYLE.existingUtility.colour)
+    // Красных линий на листе нет — и обозначения для них нет.
+    expect(legend).not.toContain('data-legend-role="redLine"')
+    expect(legend).not.toContain(PLAN_LINE_STYLE.redLine.colour)
+  })
+
+  it('прореживание называется по ролям, а не одним числом', () => {
+    // Полсотни красных линий рядом с массивом подосновы: прежде их срезало тем
+    // же шагом, что и всё остальное, и лист об этом молчал.
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: {
+        corridorRings: [],
+        cadContextLines: [
+          ...Array.from({ length: 12_000 }, (_, index) => ({
+            layer: 'ТОПО', role: 'terrain' as const,
+            points: [{ x: index % 650, y: 10 + (index % 60) }, { x: (index % 650) + 4, y: 12 + (index % 60) }],
+          })),
+          ...Array.from({ length: 53 }, (_, index) => ({
+            layer: 'КРАСНАЯ', role: 'redLine' as const,
+            points: [{ x: index * 12, y: 20 }, { x: index * 12 + 9, y: 70 }],
+          })),
+        ],
+      },
+    }) as { content: unknown[] }
+    const planSvg = /(<svg[^>]*?data-horizontal-scale-denominator[\s\S]*?<\/svg>)/
+      .exec(JSON.stringify(doc.content).replaceAll('\\"', '"'))?.[1] ?? ''
+    // Все 53 красные линии на листе: редкая роль прореживанию не подлежит.
+    expect([...planSvg.matchAll(/data-plan-role="redLine"/g)]).toHaveLength(53)
+    expect(planSvg).toContain('Прорежено по ролям: топографическая подоснова')
   })
 
   it('снимает подпись подосновы, когда место занято проектной: наложений нет', () => {
@@ -369,8 +450,8 @@ describe('project working-drawing album', () => {
       drawingSet: set, surveyPoints, manholeConstructions, pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
       constraints: {
         corridorRings: [],
-        cadContextLines: [{ layer: 'GENPLAN', points: [{ x: 50, y: 15 }, { x: 600, y: 85 }] }],
-        terrainLines: [{ layer: 'RELIEF', points: [{ x: 80, y: 5 }, { x: 560, y: 75 }] }],
+        cadContextLines: [{ layer: 'GENPLAN', role: 'unknown' as const, points: [{ x: 50, y: 15 }, { x: 600, y: 85 }] }],
+        terrainLines: [{ layer: 'RELIEF', role: 'terrain' as const, points: [{ x: 80, y: 5 }, { x: 560, y: 75 }] }],
         cadTextEntities: [{ x: 300, y: 50, text: 'CAD-CONTEXT-LABEL', layer: 'TEXT' }],
         cadBlockEntities: [{ x: 400, y: 55, name: 'CAD-BLOCK', layer: 'BLOCKS' }],
         crossings: [{
@@ -677,8 +758,8 @@ describe('project working-drawing album', () => {
       outletFlowLps: 12,
       constraints: {
         corridorRings: [],
-        cadContextLines: [{ layer: 'GENPLAN', points: [{ x: 40, y: 10 }, { x: 90, y: 30 }] }],
-        terrainLines: [{ layer: 'RELIEF', points: [{ x: 45, y: 12 }, { x: 95, y: 32 }] }],
+        cadContextLines: [{ layer: 'GENPLAN', role: 'unknown' as const, points: [{ x: 40, y: 10 }, { x: 90, y: 30 }] }],
+        terrainLines: [{ layer: 'RELIEF', role: 'terrain' as const, points: [{ x: 45, y: 12 }, { x: 95, y: 32 }] }],
         cadTextEntities: [{ x: 70, y: 22, text: 'DXF-CAD-TEXT', layer: 'NOTES' }],
         cadBlockEntities: [{ x: 80, y: 24, name: 'DXF-CAD-BLOCK', layer: 'BLOCKS' }],
       },

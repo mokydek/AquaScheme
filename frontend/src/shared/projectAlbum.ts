@@ -21,6 +21,9 @@ import {
   planFontSize,
   planStroke,
 } from './planStyles'
+import type { PlanLineRole } from './planStyles'
+import { allocatePlanLineBudget, planSourceLines } from './planLayerRole'
+import type { PlanSourceLine, PlanSourceLines, RoleLineBudget } from './planLayerRole'
 import { buildPlanSheetScene, clipPlanPolyline } from './planScene'
 import type { PlanPipeDesign } from './planScene'
 import { buildTitleBlock } from './titleBlock'
@@ -134,6 +137,16 @@ const PROFILE_FIELD_TO_MM = 244
  */
 const PROFILE_TEXT_HEIGHT_MM = 3.7
 
+/**
+ * Поле чертежа планового листа в единицах холста.
+ *
+ * Прямоугольник, который лист физически показывает: его же задаёт обрезка
+ * `clip-path` и обводит рамка. Отбор линий подосновы идёт ПО НЕМУ, а не по
+ * географическому окну листа: поле шире окна поперёк оси, и линия, вышедшая за
+ * окно вбок, на бумаге видна.
+ */
+const PLAN_FIELD = { x: 35, y: 15, height: 445 } as const
+
 const CONTEXT_LINE_LIMIT = 6000
 const TERRAIN_LINE_LIMIT = 3000
 const CONTEXT_LABEL_LIMIT = 900
@@ -236,18 +249,39 @@ interface CadContextResult {
   hiddenLabels: number
   /** Подписей подосновы выведено. */
   shownLabels: number
+  /** Сколько линий каждой роли пришло в окно, выведено и отброшено. */
+  roles: RoleLineBudget[]
+  /** Линии со слоёв, роль которых не разобрана. Выведены подосновой. */
+  unknownRoleLines: number
+  /** Откуда взята линейная графика листа. */
+  origin: PlanSourceLines['origin']
 }
 
 /**
- * Подоснова листа.
+ * Порядок вывода ролей: подоснова снизу, предмет чертежа сверху.
  *
- * Толщины и цвета — из таблицы стилей `planStyles`, а не числами по месту:
- * линия обязана быть одинаковой на листах разной высоты, а «0.65» в разметке
- * этого не обеспечивает.
+ * SVG рисует в порядке разметки, и порядок здесь — это порядок перекрытия.
+ * Существующая сеть и красная линия идут последними: на плотном листе их
+ * перекрывала подоснова, и оранжевая нитка терялась под чёрным.
+ */
+const PLAN_ROLE_DRAW_ORDER: readonly PlanLineRole[] = [
+  'topobase', 'existingBuilding', 'road', 'water', 'corridor', 'existingUtility', 'redLine',
+]
+
+/**
+ * Линейная графика листа.
+ *
+ * КАЖДАЯ ЛИНИЯ ВЫВОДИТСЯ ОДИН РАЗ И В СТИЛЕ СВОЕЙ РОЛИ. Прежде здесь рисовался
+ * весь чертёж стилем подосновы, а лист поверх повторял те же линии из
+ * именованных наборов: существующая сеть выходила чёрной 0,127 мм и оранжевой
+ * поверх неё, дороги — чёрными дважды. Теперь источник один
+ * (`planSourceLines`), роль приезжает вместе с линией, а толщины и цвета
+ * берутся из измеренной таблицы `planStyles`.
  *
  * Прореживание осталось — полная съёмка объекта не влезает в один SVG, — но
- * теперь оно возвращает, сколько отброшено. Молчаливая обрезка читается как
- * «показано всё», а это неправда.
+ * оно РАЗДАЁТСЯ ПО РОЛЯМ: редкая роль проходит целиком, массовые делят
+ * остаток. Общий потолок прежний. Отброшенное не замалчивается: счётчики по
+ * ролям возвращаются наверх и печатаются в примечании листа.
  */
 function cadContextSvg(
   constraints: ProjectAlbumInput['constraints'],
@@ -255,7 +289,9 @@ function cadContextSvg(
   bounds: Bounds,
   svgUnitsPerMm = 1,
   placer: ReturnType<typeof labelPlacer> | null = null,
+  options: { lineLimit?: number; markIntervalFactor?: number; field?: Bounds } = {},
 ): CadContextResult {
+  const lineLimit = options.lineLimit ?? CONTEXT_LINE_LIMIT + TERRAIN_LINE_LIMIT
   const linePoints = (points: Array<{ x: number; y: number }>) => points
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
     .map((point) => {
@@ -263,15 +299,54 @@ function cadContextSvg(
       return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
     })
     .join(' ')
-  const contextSource = (constraints?.cadContextLines ?? []).filter((line) => intersectsBounds(line.points, bounds))
-  const terrainSource = (constraints?.terrainLines ?? []).filter((line) => intersectsBounds(line.points, bounds))
-  const keptContext = sampled(contextSource, CONTEXT_LINE_LIMIT)
-  const keptTerrain = sampled(terrainSource, TERRAIN_LINE_LIMIT)
-  const contextLines = keptContext
-    .map((line) => `<polyline data-cad-context="line" points="${linePoints(line.points)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`).join('')
-  const terrainLines = keptTerrain
-    .map((line) => `<polyline data-cad-context="terrain" points="${linePoints(line.points)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`).join('')
   const fontSize = planFontSize(svgUnitsPerMm)
+  const markInterval = UTILITY_MARK_INTERVAL_MM * svgUnitsPerMm * (options.markIntervalFactor ?? 1)
+  const source = planSourceLines(constraints ?? null)
+  /**
+   * Отбор идёт по ПОЛЮ ЧЕРТЕЖА, а не по географическому окну листа.
+   *
+   * Это не одно и то же. Окно задаёт участок трассы вдоль оси, а поле — тот
+   * прямоугольник, который лист физически показывает; поперёк оси поле ШИРЕ
+   * окна, и линия, вышедшая за окно вбок, на бумаге видна. Отбор по окну её
+   * срезал.
+   *
+   * Прежде перекос не замечали, потому что именованные наборы — существующие
+   * сети, красные линии — не отбирались ВООБЩЕ: на каждый лист выводился весь
+   * объект, а лишнее срезала обрезка `clip-path`. На листе «План К2 ПК0 –
+   * ПК3+93.88» это 53 красные линии в разметке при трёх, попадающих в окно:
+   * семь процентов веса документа, невидимых на бумаге. Отбор по полю
+   * оставляет ровно то, что лист показывает, — и не режет видимого, и не
+   * носит невидимого.
+   */
+  const field = options.field
+  const inWindow = field === undefined
+    ? source.lines.filter((line) => intersectsBounds(line.points, bounds))
+    : source.lines.filter((line) => intersectsBounds(line.points.map(project), field))
+  const byRole = new Map<PlanLineRole, PlanSourceLine[]>()
+  for (const line of inWindow) {
+    const list = byRole.get(line.role)
+    if (list) list.push(line)
+    else byRole.set(line.role, [line])
+  }
+  const quota = allocatePlanLineBudget(
+    new Map([...byRole].map(([role, lines]) => [role, lines.length])),
+    lineLimit,
+  )
+  const ordered = [
+    ...PLAN_ROLE_DRAW_ORDER.filter((role) => byRole.has(role)),
+    ...[...byRole.keys()].filter((role) => !PLAN_ROLE_DRAW_ORDER.includes(role)),
+  ]
+  const roles: RoleLineBudget[] = []
+  const roleSvg = ordered.map((role) => {
+    const lines = byRole.get(role) ?? []
+    const kept = sampled(lines, quota.get(role) ?? 0)
+    roles.push({ role, arrived: lines.length, drawn: kept.length, thinned: lines.length - kept.length })
+    const stroke = planStroke(role, svgUnitsPerMm)
+    return kept.map((line) =>
+      `<polyline data-cad-context="line" data-plan-role="${role}" points="${linePoints(line.points)}"`
+      + ` fill="none" ${stroke}/>${lineMarkSvg(line, role, project, fontSize, markInterval)}`).join('')
+  }).join('')
+  const droppedByRole = roles.reduce((sum, item) => sum + item.thinned, 0)
   let hiddenLabels = 0
   let shownLabels = 0
   const labels = sampled(
@@ -319,12 +394,153 @@ function cadContextSvg(
     return `<g data-cad-context="block"><path d="M${(bx - arm).toFixed(1)} ${by.toFixed(1)}H${(bx + arm).toFixed(1)}M${bx.toFixed(1)} ${(by - arm).toFixed(1)}V${(by + arm).toFixed(1)}" ${planStroke('topobase', svgUnitsPerMm)}/><text x="${(bx + arm + 1).toFixed(1)}" y="${(by - arm).toFixed(1)}" font-size="${fontSize.toFixed(2)}" fill="${planColour('topobase')}">${xmlText(block.name)}</text></g>`
   }).join('')
   return {
-    svg: contextLines + terrainLines + blocks + labels,
-    droppedLines: Math.max(0, contextSource.length - keptContext.length)
-      + Math.max(0, terrainSource.length - keptTerrain.length),
+    svg: roleSvg + blocks + labels,
+    droppedLines: droppedByRole,
     hiddenLabels,
     shownLabels,
+    roles,
+    unknownRoleLines: source.unknownRoleLines,
+    origin: source.origin,
   }
+}
+
+/**
+ * Буквенная марка или подпись линии — по роли, а не по слою.
+ *
+ * Марку разбирает `parseUtilityMark` — тот же разбор, что и на карточке
+ * пересечения; второго словаря марок в проекте нет и не заводится. Текст марки
+ * берётся из обозначения линии в съёмке: роль линии уже известна, и имя слоя
+ * используется как ПОДПИСЬ съёмки, а не как признак роли.
+ *
+ * Если разбор вида не удался, а обозначение длинное, марка не ставится:
+ * повторять «W-КАНАЛИЗАЦИЯ-ЛИВНЕВАЯ» через каждые два сантиметра — не подпись,
+ * а помеха. Короткое обозначение подписывается дословно.
+ *
+ * Красная линия подписывается словами — так она названа и на эталоне, — и
+ * реже: её подпись длинная, а сама линия обычно тянется через весь лист.
+ *
+ * Шаг повтора — 21,0 мм бумаги, измерен по эталону (см. `planStyles`). Раньше
+ * марки ставились только на плановом листе; теперь они живут здесь, и схема
+ * получает их тем же шагом, из того же места.
+ */
+const RED_LINE_CAPTION_STEPS = 6
+
+function lineMarkSvg(
+  line: PlanSourceLine,
+  role: PlanLineRole,
+  project: SvgProjector,
+  fontSize: number,
+  markInterval: number,
+): string {
+  if (role !== 'existingUtility' && role !== 'redLine') return ''
+  const projected = line.points
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .map(project)
+  const caption = (text: string, interval: number) =>
+    markPositionsAlong(projected, interval).map((position) =>
+      `<text data-utility-mark="${xmlText(text)}" transform="translate(${position.x.toFixed(1)} ${position.y.toFixed(1)}) rotate(${position.angleDeg.toFixed(1)})"`
+      + ` x="0" y="${(-fontSize * 0.35).toFixed(2)}" text-anchor="middle" font-size="${fontSize.toFixed(2)}"`
+      + ` fill="${planColour(role)}">${xmlText(text)}</text>`).join('')
+  if (role === 'redLine') return caption('красная линия', markInterval * RED_LINE_CAPTION_STEPS)
+  const raw = String(line.layer ?? '').trim()
+  if (raw === '') return ''
+  const parsed = parseUtilityMark(raw)
+  const mark = parsed.kindEvidence ?? (raw.length <= 6 ? raw : '')
+  return mark === '' ? '' : caption(mark, markInterval)
+}
+
+/**
+ * Названия ролей в условных обозначениях.
+ *
+ * Ровно по одному на роль таблицы стилей: роль без названия не попала бы в
+ * условные обозначения молча, а тип этого не позволит.
+ */
+const PLAN_ROLE_LEGEND: Readonly<Record<PlanLineRole, string>> = {
+  topobase: 'топографическая подоснова',
+  existingUtility: 'существующая сеть',
+  existingBuilding: 'существующие здания и сооружения',
+  redLine: 'красная линия',
+  designedPipe: 'проектируемый трубопровод',
+  designedPipeHidden: 'то же, невидимый участок',
+  routeAxis: 'проектная ось',
+  stationTick: 'пикетная засечка',
+  coordinateGrid: 'координатная сетка',
+  contour: 'горизонталь',
+  contourIndex: 'горизонталь утолщённая',
+  corridor: 'полоса отвода, зоны',
+  water: 'водные объекты',
+  road: 'дороги',
+  sheetFrame: 'рамка листа',
+}
+
+/**
+ * Что стало с линиями подосновы — строкой под листом.
+ *
+ * Прежде здесь стояло одно число: «линий подосновы прорежено 9 214». По нему
+ * нельзя было понять, чего именно лишился лист, — а лишался он в первую очередь
+ * редкого: красных линий и гидрографии, которые тонули в общем потоке. Теперь
+ * прореживание названо ПО РОЛЯМ, и видно, что осталось от каждой.
+ */
+function contextNote(context: CadContextResult): string {
+  const parts: string[] = []
+  if (context.origin === 'named-sets') {
+    parts.push('Линейная графика собрана из именованных наборов: полного контура чертежа в наборе нет,'
+      + ' неразобранные элементы съёмки на лист не выведены')
+  }
+  if (context.origin === 'none') parts.push('Линейной подосновы в наборе нет')
+  const thinned = context.roles.filter((role) => role.thinned > 0)
+  parts.push(thinned.length === 0
+    ? 'Прореживание не потребовалось: линии подосновы выведены полностью'
+    : `Прорежено по ролям: ${thinned.map((role) => `${PLAN_ROLE_LEGEND[role.role]} ${role.drawn} из ${role.arrived}`).join('; ')}`)
+  if (context.unknownRoleLines > 0) {
+    parts.push(`линий со слоёв с неразобранной ролью ${context.unknownRoleLines}, выведены подосновой`)
+  }
+  return `${parts.join('. ')}.`
+}
+
+const LEGEND_COLUMNS = 3
+const LEGEND_COLUMN_WIDTH = 128
+const LEGEND_ROW_HEIGHT = 11
+const LEGEND_FONT_SIZE = 6.5
+
+/**
+ * Условные обозначения листа.
+ *
+ * СТРОЯТСЯ ПО ТАБЛИЦЕ СТИЛЕЙ И ПО ФАКТУ ЛИСТА. Прежде обозначения были набраны
+ * в разметке руками, и цвета в них не совпадали с цветами линий: существующая
+ * сеть значилась фиолетовой штриховой (#9b2c8c), а рисовалась оранжевой
+ * сплошной (#b85c00); «рельеф / подоснова» показывали зелёным (#78906d),
+ * которого на листе нет вовсе. Условные обозначения, которые врут о самом
+ * листе, хуже, чем их отсутствие.
+ *
+ * В список попадают только роли, ЛИНИИ КОТОРЫХ НА ЛИСТЕ ЕСТЬ. Обозначение
+ * красной линии на листе без красных линий — такая же неправда, только с
+ * другого конца.
+ */
+function planLegendSvg(
+  roles: readonly PlanLineRole[],
+  svgUnitsPerMm: number,
+  extra: ReadonlyArray<{ symbol: (x: number, y: number) => string; label: string }> = [],
+): string {
+  const items = [
+    ...roles.map((role) => ({
+      label: PLAN_ROLE_LEGEND[role],
+      symbol: (x: number, y: number) =>
+        `<line data-legend-role="${role}" x1="${x}" y1="${y}" x2="${x + 22}" y2="${y}" ${planStroke(role, svgUnitsPerMm)}/>`,
+    })),
+    ...extra,
+  ]
+  if (items.length === 0) return ''
+  const rows = Math.ceil(items.length / LEGEND_COLUMNS)
+  const width = LEGEND_COLUMNS * LEGEND_COLUMN_WIDTH + 8
+  const height = rows * LEGEND_ROW_HEIGHT + 6
+  const cells = items.map((item, index) => {
+    const x = 6 + (index % LEGEND_COLUMNS) * LEGEND_COLUMN_WIDTH
+    const y = 10 + Math.floor(index / LEGEND_COLUMNS) * LEGEND_ROW_HEIGHT
+    return `${item.symbol(x, y)}<text x="${x + 27}" y="${y + 2}">${xmlText(item.label)}</text>`
+  }).join('')
+  return `<g data-plan-legend="true" font-size="${LEGEND_FONT_SIZE}">`
+    + `<rect x="0" y="0" width="${width}" height="${height}" fill="#fff" fill-opacity="0.94" stroke="#888"/>${cells}</g>`
 }
 
 /**
@@ -366,6 +582,8 @@ export interface SituationSchemeResult {
   /** Линий подосновы выведено и отброшено прореживанием. */
   contextLines: number
   droppedLines: number
+  /** То же по ролям: что именно потерял обзорный кадр. */
+  roles: RoleLineBudget[]
   /** Слои, которых в проекте нет: называются строкой, а не молчанием. */
   missing: Array<'topobase' | 'corridor'>
 }
@@ -383,6 +601,21 @@ const SCHEME_MARGIN_SHARE = 0.12
  */
 const SCHEME_CONTEXT_LIMIT = 2500
 
+/**
+ * Во сколько раз реже ставятся буквенные марки на обзорной схеме.
+ *
+ * На плановом листе шаг марки 21,0 мм измерен по эталону и не трогается. Схема
+ * при том же шаге ложится вчетверо плотнее: масштаб мельче (1:2000 против
+ * 1:500), а в кадре не отрезок трассы, а весь объект — линий существующей сети
+ * в кадре вчетверо больше, и марки сливаются в сплошную полосу.
+ *
+ * Правило прохода: если тесно, увеличивается ШАГ МАРКИ, а не стиль линии.
+ * Толщина и цвет линии измерены по эталону и не подстраиваются под тесноту.
+ * Множитель 4 возвращает схему к той же плотности марок на квадратный
+ * сантиметр бумаги, что и у планового листа: 84,0 мм вместо 21,0 мм.
+ */
+const SCHEME_MARK_INTERVAL_FACTOR = 4
+
 export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationSchemeResult {
   const nodes = input.network.nodes.filter((node) => Number.isFinite(node.x) && Number.isFinite(node.y))
   const missing: SituationSchemeResult['missing'] = []
@@ -391,7 +624,7 @@ export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationS
   if (!input.corridorRings || input.corridorRings.length === 0) missing.push('corridor')
 
   if (nodes.length === 0) {
-    return { svg: '', scaleDenominator: SCHEME_SCALES[0], contextLines: 0, droppedLines: 0, missing }
+    return { svg: '', scaleDenominator: SCHEME_SCALES[0], contextLines: 0, droppedLines: 0, roles: [], missing }
   }
 
   const xs = nodes.map((node) => node.x)
@@ -431,13 +664,29 @@ export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationS
     ?? SCHEME_SCALES[SCHEME_SCALES.length - 1]
 
   const svgUnitsPerMm = scale / scaleMillimetresPerMetre(scaleDenominator)
-  const kept = sampled(contextSource.filter((line) => intersectsBounds(line.points, bounds)), SCHEME_CONTEXT_LIMIT)
+  /**
+   * Схема получает ТО ЖЕ, ЧТО И ПЛАН, из того же места.
+   *
+   * Прежде схема сама прорежала линии до `SCHEME_CONTEXT_LIMIT` и лишь потом
+   * отдавала обрезок отрисовщику — прореживание шло вслепую, единым шагом по
+   * всему чертежу, и редкие роли пропадали первыми. Теперь предел передаётся
+   * внутрь, где он раздаётся по ролям тем же правилом, что и на плане.
+   *
+   * Шаг марок увеличен: см. `SCHEME_MARK_INTERVAL_FACTOR`.
+   */
   const context = cadContextSvg(
-    { ...(input.constraints ?? {}), cadContextLines: kept } as ProjectAlbumInput['constraints'],
+    input.constraints,
     project,
     bounds,
     svgUnitsPerMm,
+    null,
+    {
+      lineLimit: SCHEME_CONTEXT_LIMIT,
+      markIntervalFactor: SCHEME_MARK_INTERVAL_FACTOR,
+      field: { minX: 0, maxX: canvasWidth, minY: 0, maxY: canvasHeight },
+    },
   )
+  const drawnContextLines = context.roles.reduce((sum, role) => sum + role.drawn, 0)
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]))
   const route = input.network.pipes.flatMap((pipe) => {
@@ -498,8 +747,9 @@ export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationS
   return {
     svg,
     scaleDenominator,
-    contextLines: kept.length,
+    contextLines: drawnContextLines,
     droppedLines: context.droppedLines,
+    roles: context.roles,
     missing,
   }
 }
@@ -677,36 +927,21 @@ function planSvg(
   }).join(' ')
   const placer = labelPlacer()
   const fontSize = planFontSize(svgUnitsPerMm)
-  const markInterval = UTILITY_MARK_INTERVAL_MM * svgUnitsPerMm
   /**
-   * Буквенная марка существующей сети повторяется вдоль линии.
+   * ЗАМКНУТЫЕ КОНТУРЫ — и только они.
    *
-   * Марку разбирает `parseUtilityMark` — тот же разбор, что и на карточке
-   * пересечения; второго словаря марок в проекте нет и не заводится. Текст
-   * марки берётся из обозначения линии в съёмке: роль линии уже определена
-   * (существующая сеть), и имя слоя используется как подпись съёмки, а не как
-   * признак роли.
+   * Линейной графики здесь больше нет: дороги, водотоки, существующие сети,
+   * красные линии, оси и препятствия приходят на лист из `cadContextSvg`, где
+   * каждая линия рисуется один раз и в стиле своей роли. Прежде тот же набор
+   * выводился ЗДЕСЬ вторым проходом поверх чёрной копии самого себя — отсюда и
+   * двойная линия, и лишние чернила.
    *
-   * Если разбор вида не удался, а обозначение длинное, марка не ставится:
-   * повторять «W-КАНАЛИЗАЦИЯ-ЛИВНЕВАЯ» через каждые два сантиметра — не
-   * подпись, а помеха. Короткое обозначение подписывается дословно.
-   *
-   * Шаг повтора — 21,0 мм бумаги, измерен по эталону (см. `planStyles`).
+   * Кольца остаются: разбор чертежа складывает замкнутые контуры зданий, зон и
+   * полосы отвода в отдельные наборы, часть из них приходит не из чертежа
+   * вовсе (генплан даёт `buildingPolygons`), и заливка/обводка полигона — не то
+   * же самое, что ломаная. Линии, ставшие кольцом, `planSourceLines` отсеивает
+   * по признаку `closed`, поэтому второго следа не будет и здесь.
    */
-  const utilityMarkSvg = (line: { points: Array<{ x: number; y: number }>; layer?: string }): string => {
-    const raw = String(line.layer ?? '').trim()
-    if (raw === '') return ''
-    const parsed = parseUtilityMark(raw)
-    const mark = parsed.kindEvidence ?? (raw.length <= 6 ? raw : '')
-    if (mark === '') return ''
-    const projected = line.points
-      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
-      .map(project)
-    return markPositionsAlong(projected, markInterval).map((position) =>
-      `<text data-utility-mark="${xmlText(mark)}" transform="translate(${position.x.toFixed(1)} ${position.y.toFixed(1)}) rotate(${position.angleDeg.toFixed(1)})"`
-      + ` x="0" y="${(-fontSize * 0.35).toFixed(2)}" text-anchor="middle" font-size="${fontSize.toFixed(2)}"`
-      + ` fill="${planColour('existingUtility')}">${xmlText(mark)}</text>`).join('')
-  }
   const constraints = [
     ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
     ...(input.constraints?.buildingPolygons ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
@@ -716,19 +951,6 @@ function planSvg(
     ...[...(input.constraints?.approvedCrossingRings ?? []), ...(input.constraints?.approvedCrossingZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
     ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('water', svgUnitsPerMm)}/>`),
     ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('road', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('water', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.utilityLines ?? []).map((line) =>
-      `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('existingUtility', svgUnitsPerMm)}/>${utilityMarkSvg(line)}`),
-    // Красная линия подписывается словами — так она названа и на эталоне.
-    ...(input.constraints?.redLines ?? []).map((line) => {
-      const projected = line.points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)).map(project)
-      const caption = markPositionsAlong(projected, markInterval * 6).map((position) =>
-        `<text transform="translate(${position.x.toFixed(1)} ${position.y.toFixed(1)}) rotate(${position.angleDeg.toFixed(1)})" x="0" y="${(-fontSize * 0.35).toFixed(2)}" text-anchor="middle" font-size="${fontSize.toFixed(2)}" fill="${planColour('redLine')}">красная линия</text>`).join('')
-      return `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('redLine', svgUnitsPerMm)}/>${caption}`
-    }),
-    ...(input.constraints?.guideLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.hardObstacles ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
   ].join('')
   const relief = albumContours(input.surveyPoints)
   const contours = contourSvg(relief, project, {
@@ -842,7 +1064,11 @@ function planSvg(
     maxX: window.maxX,
     minY: window.minY,
     maxY: window.maxY,
-  }, svgUnitsPerMm, placer)
+  }, svgUnitsPerMm, placer, {
+    // Поле чертежа — тот же прямоугольник, что задан обрезкой `work-…` ниже.
+    // Одно число в двух местах разъезжается, поэтому оно объявлено один раз.
+    field: { minX: PLAN_FIELD.x, maxX: canvasWidth - PLAN_FIELD.x, minY: PLAN_FIELD.y, maxY: PLAN_FIELD.y + PLAN_FIELD.height },
+  })
 
   const missingContext = scene.hasPlanContext ? '' : `<g data-plan-context-missing="true"><rect x="${(canvasWidth / 2 - 170).toFixed(1)}" y="27" width="340" height="30" fill="#fff4dc" stroke="#c07800" stroke-width="1.2"/><text x="${(canvasWidth / 2).toFixed(1)}" y="40" text-anchor="middle" font-size="9" font-weight="700" fill="#8a4c00">НЕПОЛНЫЙ ПЛАН: топографическая/CAD-подоснова отсутствует</text><text x="${(canvasWidth / 2).toFixed(1)}" y="51" text-anchor="middle" font-size="7" fill="#8a4c00">Показана расчётная сеть; финальный выпуск должен оставаться заблокированным</text></g>`
   const overview = sourcePath
@@ -881,8 +1107,34 @@ function planSvg(
     .filter((points) => points.length >= 2)
     .map((points) => `<polyline points="${points.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#dcdcdc" stroke-width="0.4"/>`)
     .join('')
+  /**
+   * Условные обозначения — по факту листа.
+   *
+   * Проектная графика (ось, нитка, горизонтали) объявляется здесь: она рождается
+   * на листе, а не приходит с чертежа. Роли подосновы берутся из счётчиков
+   * `cadContextSvg`, то есть из того, что реально попало на лист после
+   * прореживания. Роль, у которой не осталось ни одной линии, в обозначения не
+   * попадает.
+   */
+  const legend = planLegendSvg([
+    'routeAxis',
+    'designedPipe',
+    ...context.roles.filter((item) => item.drawn > 0).map((item) => item.role),
+  ], svgUnitsPerMm, [
+    { symbol: (x, y) => `<circle cx="${(x + 11).toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#fff" stroke="#1746b5"/>`, label: 'колодец / камера' },
+    { symbol: (x, y) => `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + 22).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#d33" stroke-dasharray="5 4"/>`, label: 'граница листа' },
+    // Горизонталь названа вместе с сечением: без сечения обозначение не
+    // читается. Стиль берётся из той же таблицы, что и сама линия.
+    ...(relief.lines.length > 0
+      ? [{
+        symbol: (x: number, y: number) =>
+          `<line data-legend-role="contour" x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + 22).toFixed(1)}" y2="${y.toFixed(1)}" ${planStroke('contour', svgUnitsPerMm)}/>`,
+        label: `горизонтали, сечение ${relief.stepM} м`,
+      }]
+      : []),
+  ])
   const insetFrame = `<rect data-inset-sheet-bounds="true" x="${Math.min(ox(insetBounds.minX), ox(insetBounds.maxX)).toFixed(1)}" y="${Math.min(oy(insetBounds.minY), oy(insetBounds.maxY)).toFixed(1)}" width="${Math.max(2, Math.abs(ox(insetBounds.maxX) - ox(insetBounds.minX))).toFixed(1)}" height="${Math.max(2, Math.abs(oy(insetBounds.maxY) - oy(insetBounds.minY))).toFixed(1)}" fill="none" stroke="#d33" stroke-width="1.2" stroke-dasharray="3 2"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="35" y="15" width="${canvasWidth - 70}" height="445"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="35" y="15" width="${canvasWidth - 70}" height="445" fill="none" ${planStroke('sheetFrame', svgUnitsPerMm)}/><g clip-path="url(#work-${sheet.sheetNumber})">${context.svg}${constraints}${contours}${topoSvg}${networkPipes}<polyline data-plan-route="true" points="${route}" fill="none" ${planStroke('routeAxis', svgUnitsPerMm)} stroke-linejoin="round"/>${stationMarks}${nodeMarks}${pipeLabels}</g>${missingContext}<g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/>${insetContext}<polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/>${insetFrame}<text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><g transform="translate(42 414)" font-size="7"><rect x="0" y="0" width="310" height="39" fill="#fff" fill-opacity="0.94" stroke="#888"/><line x1="8" y1="11" x2="34" y2="11" stroke="#1746b5" stroke-width="4"/><text x="40" y="14">проектная ось</text><circle cx="132" cy="11" r="3" fill="#fff" stroke="#1746b5"/><text x="140" y="14">колодец / камера</text><line x1="222" y1="11" x2="248" y2="11" stroke="#d33" stroke-dasharray="5 4"/><text x="254" y="14">граница листа</text><line x1="8" y1="28" x2="34" y2="28" stroke="#9b2c8c" stroke-dasharray="5 3"/><text x="40" y="31">существующая сеть</text><line x1="132" y1="28" x2="158" y2="28" stroke="#78906d"/><text x="164" y="31">рельеф / подоснова</text><line x1="222" y1="28" x2="248" y2="28" stroke="#8a6b3d" stroke-width="1.1"/><text x="254" y="31">${relief.lines.length > 0 ? `горизонтали, сечение ${relief.stepM} м` : 'горизонтали не построены'}</text></g><text x="40" y="485" font-size="8">Основание: ${scene.contextFeatureCount} объектов CAD/топоподосновы; ${topo.length} отметок в окне; ${scene.pipes.length} участков сети. ${relief.lines.length > 0 ? `Горизонтали через ${relief.stepM} м выведены по ${input.surveyPoints.length} отметкам съёмки.` : xmlText(relief.reason)} Масштаб 1:${PLAN_SCALE_DENOMINATOR}. Подписи: отметок съёмки ${shownSurveyLabels} из ${topo.length}, подосновы ${context.shownLabels}; снято из-за тесноты ${hiddenSurveyLabels + context.hiddenLabels}; линий подосновы прорежено ${context.droppedLines}. Шрифт ${PLAN_TEXT_HEIGHT_MM} мм.</text></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PLAN_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PLAN_SCALE_DENOMINATOR)}" data-svg-units-per-mm="${svgUnitsPerMm}" data-local-axis-rotation-deg="${axisRotationDeg.toFixed(6)}"><defs><clipPath id="work-${sheet.sheetNumber}"><rect x="${PLAN_FIELD.x}" y="${PLAN_FIELD.y}" width="${canvasWidth - 2 * PLAN_FIELD.x}" height="${PLAN_FIELD.height}"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><rect x="${PLAN_FIELD.x}" y="${PLAN_FIELD.y}" width="${canvasWidth - 2 * PLAN_FIELD.x}" height="${PLAN_FIELD.height}" fill="none" ${planStroke('sheetFrame', svgUnitsPerMm)}/><g clip-path="url(#work-${sheet.sheetNumber})">${context.svg}${constraints}${contours}${topoSvg}${networkPipes}<polyline data-plan-route="true" points="${route}" fill="none" ${planStroke('routeAxis', svgUnitsPerMm)} stroke-linejoin="round"/>${stationMarks}${nodeMarks}${pipeLabels}</g>${missingContext}<g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(0 -20)"><rect x="${canvasWidth - 190}" y="35" width="150" height="90" fill="#fff" stroke="#111"/>${insetContext}<polyline points="${overview.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#999" stroke-width="1"/><polyline points="${path.map((point) => `${ox(point.x).toFixed(1)},${oy(point.y).toFixed(1)}`).join(' ')}" fill="none" stroke="#1746b5" stroke-width="3"/>${insetFrame}<text x="${canvasWidth - 183}" y="120" font-size="7">Положение листа</text></g><g transform="translate(42 402)">${legend}</g><text x="40" y="478" font-size="8">Основание: ${scene.contextFeatureCount} объектов CAD/топоподосновы; ${topo.length} отметок в окне; ${scene.pipes.length} участков сети. ${relief.lines.length > 0 ? `Горизонтали через ${relief.stepM} м выведены по ${input.surveyPoints.length} отметкам съёмки.` : xmlText(relief.reason)} Масштаб 1:${PLAN_SCALE_DENOMINATOR}. Подписи: отметок съёмки ${shownSurveyLabels} из ${topo.length}, подосновы ${context.shownLabels}; снято из-за тесноты ${hiddenSurveyLabels + context.hiddenLabels}. Шрифт ${PLAN_TEXT_HEIGHT_MM} мм.</text><text x="40" y="490" font-size="8">${xmlText(contextNote(context))}</text></svg>`
 }
 
 function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): string {
@@ -907,16 +1159,26 @@ function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): s
   const linePoints = (points: Array<{ x: number; y: number }>) => points
     .map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`)
     .join(' ')
-  const context = cadContextSvg(input.constraints, project, { minX, maxX, minY, maxY }).svg
+  /**
+   * Сводный план сети — та же подоснова и те же стили, что у рабочего листа.
+   *
+   * Здесь был ТРЕТИЙ набор цветов, набранный руками: сеть фиолетовой штриховой
+   * (#9b2c8c), дороги коричневыми (#8b734f), красная линия #d22. Ни один из них
+   * не совпадал ни с измеренной таблицей, ни с рабочим листом того же альбома:
+   * одна и та же линия меняла цвет от листа к листу. Линейная графика теперь
+   * приходит из `cadContextSvg`, кольца остаются здесь — с заливкой, которая
+   * на обзорном листе читается лучше обводки.
+   */
+  // Сводный план обрезки не имеет: поле чертежа — весь холст, и отбор идёт по
+  // нему же, чтобы линия, вышедшая за габарит сети, не пропала с обзорного листа.
+  const context = cadContextSvg(input.constraints, project, { minX, maxX, minY, maxY }, 1, null, {
+    field: { minX: 0, maxX: 1000, minY: 0, maxY: 500 },
+  })
   const constraints = [
-    context,
-    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e2e2e2" stroke="#555"/>`),
-    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
-    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="8 5"/>`),
-    ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#8b734f" stroke-width="3"/>`),
-    ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#2685b5" stroke-width="2"/>`),
-    ...(input.constraints?.utilityLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="6 4"/>`),
-    ...(input.constraints?.redLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#d22" stroke-width="2"/>`),
+    context.svg,
+    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e2e2e2" ${planStroke('existingBuilding', 1)}/>`),
+    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" ${planStroke('water', 1)}/>`),
+    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', 1)}/>`),
   ].join('')
   const topo = input.surveyPoints.filter((point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY)
   const topoStride = Math.max(1, Math.ceil(topo.length / 420))

@@ -1,5 +1,8 @@
 import { maxOf, minOf } from './units'
 import type { SurveyPoint } from './types'
+// Только тип: `import type` стирается при сборке, и тяжёлый `dxf-parser`,
+// на котором стоит `dxfread`, в этот модуль не попадает.
+import type { DxfLayerRole } from './dxfread'
 import { elevationWithinSurvey, interpolateElevation } from './trace'
 import type { NetworkNode, NetworkPipe, TracedNetwork } from './trace'
 
@@ -35,6 +38,31 @@ export interface RouteSegment {
   sourceHandle?: string
   colorNumber?: number
   lineType?: string
+}
+
+/**
+ * Линия исходного чертежа вместе с ролью своего слоя.
+ *
+ * Роль ЕДЕТ С ЛИНИЕЙ, а не лежит отдельным словарём имён слоёв. Словарь
+ * `roles` в наборе остаётся — по нему считаются неразобранные слои, — но для
+ * отрисовки он не годится: роль слоя переопределяется вручную в таблице ролей,
+ * и на листе оказалась бы не та роль, которую назначил инженер. К моменту
+ * отрисовки набор к тому же уже прошёл через хранилище, где соответствие
+ * «имя слоя → роль» живёт в другом поле и может разъехаться с линиями.
+ *
+ * Поле ОБЯЗАТЕЛЬНОЕ по типу: линия без роли рисовалась бы «чем-нибудь», а это
+ * ровно то, чего здесь быть не должно. Значение `'unknown'` законно и означает
+ * «слой не разобран» — честное состояние, а не отсутствие поля. Старые
+ * сохранённые наборы роли не несут; она проставляется при чтении набора
+ * (`readRouteConstraints`), а не домысливается отрисовщиком.
+ *
+ * `drawnAsRing` нужен отрисовщику: контур, ставший кольцом, уже на листе, и
+ * второй раз ломаной не рисуется. Признак ставит разбор чертежа — только он
+ * знает, какие замкнутые линии кольцами стали, а какие отсеялись.
+ */
+export interface RouteContextSegment extends RouteSegment {
+  role: DxfLayerRole
+  drawnAsRing?: boolean
 }
 export interface RouteTextEntity extends RoutePoint {
   text: string
@@ -94,9 +122,9 @@ export interface RouteConstraintInput {
   roadLines?: RouteSegment[]
   waterLines?: RouteSegment[]
   /** Imported terrain contours/breaklines. Retained as vector CAD context. */
-  terrainLines?: RouteSegment[]
-  /** Complete source linework, drawn as a neutral underlay behind semantic layers. */
-  cadContextLines?: RouteSegment[]
+  terrainLines?: RouteContextSegment[]
+  /** Complete source linework: every line carries the role of its layer. */
+  cadContextLines?: RouteContextSegment[]
   /** Source DXF annotations kept as text, never as a raster screenshot. */
   cadTextEntities?: RouteTextEntity[]
   /** Source DXF INSERT references represented by their insertion marker and name. */

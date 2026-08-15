@@ -43,6 +43,7 @@ import { networkFromRows } from '../../shared/network'
 import { readTechnicalConditions } from '../../shared/technicalConditions'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
+import { readRouteConstraints } from '../../shared/dxfContext'
 import { saveDataset } from '../../shared/datasets'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
 import { formatAppError } from '../../shared/errorFormatting'
@@ -506,12 +507,16 @@ export function GravitySection({
     () => schedule ? selectManholeConstructions(schedule.manholes, manholeCatalog) : { selected: [], unmatched: [] },
     [schedule, manholeCatalog],
   )
+  // Единственная граница чтения набора ограничений: и предпросмотр, и альбом
+  // берут содержимое только отсюда. Здесь же линиям наборов, сохранённых до
+  // того, как роль поехала вместе с линией, проставляется 'unknown' —
+  // см. `readRouteConstraints`.
   const constraints = useMemo(
-    () => (constraintsDataset?.content ?? null) as (RouteConstraintInput & {
+    () => readRouteConstraints((constraintsDataset?.content ?? null) as (RouteConstraintInput & {
       crossings?: CrossingRecord[]
       deliverableRequirements?: WorkingDrawingDeliverableRequirements
       protectiveGridDesign?: ProtectiveGridDesign
-    }) | null,
+    }) | null),
     [constraintsDataset],
   )
   const surveyPoints = useMemo<SurveyPoint[]>(() => {

@@ -393,29 +393,41 @@ export function classifyDxfConstraints(
 
   for (const layer of data.layers) roles[layer.name] = roleOf(layer.name)
   const byRole = (role: DxfLayerRole) => data.segments.filter((segment) => roles[segment.layer ?? '0'] === role)
+
+  /**
+   * Segments that leave this function as a ring rather than as linework.
+   *
+   * A renderer that draws both `contextLines` and the ring collections would
+   * put such a contour on the sheet twice. Which closed segments actually
+   * became rings is known only HERE — the size filter and the fingerprint
+   * dedup below drop some of them — so the answer is recorded on the segment
+   * itself (`drawnAsRing`) instead of being re-derived downstream from
+   * `closed` and the layer role. Re-derivation was wrong in both directions:
+   * a three-point closed contour and a sub-30 m corridor symbol are NOT rings
+   * and would have silently vanished from the drawing.
+   */
+  const ringSegments = new Set<ImportSegment>()
+  const openRing = (segment: ImportSegment): ImportPoint[] => {
+    const points = [...segment.points]
+    const first = points[0]
+    const last = points[points.length - 1]
+    if (first.x === last.x && first.y === last.y) points.pop()
+    return points
+  }
   const closedRings = (role: DxfLayerRole) => byRole(role)
     .filter((segment) => segment.closed && segment.points.length >= 4)
     .map((segment) => {
-      const points = [...segment.points]
-      const first = points[0]
-      const last = points[points.length - 1]
-      if (first.x === last.x && first.y === last.y) points.pop()
-      return simplifyPolyline(points, 0.25)
+      ringSegments.add(segment)
+      return simplifyPolyline(openRing(segment), 0.25)
     })
   const corridor = byRole('corridor')
   const rawCorridorRings = corridor
     .filter((segment) => segment.closed && segment.points.length >= 4)
-    .map((segment) => {
-      const points = [...segment.points]
-      const first = points[0]
-      const last = points[points.length - 1]
-      if (first.x === last.x && first.y === last.y) points.pop()
-      // 5 m is below normal corridor width but removes doubled CAD strokes.
-      return simplifyPolyline(points, 5)
-    })
+    // 5 m is below normal corridor width but removes doubled CAD strokes.
+    .map((segment) => ({ segment, ring: simplifyPolyline(openRing(segment), 5) }))
     // The source drawing contains small closed symbols on the same layer.
     // Keep only spatially meaningful right-of-way polygons.
-    .filter((ring) => {
+    .filter(({ ring }) => {
       const xs = ring.map((point) => point.x)
       const ys = ring.map((point) => point.y)
       return Math.max(...xs) - Math.min(...xs) >= 30 && Math.max(...ys) - Math.min(...ys) >= 30
@@ -426,13 +438,35 @@ export function classifyDxfConstraints(
   }, 0) / 2)
   const fingerprints = new Set<string>()
   const corridorRings = rawCorridorRings
-    .sort((a, b) => ringArea(b) - ringArea(a))
-    .filter((ring) => {
+    .sort((a, b) => ringArea(b.ring) - ringArea(a.ring))
+    .filter(({ ring }) => {
       const fingerprint = ring.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(';')
       if (fingerprints.has(fingerprint)) return false
       fingerprints.add(fingerprint)
       return true
     })
+    .map(({ segment, ring }) => {
+      ringSegments.add(segment)
+      return ring
+    })
+
+  /**
+   * Water rings use the same predicate the importers apply to `hydrography`:
+   * closed and at least four points. Marking them here keeps the decision in
+   * one place — the importer that builds `waterRings` reads this flag's twin
+   * rather than the other way round.
+   */
+  const hydrographyRings = byRole('hydrography')
+    .filter((segment) => segment.closed && segment.points.length >= 4)
+  for (const segment of hydrographyRings) ringSegments.add(segment)
+
+  const buildingFootprints = [...closedRings('building'), ...closedRings('structure')]
+  const protectionZoneRings = closedRings('protectionZone')
+  const forbiddenZoneRings = closedRings('forbiddenZone')
+  const approvedCrossingRings = closedRings('approvedCrossing')
+  const parcelRings = closedRings('parcel')
+  const contextLines = deduplicateImportSegments(data.segments)
+    .map((segment) => (ringSegments.has(segment) ? { ...segment, drawnAsRing: true } : segment))
 
   const geometrySurveyPoints = data.points
     .filter((point) => typeof point.z === 'number' && Number.isFinite(point.z) && point.z !== 0)
@@ -471,16 +505,16 @@ export function classifyDxfConstraints(
     railwayLines: byRole('railway'),
     hydrography: byRole('hydrography'),
     terrainLines: deduplicateImportSegments([...byRole('terrain'), ...byRole('terrainBreakline')]),
-    contextLines: deduplicateImportSegments(data.segments),
+    contextLines,
     pointEntities: data.pointEntities ?? [],
     textEntities: data.textEntities ?? [],
     blockEntities: data.blockEntities ?? [],
     candidateRoute: byRole('candidateRoute'),
-    buildingFootprints: [...closedRings('building'), ...closedRings('structure')],
-    protectionZoneRings: closedRings('protectionZone'),
-    forbiddenZoneRings: closedRings('forbiddenZone'),
-    approvedCrossingRings: closedRings('approvedCrossing'),
-    parcelRings: closedRings('parcel'),
+    buildingFootprints,
+    protectionZoneRings,
+    forbiddenZoneRings,
+    approvedCrossingRings,
+    parcelRings,
     roles,
     surveyPoints,
     rejectedSurveyPoints: rawSurveyPoints.length - surveyPoints.length,

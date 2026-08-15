@@ -25,6 +25,17 @@ export interface ImportSegment {
   layer?: string
   /** True when the source entity is a closed polygon (DXF flag 70 / GeoJSON ring). */
   closed?: boolean
+  /**
+   * True when the classifier turned this segment into a ring collection entry.
+   *
+   * Set by `classifyDxfConstraints`, the only place that knows the answer: not
+   * every closed segment becomes a ring — a three-point contour is dropped,
+   * and a sub-30 m closed corridor symbol is a symbol, not right-of-way. A
+   * renderer that draws both the rings and the full linework uses this flag to
+   * avoid a second stroke over the same contour, and leaves everything else on
+   * the sheet.
+   */
+  drawnAsRing?: boolean
   sourceType?: string
   sourceHandle?: string
   /** Block definition and INSERT reference that produced expanded geometry. */

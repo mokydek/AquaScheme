@@ -13,6 +13,7 @@ import {
   importNetwork,
   parseCatalogRows,
   solveGravityNetwork,
+  workingDrawingSpecificationItemCount,
 } from '@aquascheme/engine'
 // Разбор DXF живёт отдельным подпутём — так его берёт и само приложение.
 import { classifyDxfConstraints, parseDxfNetwork } from '@aquascheme/engine/dxfread'
@@ -300,6 +301,16 @@ describe('сборка альбома реального объекта', () => 
         verified: true,
       },
       crossings,
+      // Число строк спецификации СЧИТАЕТСЯ ПО МОДЕЛИ, а не остаётся умолчанием.
+      // Без него комплект разбивал спецификацию по шести строкам ведомости
+      // труб, а к отрисовке модель давала девять — трубы плюс три вида колец
+      // подобранных конструкций, — и альбом останавливался на первом же листе
+      // с «реестр спецификации устарел». Приложение считает это число тем же
+      // вызовом; прогон просто отстал от модели.
+      specificationItemCount: (workingDrawingSpecificationItemCount as unknown as (s: never, m: never) => number)(
+        schedule as never, manholeConstructions as never,
+      ),
+      manholeCatalogReady: manholeCatalog.entries.length > 0,
       utilityFeatureCount: (constraints.utilityLines ?? []).length,
       // Промерзание — величина из документа, а не принятая: отчёт по
       // инженерно-геологическим изысканиям ТОО «Geo Global KZ», Арх. № 17-08/25,
@@ -370,8 +381,9 @@ describe('сборка альбома реального объекта', () => 
       + `подписи ${count(cad.cadTextEntities)}, блоки ${count(cad.cadBlockEntities)}`)
 
     const { buildBenchmarkAlbumDoc } = await import('./benchmarkAlbum')
-    try {
-      const doc = buildBenchmarkAlbumDoc({
+    // Один и тот же вход и для альбома, и для снимка отдельного листа: снимок
+    // обязан показывать ровно тот лист, который уходит в измерение.
+    const albumInput = {
       projectName: 'Водосбросной коллектор до р. Есиль',
       projectCode: '2024-51-НК',
       system: 'storm',
@@ -384,11 +396,61 @@ describe('сборка альбома реального объекта', () => 
       constraints: albumConstraints,
       pipeDiameterMm: new Map(),
       outletFlowLps: gravity.outletFlowLps,
-      } as never)
+    }
+    try {
+      const doc = buildBenchmarkAlbumDoc(albumInput as never)
 
       // Объём документа — первый признак того, что отрисовка не зависла, а
       // захлебнулась содержимым.
       console.log(`ДОКУМЕНТ: узлов JSON ${JSON.stringify(doc).length} символов`)
+
+      /**
+       * Снимок листа плана и ситуационной схемы — по метке прогона.
+       *
+       * Нужен, чтобы «до» и «после» правки отрисовки сравнивались на ОДНОМ
+       * объекте и одном листе, а не на словах. Метка задаётся переменной
+       * окружения, файлы ложатся рядом с остальными снимками.
+       */
+      const snapshotLabel = String(process.env.AQUASCHEME_SNAPSHOT_LABEL ?? '').trim()
+      if (snapshotLabel !== '') {
+        const { buildProjectSheetDoc, buildSituationSchemeSvg } = await import('./projectAlbum')
+        const planSheet = (drawingSet as unknown as { sheets: Array<{ id: string; kind: string; title: string }> })
+          .sheets.find((sheet) => sheet.kind === 'plan')
+        const dir = join(ROOT, 'docs', 'benchmark', 'stankevicha', 'snapshots')
+        mkdirSync(dir, { recursive: true })
+        if (planSheet) {
+          const sheetDoc = (buildProjectSheetDoc as unknown as (i: never, id: string) => {
+            content: Array<{ stack?: Array<{ svg?: string }> }>
+          })(albumInput as never, planSheet.id)
+          const planSvg = sheetDoc.content[0]?.stack?.find((node) => typeof node.svg === 'string')?.svg ?? ''
+          writeFileSync(join(dir, `plan-role-${snapshotLabel}.svg`), planSvg)
+          const roleCounts = new Map<string, number>()
+          for (const match of planSvg.matchAll(/data-plan-role="([a-zA-Z]+)"/g)) {
+            roleCounts.set(match[1], (roleCounts.get(match[1]) ?? 0) + 1)
+          }
+          const strokes = new Map<string, number>()
+          for (const match of planSvg.matchAll(/stroke="(#[0-9a-fA-F]{6})"/g)) {
+            strokes.set(match[1], (strokes.get(match[1]) ?? 0) + 1)
+          }
+          console.log(`СНИМОК ПЛАНА (${snapshotLabel}): лист «${planSheet.title}», ${planSvg.length} символов;`
+            + ` ломаных ${[...planSvg.matchAll(/<polyline/g)].length};`
+            + ` по ролям ${JSON.stringify([...roleCounts].sort((a, b) => b[1] - a[1]))};`
+            + ` по цвету обводки ${JSON.stringify([...strokes].sort((a, b) => b[1] - a[1]))}`)
+        }
+        const scheme = (buildSituationSchemeSvg as unknown as (i: never) => {
+          svg: string; scaleDenominator: number; contextLines: number; droppedLines: number
+          roles?: Array<{ role: string; arrived: number; drawn: number; thinned: number }>
+        })({
+          network: network.network,
+          constraints: albumConstraints,
+          corridorRings: (albumConstraints as { corridorRings?: unknown[] }).corridorRings,
+          title: 'Ситуационная схема — измерение',
+        } as never)
+        writeFileSync(join(dir, `scheme-role-${snapshotLabel}.svg`), scheme.svg)
+        console.log(`СНИМОК СХЕМЫ (${snapshotLabel}): М 1:${scheme.scaleDenominator},`
+          + ` линий подосновы ${scheme.contextLines}, отброшено ${scheme.droppedLines};`
+          + ` по ролям ${JSON.stringify(scheme.roles ?? [])}`)
+      }
       // Ограничение числа страниц — только для поиска места зависания.
       const limit = Number(process.env.AQUASCHEME_RENDER_PAGES ?? 0)
       if (limit > 0 && Array.isArray((doc as { content?: unknown[] }).content)) {

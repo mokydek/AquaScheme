@@ -10,6 +10,8 @@ import type {
   WorkingDrawingSet,
   WorkingDrawingSheet,
 } from '@aquascheme/engine'
+import { PLAN_LINE_STYLE } from '../../shared/planStyles'
+import { planSourceLines } from '../../shared/planLayerRole'
 import { buildPlanSheetScene, formatPlanPicket as picket } from '../../shared/planScene'
 import type { PlanPipeDesign } from '../../shared/planScene'
 
@@ -101,13 +103,23 @@ function CadContextLayer({
     const stride = Math.ceil(items.length / maximum)
     return items.filter((_, index) => index % stride === 0)
   }
+  /**
+   * Предпросмотр показывает ТЕ ЖЕ РОЛИ, что и лист.
+   *
+   * Здесь был свой словарь цветов: вся подоснова серым #c7c7c7, рельеф зелёным
+   * #78906d. Ни того, ни другого на листе нет, и инженер принимал решение по
+   * серой каше, а получал цветной чертёж. Источник линий теперь общий с листом
+   * (`planSourceLines`), цвета и относительные толщины — из измеренной таблицы.
+   *
+   * Предпросмотр не имеет масштаба бумаги: он вписан в окно. Множитель ниже
+   * переводит миллиметры бумаги в единицы холста так, чтобы самая тонкая линия
+   * (0,127 мм) осталась видимой на экране; ОТНОШЕНИЯ толщин при этом
+   * сохраняются, а именно они и различают роли.
+   */
+  const PREVIEW_UNITS_PER_MM = 4
   const contextLines = sample(
-    (constraints?.cadContextLines ?? []).filter((line) => intersectsBounds(line.points)),
+    planSourceLines(constraints ?? null).lines.filter((line) => intersectsBounds(line.points)),
     3500,
-  )
-  const terrainLines = sample(
-    (constraints?.terrainLines ?? []).filter((line) => intersectsBounds(line.points)),
-    2000,
   )
   const blocks = sample((constraints?.cadBlockEntities ?? []).filter((block) =>
     block.x >= bounds.minX && block.x <= bounds.maxX && block.y >= bounds.minY && block.y <= bounds.maxY), 500)
@@ -117,12 +129,20 @@ function CadContextLayer({
     .map((point) => `${x(point.x)},${y(point.y)}`)
     .join(' ')
   return <>
-    {contextLines.map((line, index) => (
-      <polyline key={`cad-${line.sourceHandle ?? index}`} points={linePoints(line.points)} fill="none" stroke="#c7c7c7" strokeWidth="0.65" />
-    ))}
-    {terrainLines.map((line, index) => (
-      <polyline key={`terrain-${line.sourceHandle ?? index}`} points={linePoints(line.points)} fill="none" stroke="#78906d" strokeWidth="0.9" />
-    ))}
+    {contextLines.map((line, index) => {
+      const style = PLAN_LINE_STYLE[line.role]
+      return <polyline
+        key={`cad-${line.role}-${index}`}
+        data-plan-role={line.role}
+        points={linePoints(line.points)}
+        fill="none"
+        stroke={style.colour}
+        strokeWidth={style.widthMm * PREVIEW_UNITS_PER_MM}
+        strokeDasharray={style.dashMm
+          ? `${style.dashMm[0] * PREVIEW_UNITS_PER_MM} ${style.dashMm[1] * PREVIEW_UNITS_PER_MM}`
+          : undefined}
+      />
+    })}
     {blocks.map((block, index) => {
       const bx = x(block.x)
       const by = y(block.y)
