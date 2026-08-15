@@ -213,6 +213,11 @@ export const en = {
         title: 'Situational scheme',
         hint: 'The scheme is drawn stage by stage before your eyes: base, corridor, route, diameters, outlet. Under each stage — the project data it is drawn from',
         needNetwork: 'Build or load the network to see the scheme',
+        needTopobase: 'The situational scheme is built from the survey: no topographic base is loaded.',
+        needTopobaseSection: 'Drawing import',
+        noCorridor: 'The right of way and red lines are not loaded: the scheme is shown without them.',
+        noCorridorSection: 'Land allotments',
+        basis: 'Built from the loaded base: 1:{{scale}}, {{lines}} base lines, {{dropped}} thinned out.',
       },
       gravity: {
         title: 'Gravity calculation (K1)',
@@ -312,11 +317,6 @@ export const en = {
         corridorNone: 'No corridor loaded: add a right of way in the parcels section',
         corridorViolations: 'Corridor violations: {{count}}',
         builder: {
-          replay: 'Draw again',
-          pause: 'Pause',
-          play: 'Resume',
-          toEnd: 'Show at once',
-          noData: 'no data',
           step: {
             context: 'Base: buildings and structures',
             corridor: 'Corridor (right of way, red lines)',

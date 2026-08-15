@@ -44,6 +44,8 @@ const { KitWizardPanel } = await import('./KitWizardPanel')
 const { SurveyActValues, surveyActRows } = await import('./SurveyActValues')
 const { ExistingNetworkSection } = await import('./ExistingNetworkSection')
 const { ImportSection } = await import('./ImportSection')
+const { SituationSchemeView } = await import('./SituationSchemeView')
+const { buildSituationSchemeSvg } = await import('../../shared/projectAlbum')
 const { STANKEVICHA_KIT_SLOTS, emptyKitState } = await import('../../shared/kitWizard')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
@@ -795,5 +797,100 @@ describe('статус раздела не спорит с его же текс�
   it('непрерывная ось так и называется, без ложной тревоги', () => {
     const markup = section({ source: { x: 0, y: 0 }, pipes: chain })
     expect(markup).toContain('Ось непрерывна')
+  })
+})
+
+describe('ситуационная схема строится по топооснове', () => {
+  const network = {
+    nodes: [
+      { id: 'ВК-1', label: 'ВК-1', x: 0, y: 0, groundElevation: 688, kind: 'manhole' },
+      { id: 'ВК-2', label: 'ВК-2', x: 120, y: 40, groundElevation: 687, kind: 'manhole' },
+      { id: 'ВК-3', label: 'ВК-3', x: 240, y: 30, groundElevation: 686, kind: 'outlet' },
+    ],
+    pipes: [
+      { id: 'У-1', fromNode: 'ВК-1', toNode: 'ВК-2', lengthM: 126, kind: 'main' },
+      { id: 'У-2', fromNode: 'ВК-2', toNode: 'ВК-3', lengthM: 120, kind: 'main' },
+    ],
+  } as never
+
+  const steps = {
+    network,
+    pipeDiameterMm: new Map([['У-1', 450], ['У-2', 450]]),
+    buildingsCount: 0,
+  } as never
+
+  /** Подоснова: те же поля, что приходят из `buildDxfCadContext`. */
+  const constraints = {
+    cadContextLines: [
+      { points: [{ x: -20, y: -20 }, { x: 260, y: -20 }] },
+      { points: [{ x: -20, y: 60 }, { x: 260, y: 60 }] },
+    ],
+    terrainLines: [],
+    cadTextEntities: [{ x: 100, y: 10, text: 'ул. Станкевича' }],
+    cadBlockEntities: [],
+  } as never
+
+  const view = (props: Record<string, unknown>) => html(createElement(SituationSchemeView, {
+    scheme: { title: 'К1. Станкевича', network, ...props } as never,
+    steps,
+  }))
+
+  it('с подосновой рисует её линии тем же отрисовщиком, что и плановые листы', () => {
+    const markup = view({ constraints, pipeDiameterMm: new Map([['У-1', 450]]) })
+    expect(markup).toContain('data-situation-scheme')
+    // Разметка подосновы — та же, что на плановом листе: общий отрисовщик.
+    expect(markup).toContain('data-cad-context="line"')
+    expect(markup).toContain('ул. Станкевича')
+    // Проектная графика поверх: труба и обозначения колодцев.
+    expect(markup).toContain('data-scheme-route')
+    expect(markup).toContain('ВК-1')
+    expect(markup).toContain('Ø450')
+    // Север и численный масштаб на месте.
+    expect(markup).toContain('М 1:')
+  })
+
+  it('без топоосновы — пустое состояние с адресом раздела, а не выдуманная графика', () => {
+    const markup = view({})
+    expect(markup).toContain('data-scheme-empty')
+    expect(markup).toContain('project.scheme.needTopobase')
+    expect(markup).toContain('href="#import"')
+    // Ничего не нарисовано: чертежа нет, и придумывать его нельзя.
+    expect(markup).not.toContain('data-situation-scheme="true"')
+  })
+
+  it('без полосы отвода схема рисуется, а пробел назван с адресом', () => {
+    // Случай Станкевича: подоснова есть, полосы отвода нет. Блокировать схему
+    // целиком из-за одного слоя нельзя.
+    const markup = view({ constraints })
+    expect(markup).toContain('data-situation-scheme')
+    expect(markup).toContain('data-scheme-missing="corridor"')
+    expect(markup).toContain('href="#parcels"')
+  })
+
+  it('полоса отвода, когда она есть, рисуется и о пробеле не сообщается', () => {
+    const markup = view({
+      constraints,
+      corridorRings: [[{ x: -10, y: -10 }, { x: 250, y: -10 }, { x: 250, y: 50 }]],
+    })
+    expect(markup).toContain('data-scheme-corridor')
+    expect(markup).not.toContain('data-scheme-missing="corridor"')
+  })
+
+  it('пропорции кадра берутся по геометрии, а не растягиваются', () => {
+    // Вытянутая вдоль улицы трасса не должна превращаться в квадрат.
+    const wide = buildSituationSchemeSvg({
+      title: 'т', network,
+      constraints,
+    } as never)
+    const box = /viewBox="0 0 (\d+) (\d+)"/.exec(wide.svg)
+    expect(box).not.toBeNull()
+    const [, w, h] = box!
+    expect(Number(w)).toBeGreaterThan(Number(h))
+  })
+
+  it('кнопки «Нарисовать заново» и её ключа в проекте нет', () => {
+    const markup = view({ constraints })
+    expect(markup).not.toContain('replay')
+    expect(markup).not.toContain('builder.pause')
   })
 })

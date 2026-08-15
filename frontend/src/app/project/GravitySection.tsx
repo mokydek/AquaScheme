@@ -69,7 +69,7 @@ import { resolveGravityBranchProfilesForDrawings } from '../../shared/gravityBra
 import { NormBadge } from './NormBadge'
 import { Panel } from './Panel'
 import { AlbumSheetSet } from './AlbumSheetSet'
-import { SchemeBuilder } from './SchemeBuilder'
+import { SituationSchemeView } from './SituationSchemeView'
 import { StormInletsView } from './StormInletsView'
 import { ReadinessView } from './ReadinessView'
 import { ProvenanceAuditView } from './ProvenanceAuditView'
@@ -1754,16 +1754,16 @@ export function GravitySection({
           )}
 
           {/*
-            Пошаговая сборка ситуационной схемы: каждый слой называет данные, из
-            которых нарисован, а отсутствующие показывает прямо, а не пропускает.
-            Компонент существовал со своим SchemeView и переводами на трёх
-            языках, но не отрисовывался нигде — путь с экрана к нему отсутствовал.
+            Ситуационная схема строится по ЗАГРУЖЕННОЙ топооснове тем же
+            отрисовщиком, что и плановые листы. Прежде её рисовал самодельный
+            вид: белый лист, синяя ломаная и «подоснова» из координат зданий —
+            ноль из тринадцати тысяч линий чертежа.
           */}
-          <SchemeBuilder
+          <SituationSchemeView
             scheme={{
               title: `${systemType === 'storm' ? 'К2' : 'К1'}. ${projectName}`,
               network,
-              buildings: buildings.map((building) => ({ x: building.x, y: building.y, label: building.label })),
+              constraints: constraints ?? undefined,
               pipeDiameterMm: new Map(result.pipes.map((pipe) => [pipe.id, pipe.diameterMm])),
               outletFlowLps: result.outletFlowLps,
               corridorRings: constraints?.corridorRings,

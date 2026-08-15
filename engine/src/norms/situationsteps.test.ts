@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSituationSteps, visibleStepIds } from './situationsteps'
+import { buildSituationSteps } from './situationsteps'
 import type { TracedNetwork } from '../trace'
 
 const NETWORK: TracedNetwork = {
@@ -52,14 +52,4 @@ describe('buildSituationSteps', () => {
     expect(steps.find((s) => s.id === 'diameters')?.sourceKey).toBe('diametersPlan')
   })
 
-  it('visibleStepIds grows with the playback position', () => {
-    const steps = buildSituationSteps({
-      network: NETWORK,
-      pipeDiameterMm: new Map(),
-      buildingsCount: 0,
-    })
-    expect(visibleStepIds(steps, 0).size).toBe(0)
-    expect([...visibleStepIds(steps, 2)]).toEqual(['context', 'corridor'])
-    expect(visibleStepIds(steps, 99).size).toBe(steps.length)
-  })
 })

@@ -108,8 +108,3 @@ export function buildSituationSteps(input: SituationStepsInput): SituationStep[]
   ]
   return steps
 }
-
-/** Step ids visible at playback position `index` (0 = nothing drawn yet). */
-export function visibleStepIds(steps: SituationStep[], index: number): Set<SituationStepId> {
-  return new Set(steps.slice(0, Math.max(0, Math.min(index, steps.length))).map((s) => s.id))
-}

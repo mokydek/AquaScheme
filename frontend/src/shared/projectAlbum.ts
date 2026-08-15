@@ -320,6 +320,183 @@ function cadContextSvg(
 }
 
 /**
+ * Ситуационная схема по загруженной топооснове.
+ *
+ * Схему рисовал самодельный отрисовщик `SchemeView`: белый лист, синяя ломаная,
+ * условная «подоснова» из координат зданий. Он не показывал НИЧЕГО из
+ * загруженного чертежа — ни улиц, ни существующих сетей, ни красных линий, —
+ * и решение владельца было записано давно: схема строится по топосъёмке.
+ *
+ * Здесь второго отрисовщика не заводится. Подоснова выводится тем же
+ * `cadContextSvg`, что и на плановых листах, теми же измеренными стилями и с
+ * тем же прореживанием; сверху ложится проектная графика. Схема отличается от
+ * планового листа только кадром — обзорным на весь объект — и составом
+ * надписей: она обзорная, а не рабочая.
+ *
+ * Кадр берётся по факту геометрии: экстент трассы плюс буфер, пропорции — как
+ * вышло. Растягивать объект в фиксированные пропорции нельзя, это правило
+ * `layerPreview`, и на вытянутой вдоль улицы трассе оно особенно заметно.
+ */
+export interface SituationSchemeInput {
+  /** Проектная сеть: узлы и участки в координатах проекта. */
+  network: TracedNetwork
+  /** Подоснова в том же виде, что у плановых листов. */
+  constraints?: ProjectAlbumInput['constraints']
+  /** Диаметры участков для подписи. */
+  pipeDiameterMm?: Map<string, number>
+  /** Контуры полосы отвода, когда она загружена. */
+  corridorRings?: Array<Array<{ x: number; y: number }>>
+  /** Расход на выпуске, л/с. */
+  outletFlowLps?: number
+  title: string
+}
+
+export interface SituationSchemeResult {
+  svg: string
+  /** Масштаб схемы: знаменатель, округлённый до ряда. */
+  scaleDenominator: number
+  /** Линий подосновы выведено и отброшено прореживанием. */
+  contextLines: number
+  droppedLines: number
+  /** Слои, которых в проекте нет: называются строкой, а не молчанием. */
+  missing: Array<'topobase' | 'corridor'>
+}
+
+/** Ряд масштабов ситуационных схем: обзорный лист крупнее рабочего. */
+const SCHEME_SCALES = [500, 1000, 2000, 5000, 10000] as const
+/** Буфер вокруг трассы, доля габарита. */
+const SCHEME_MARGIN_SHARE = 0.12
+/**
+ * Предел линий подосновы на обзорной схеме.
+ *
+ * Он ЖЁСТЧЕ, чем у планового листа (6000): схема обзорная, вся трасса в одном
+ * кадре, и тринадцать тысяч линий превратились бы в чёрное пятно и в секунды
+ * ожидания. На плановых листах предел не трогается — там читают чертёж.
+ */
+const SCHEME_CONTEXT_LIMIT = 2500
+
+export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationSchemeResult {
+  const nodes = input.network.nodes.filter((node) => Number.isFinite(node.x) && Number.isFinite(node.y))
+  const missing: SituationSchemeResult['missing'] = []
+  const contextSource = input.constraints?.cadContextLines ?? []
+  if (contextSource.length === 0) missing.push('topobase')
+  if (!input.corridorRings || input.corridorRings.length === 0) missing.push('corridor')
+
+  if (nodes.length === 0) {
+    return { svg: '', scaleDenominator: SCHEME_SCALES[0], contextLines: 0, droppedLines: 0, missing }
+  }
+
+  const xs = nodes.map((node) => node.x)
+  const ys = nodes.map((node) => node.y)
+  const spanX = Math.max(...xs) - Math.min(...xs)
+  const spanY = Math.max(...ys) - Math.min(...ys)
+  const marginM = Math.max(spanX, spanY, 1) * SCHEME_MARGIN_SHARE
+  const bounds = {
+    minX: Math.min(...xs) - marginM,
+    maxX: Math.max(...xs) + marginM,
+    minY: Math.min(...ys) - marginM,
+    maxY: Math.max(...ys) + marginM,
+  }
+  const widthM = bounds.maxX - bounds.minX
+  const heightM = bounds.maxY - bounds.minY
+
+  // Пропорции кадра — по факту геометрии. Ширина в единицах SVG постоянна,
+  // высота считается из отношения сторон объекта.
+  const canvasWidth = 1000
+  const canvasHeight = Math.max(320, Math.min(1400, Math.round(canvasWidth * (heightM / Math.max(widthM, 1e-9)))))
+  const frame = 24
+  const scale = Math.min(
+    (canvasWidth - 2 * frame) / Math.max(widthM, 1e-9),
+    (canvasHeight - 2 * frame) / Math.max(heightM, 1e-9),
+  )
+  const project = (point: { x: number; y: number }) => ({
+    x: frame + (point.x - bounds.minX) * scale,
+    // Север вверх: ось Y чертежа растёт вверх, экранная — вниз.
+    y: canvasHeight - frame - (point.y - bounds.minY) * scale,
+  })
+
+  // Масштаб — из ряда, ближайший НЕ мельче фактического: подписывать 1:437
+  // нельзя, а округление вниз соврало бы в сторону крупного.
+  const metresPerSvgUnit = 1 / scale
+  const actualDenominator = metresPerSvgUnit * 1000
+  const scaleDenominator = SCHEME_SCALES.find((value) => value >= actualDenominator)
+    ?? SCHEME_SCALES[SCHEME_SCALES.length - 1]
+
+  const svgUnitsPerMm = scale / scaleMillimetresPerMetre(scaleDenominator)
+  const kept = sampled(contextSource.filter((line) => intersectsBounds(line.points, bounds)), SCHEME_CONTEXT_LIMIT)
+  const context = cadContextSvg(
+    { ...(input.constraints ?? {}), cadContextLines: kept } as ProjectAlbumInput['constraints'],
+    project,
+    bounds,
+    svgUnitsPerMm,
+  )
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+  const route = input.network.pipes.flatMap((pipe) => {
+    const from = nodeById.get(pipe.fromNode)
+    const to = nodeById.get(pipe.toNode)
+    if (!from || !to) return []
+    const a = project(from)
+    const b = project(to)
+    const diameterMm = input.pipeDiameterMm?.get(pipe.id)
+    const label = diameterMm
+      ? `<text x="${((a.x + b.x) / 2).toFixed(1)}" y="${((a.y + b.y) / 2 - 4).toFixed(1)}" font-size="${planFontSize(svgUnitsPerMm).toFixed(2)}" fill="${planColour('designedPipe')}">Ø${diameterMm}</text>`
+      : ''
+    return [`<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" ${planStroke('designedPipe', svgUnitsPerMm)} stroke-linecap="round"/>${label}`]
+  }).join('')
+
+  const wells = nodes.map((node) => {
+    const point = project(node)
+    const isOutlet = node.kind === 'outlet' || node.kind === 'outfall' || node.kind === 'source'
+      || node.kind === 'lns_inlet' || node.kind === 'pumping_station'
+    const radius = Math.max(1.6, 1.1 * svgUnitsPerMm)
+    const mark = isOutlet
+      ? `<rect x="${(point.x - radius).toFixed(1)}" y="${(point.y - radius).toFixed(1)}" width="${(radius * 2).toFixed(1)}" height="${(radius * 2).toFixed(1)}" fill="${planColour('designedPipe')}"/>`
+      : `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="#fff" ${planStroke('designedPipe', svgUnitsPerMm)}/>`
+    const label = node.label ?? node.id
+    return `${mark}<text x="${(point.x + radius + 2).toFixed(1)}" y="${(point.y - radius).toFixed(1)}" font-size="${planFontSize(svgUnitsPerMm).toFixed(2)}">${xmlText(label)}</text>`
+  }).join('')
+
+  const corridor = (input.corridorRings ?? []).map((ring) => {
+    const points = ring.map((point) => {
+      const projected = project(point)
+      return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
+    }).join(' ')
+    return `<polyline data-scheme-corridor="true" points="${points}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`
+  }).join('')
+
+  const barMetres = SCHEME_SCALES[0] === scaleDenominator ? 20 : Math.round(scaleDenominator / 20)
+  const barWidth = barMetres * scale
+  const scaleBar = `<g transform="translate(${frame + 8} ${canvasHeight - frame - 12})" font-size="9">`
+    + `<line x1="0" y1="0" x2="${barWidth.toFixed(1)}" y2="0" stroke="#111" stroke-width="2"/>`
+    + `<line x1="0" y1="-4" x2="0" y2="4" stroke="#111"/><line x1="${barWidth.toFixed(1)}" y1="-4" x2="${barWidth.toFixed(1)}" y2="4" stroke="#111"/>`
+    + `<text x="0" y="16">0</text><text x="${barWidth.toFixed(1)}" y="16" text-anchor="middle">${barMetres} м</text>`
+    + `<text x="0" y="-8">М 1:${scaleDenominator}</text></g>`
+  const north = `<g transform="translate(${canvasWidth - frame - 24} ${frame + 34})">`
+    + '<path d="M0 26 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/>'
+    + '<text x="0" y="-6" text-anchor="middle" font-size="11">С</text></g>'
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} ${canvasHeight}"`
+    + ` data-situation-scheme="true" data-scale-denominator="${scaleDenominator}"`
+    + ` data-svg-units-per-mm="${svgUnitsPerMm.toFixed(4)}">`
+    + `<rect width="${canvasWidth}" height="${canvasHeight}" fill="#fff"/>`
+    + `<rect x="${frame}" y="${frame}" width="${canvasWidth - 2 * frame}" height="${canvasHeight - 2 * frame}" fill="none" ${planStroke('sheetFrame', svgUnitsPerMm)}/>`
+    + `<g data-scheme-context="true">${context.svg}</g>${corridor}`
+    + `<g data-scheme-route="true">${route}${wells}</g>`
+    + `${north}${scaleBar}`
+    + `<text x="${frame + 8}" y="${frame + 16}" font-size="12" font-weight="700">${xmlText(input.title)}</text>`
+    + '</svg>'
+
+  return {
+    svg,
+    scaleDenominator,
+    contextLines: kept.length,
+    droppedLines: context.droppedLines,
+    missing,
+  }
+}
+
+/**
  * Горизонтали считаются один раз на альбом и сразу по всей съёмке.
  *
  * Полистный расчёт был бы неверен: треугольники на краю окна у соседних листов
