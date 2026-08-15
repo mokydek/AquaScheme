@@ -1,4 +1,5 @@
 import {
+  designFilling,
   maxFilling,
   maxVelocityMps,
   minGravityDiameterMm,
@@ -11,6 +12,8 @@ import {
 } from './sewer'
 import type { TracedNetwork } from '../trace'
 import { agskSectionForGravityPipe } from './agsk'
+import { layReconstructionProfile } from '../reconstruction-profile'
+import type { ReconstructionProfile } from '../reconstruction-profile'
 
 /**
  * Gravity (free-surface) hydraulics for sewer (К1) and storm (К2) networks
@@ -520,6 +523,18 @@ export function solveGravityNetwork(input: {
       },
       design,
       freezingDepthM: input.freezingDepthM,
+      /**
+       * Измеренные отметки лотков существующих колодцев.
+       *
+       * Берутся из самой сети: узел, у которого отметка лотка снята с натуры,
+       * несёт её с этапа посева. Есть хотя бы две — это реконструкция, и
+       * профиль закладывается от них, а не от промерзания вниз.
+       */
+      existingInvertByNodeId: new Map(input.network.nodes.flatMap((node) => (
+        typeof node.invertElevationM === 'number' && Number.isFinite(node.invertElevationM)
+          ? [[node.id, node.invertElevationM] as const]
+          : []
+      ))),
     })
 
   return { kind: 'gravity', systemType: input.system, pipes, outletFlowLps, profile, surfaceGapNodeIds }
@@ -548,6 +563,15 @@ export interface GravityProfile {
   totalLengthM: number
   /** Pipe ids represented by this longitudinal profile, in head-to-outlet order. */
   pipeIds: string[]
+  /**
+   * Стыковка с существующими колодцами, когда профиль закладывался ею.
+   *
+   * На реконструкции положение лотка задают ИЗМЕРЕННЫЕ отметки, а не глубина
+   * промерзания: труба обязана прийти в существующий колодец. Здесь лежит
+   * отчёт о стыковке — связи, конфликты уклона и узлы мельче нормы, — чтобы
+   * всё, что строится по профилю, видело те же основания.
+   */
+  reconstruction?: ReconstructionProfile
 }
 
 /**
@@ -564,6 +588,14 @@ export function computeGravityProfile(input: {
   network: TracedNetwork
   design: Map<string, { diameterMm: number; slope: number }>
   freezingDepthM: number
+  /**
+   * Измеренные отметки лотков существующих колодцев.
+   *
+   * Есть хотя бы две — профиль закладывается от них: это реконструкция, и
+   * труба обязана состыковаться с существующей сетью. Нет — считается как
+   * прежде, от наименьшего заглубления вниз по уклону.
+   */
+  existingInvertByNodeId?: ReadonlyMap<string, number>
 }): GravityProfile | null {
   const { network, design, freezingDepthM } = input
   const outlet = network.nodes.find((n) => n.kind === 'source')
@@ -678,14 +710,56 @@ export function computeGravityProfile(input: {
     }
   })
 
-  const maxDepthM = stations.reduce((m, s) => Math.max(m, s.depthM), 0)
+  /**
+   * Реконструкция: лоток перекладывается от измеренных отметок.
+   *
+   * Выше посчитан профиль «в чистом поле» — он даёт узлы, пикетаж, отметки
+   * земли и диаметры. На реконструкции положение лотка задают не они, а
+   * существующие колодцы, и профиль перезакладывается от связей. Промерзание
+   * при этом становится проверкой, а не задатчиком.
+   */
+  const reconstruction = input.existingInvertByNodeId && input.existingInvertByNodeId.size > 0
+    ? layReconstructionProfile({
+      stations,
+      existingInvertByNodeId: input.existingInvertByNodeId,
+      minSlopeFor: (diameterMm) => minSlopeForDiameter(diameterMm)?.value
+        ?? selfCleaningSlopeFallback(diameterMm, freezingDepthM),
+      maxSlope: SLOPE_CAP,
+      minDepthFor: (diameterMm) => minimumInvertDepth(diameterMm || minGravityDiameterMm('sewer', 'street').value),
+    })
+    : undefined
+
+  const laidStations = reconstruction?.tied ? reconstruction.stations : stations
+  const maxDepthM = laidStations.reduce((m, s) => Math.max(m, s.depthM), 0)
+  const outletStation = laidStations[laidStations.length - 1]
   return {
-    stations,
+    stations: laidStations,
     maxDepthM: Math.round(maxDepthM * 100) / 100,
-    outletInvertElevationM: Math.round((invert.get(outlet.id) ?? outlet.groundElevation) * 100) / 100,
+    outletInvertElevationM: reconstruction?.tied
+      ? outletStation.invertElevationM
+      : Math.round((invert.get(outlet.id) ?? outlet.groundElevation) * 100) / 100,
     totalLengthM: Math.round(headChainage * 100) / 100,
     pipeIds: pathPipeIds,
+    ...(reconstruction ? { reconstruction } : {}),
   }
+}
+
+/**
+ * Наименьший уклон там, где норма его прямо не задаёт.
+ *
+ * Для диаметров свыше 200 мм таблицы наименьшего уклона нет: он выводится из
+ * условия наименьшей самоочищающей скорости. Величина считается той же
+ * формулой Шези-Маннинга, что и весь модуль, — своего допущения здесь нет.
+ */
+function selfCleaningSlopeFallback(diameterMm: number, _freezingDepthM: number): number {
+  const D = diameterMm || minGravityDiameterMm('sewer', 'street').value
+  const vMin = minVelocityMps(D, 'sewer').value
+  const fill = designFilling(D).value
+  const n = sewerRoughnessN('gravity').value
+  const radiusM = circularSection(D / 1000, fill).hydraulicRadiusM
+  if (!(radiusM > 0)) return 0
+  const slope = Math.pow((vMin * n) / Math.pow(radiusM, 2 / 3), 2)
+  return Math.round(slope * 1e6) / 1e6
 }
 
 export interface GravityFeasibility {

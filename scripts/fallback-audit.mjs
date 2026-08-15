@@ -47,6 +47,8 @@ const CRITICAL = [
   'engine/src/pump-catalog.ts',
   'engine/src/reconstruction.ts',
   'engine/src/reconstruction-from-survey.ts',
+  'engine/src/reconstruction-profile.ts',
+  'engine/src/existing-invert-tie.ts',
   'engine/src/existing-condition.ts',
   'engine/src/crossing-clearance.ts',
   'engine/src/crossing-triage.ts',
@@ -85,11 +87,18 @@ const PATTERNS = [
 /**
  * Исключения: подстановки, признанные законными, с обоснованием у каждой.
  *
- * Обоснование обязательно и проверяется: строка без него в список не попадает.
- * Ключ — `путь:строка:фрагмент`, чтобы правка соседнего кода не отменяла разбор
- * молча.
+ * Ключ — `путь | сама строка кода`, а НЕ номер строки. Номер казался строже,
+ * но оказался хрупким не в ту сторону: правка соседней функции сдвигала строки,
+ * и семнадцать разобранных подстановок разом теряли обоснование, поднимая
+ * храповик на ровном месте. Проверять надо код, а не его положение в файле.
+ * Правка самой строки обоснование по-прежнему снимает — этого и добивались.
  */
 const ALLOWED = JSON.parse(readFileSync(join(ROOT, 'docs', 'fallback-allowed.json'), 'utf8'))
+
+/** Ключ исключения: файл и сама строка кода, без номера и без лишних пробелов. */
+function allowKey(file, code) {
+  return `${file} | ${code.trim().replace(/\s+/g, ' ')}`
+}
 
 /** Накопитель по своей же карте: дефолт — это определение пустой суммы. */
 const ACCUMULATOR = /\.get\([^)]*\)\s*\?\?\s*0\s*\)?\s*[+\-]/
@@ -113,7 +122,7 @@ function findings() {
         for (const match of code.matchAll(pattern.re)) {
           const fragment = match[0].trim()
           if (ACCUMULATOR.test(code) || COUNTER.test(code)) continue
-          const key = `${rel}:${index + 1}:${fragment}`
+          const key = allowKey(rel, code)
           if (ALLOWED[key]) continue
           out.push({ file: rel, line: index + 1, fragment, pattern: pattern.id, code: code.trim() })
         }
