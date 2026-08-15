@@ -11,6 +11,17 @@
  * water record repeat on the rows and the first non empty value wins.
  */
 
+import { crossConfirmedValues, quantityValueKey } from './cross-source'
+import type { SourceReading } from './cross-source'
+
+/**
+ * Имя измеряемой величины для перекрёстной проверки.
+ *
+ * Именно оно не даёт подтвердить одно другим: совпадение чисел у РАЗНЫХ величин
+ * подтверждением не является, и общий механизм сравнивает пару целиком.
+ */
+const FREEZING_QUANTITY = 'freezingDepthM'
+
 export type Aggressiveness = 'low' | 'medium' | 'high'
 
 export interface GeoLayer {
@@ -506,6 +517,8 @@ export function parseGeologyReportSummary(text: string): GeologyReportSummary {
   // над таблицей и в прозе, — и окно от первого содержит только табличную
   // форму без тире, из-за чего кандидатов не находилось вовсе.
   const freezingDepthCandidates: FreezingDepthCandidate[] = []
+  /** Чтения для общей перекрёстной проверки: по одному на каждое вхождение. */
+  const freezingReadings: Array<SourceReading<number>> = []
   const anchorRe = /нормативн[а-яё]*\s+глубин[а-яё]*\s+(?:сезонн[а-яё]*\s+)?промерзан[а-яё]*/gi
   // Табличная форма: строка «грунт → величина», разделитель — табуляция,
   // тире нет, единица написана слитно («0,79м»).
@@ -531,11 +544,14 @@ export function parseGeologyReportSummary(text: string): GeologyReportSummary {
     // Это отбрасывает «среднюю из максимальных», номера ИГЭ и голые числа по
     // смыслу, а не по длине окна.
     if (soil === null || !mentionsSoil(soil)) return
+    // Каждое чтение записывается отдельно, включая повторные: подтверждение
+    // считает общий механизм, а он должен видеть все источники. Форма записи и
+    // есть источник — проза и таблица независимы друг от друга.
+    freezingReadings.push({
+      quantity: FREEZING_QUANTITY, value: valueM, source: form, quote,
+    })
     const twin = freezingDepthCandidates.find((item) => item.valueM === valueM)
     if (twin) {
-      // Одна и та же величина из ОБЕИХ форм — это перекрёстное подтверждение,
-      // а не дубликат: отчёт сказал её дважды и не разошёлся сам с собой.
-      if (twin.form !== form) twin.confirmedByBothForms = true
       if (twin.soil === null && soil !== null) twin.soil = soil
       return
     }
@@ -553,6 +569,15 @@ export function parseGeologyReportSummary(text: string): GeologyReportSummary {
         addCandidate(asProse[2], asProse[3], asProse[1] ?? null, asProse[0].trim(), 'prose')
       }
     }
+  }
+  // Перекрёстную проверку выполняет общий механизм: правило «одно и то же
+  // значение из двух независимых источников» одно на весь проект, и второго
+  // ответа на него быть не должно. Источники здесь — формы записи отчёта.
+  const confirmedFreezing = crossConfirmedValues(freezingReadings)
+  for (const candidate of freezingDepthCandidates) {
+    candidate.confirmedByBothForms = confirmedFreezing.has(
+      quantityValueKey(FREEZING_QUANTITY, candidate.valueM),
+    )
   }
   // Подтверждённые обеими формами идут первыми: инженер видит сперва то, что
   // отчёт сказал дважды и не разошёлся сам с собой.
