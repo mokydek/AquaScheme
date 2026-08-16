@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -54,6 +55,8 @@ const { DeliverablesSection } = await import('./DeliverablesSection')
 const { ReconstructionSurveySection } = await import('./ReconstructionSurveySection')
 const { TuImportSection } = await import('./TuImportSection')
 const { NormsSection } = await import('./FormSections')
+const { WaterBranchNotice } = await import('./WaterBranchNotice')
+const { NORM_REGISTRY, unverifiedClauses, READINESS_SECTIONS, WATER_BRANCH_BLOCKER_CODE } = await import('@aquascheme/engine')
 const {
   maxFilling, auditProjectProvenance, planBasinPressureLinks, extractConditionsFromTu,
   extractSurveyActFacts,
@@ -995,5 +998,64 @@ describe('продовая навигация: В1 и учебные экран�
     const markup = html(createElement(StankevichaDemoView))
     expect(markup).toContain('data-kit-wizard')
     expect(markup).toContain('kit-file-topobaseFull')
+  })
+})
+
+describe('проект В1 под выключенным флагом объясняет себя', () => {
+  const markup = html(createElement(WaterBranchNotice))
+
+  it('показывает одно состояние вместо пустоты', () => {
+    expect(markup).toContain('data-water-branch-unavailable="true"')
+    expect(markup).toContain('project.waterBranch.title')
+  })
+
+  it('числа причины берутся из реестра, а не написаны в тексте', () => {
+    // Сверят пункт — счётчик уменьшится сам. Написанное руками «22 из 28»
+    // соврало бы задним числом ровно в тот день, когда придут документы.
+    const unverified = unverifiedClauses()
+    const applicable = unverified.filter((clause) => clause.appliesSystem.includes('water')).length
+    // React экранирует кавычки в тексте, поэтому подмена словаря выводит
+    // значения как &quot;registry&quot;:75 — сверяется именно эта форма.
+    const q = '&quot;'
+    expect(markup).toContain(`${q}registry${q}:${NORM_REGISTRY.length}`)
+    expect(markup).toContain(`${q}unverified${q}:${unverified.length}`)
+    expect(markup).toContain(`${q}applicable${q}:${applicable}`)
+    // Основание промпта: 22 применимых к В1 из 28 неподтверждённых.
+    expect(unverified.length).toBe(28)
+    expect(applicable).toBe(22)
+  })
+
+  it('говорит, что данные целы и что выпуск заблокирован', () => {
+    expect(markup).toContain('data-water-branch-data="true"')
+    expect(markup).toContain('project.waterBranch.dataIntact')
+    expect(markup).toContain('data-water-branch-export="true"')
+    expect(markup).toContain('project.waterBranch.exportBlocked')
+  })
+
+  it('на экране проекта не осталось признака «не водоснабжение» через отрицание', () => {
+    // ЭТО И БЫЛ ДЕФЕКТ. Признак `!isWater` сливал два разных случая: проект
+    // канализации и проект В1 под выключенным флагом. Второму он выдавал
+    // разделы первого — каталог колодцев и каталог насосов ЛНС на экране
+    // водопроводного проекта. Разделы не просто исчезали: вместо них приходили
+    // чужие. Отрисовать ProjectPage в проверке нельзя — он тянет хранилище и
+    // маршрутизацию, — поэтому сторожем стоит сам исходник.
+    const source = readFileSync(new URL('../ProjectPage.tsx', import.meta.url), 'utf8')
+    // Комментарии срезаются: в них `!isWater` упомянут как раз затем, чтобы
+    // объяснить, почему признака больше нет.
+    const code = source.split(/\r?\n/).filter((line) => {
+      const trimmed = line.trim()
+      return !trimmed.startsWith('*') && !trimmed.startsWith('/*') && !trimmed.startsWith('//')
+    }).join(' ')
+    expect(code).not.toContain('!isWater')
+    expect(code).toContain('isWaterHidden && <WaterBranchNotice />')
+  })
+
+  it('адресует причину существующей записью карты, а не новым стоп-фактором', () => {
+    const target = READINESS_SECTIONS[WATER_BRANCH_BLOCKER_CODE]
+    expect(target).toBeTruthy()
+    expect(markup).toContain(WATER_BRANCH_BLOCKER_CODE)
+    expect(markup).toContain(`href="#${target.anchor}"`)
+    expect(markup).toContain(target.title)
+    expect(markup).toContain(target.action)
   })
 })

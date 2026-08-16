@@ -757,6 +757,15 @@ export const en = {
         measured: 'borehole',
         interpolated: 'interpolation',
       },
+      waterBranch: {
+        title: 'The В1 water-supply branch is temporarily unavailable',
+        reason: 'The reason is an unverified normative basis: of {{registry}} registry clauses, {{unverified}} are not confirmed against official editions, and all {{applicable}} that apply to water supply are among them. Showing a calculation founded on unverified clauses would pass a guess off as a norm.',
+        dataIntact: 'Project data is saved and untouched: nothing was deleted or recalculated.',
+        exportBlocked: 'Issue and export are blocked for this project for the same reason.',
+        returns: 'The branch returns with the official water-supply СН: the В1 code and calculations stay in the project and wait for the documents.',
+        whereFixed: 'Where it is cleared: {{section}} — {{action}}.',
+        openSection: 'Open the section',
+      },
       readiness: {
         title: 'Release readiness',
         summary: 'Sheets {{total}}: releasable {{verified}} ({{percent}}%), calculated {{calculated}}, preliminary {{preliminary}}, blocked {{blocked}}',

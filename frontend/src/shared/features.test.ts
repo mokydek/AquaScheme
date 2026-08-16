@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { trainingScreensEnabled, waterSupplyEnabled } from './features'
+import { trainingScreensEnabled, waterBranchState, waterSupplyEnabled } from './features'
 
 /**
  * Флаг проверяется в ОБОИХ положениях.
@@ -33,5 +33,25 @@ describe('признаки сборки', () => {
     expect(trainingScreensEnabled()).toBe(true)
     vi.stubEnv('DEV', false)
     expect(trainingScreensEnabled()).toBe(false)
+  })
+})
+
+describe('состояние ветки В1 на экране проекта', () => {
+  it('под выключенным флагом проект В1 — скрытая ветка, а не «не водоснабжение»', () => {
+    // Разница не косметическая: пока состояний было два, `!isWater` у проекта
+    // В1 оказывалось истиной, и на его экран приходили каталог колодцев и
+    // каталог насосов ЛНС — разделы канализации.
+    vi.stubEnv('VITE_WATER_SUPPLY', '')
+    expect(waterBranchState('water')).toBe('hidden')
+    expect(waterBranchState('sewer')).toBe('not-water')
+    expect(waterBranchState('storm')).toBe('not-water')
+  })
+
+  it('под включённым флагом ветка доступна и всё как было', () => {
+    vi.stubEnv('VITE_WATER_SUPPLY', 'on')
+    expect(waterBranchState('water')).toBe('available')
+    // К1 и К2 положением флага не задеты ни в одном из них.
+    expect(waterBranchState('sewer')).toBe('not-water')
+    expect(waterBranchState('storm')).toBe('not-water')
   })
 })

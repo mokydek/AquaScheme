@@ -30,3 +30,22 @@ export function waterSupplyEnabled(): boolean {
 export function trainingScreensEnabled(): boolean {
   return import.meta.env.DEV === true
 }
+
+/**
+ * Что показывать проекту в зависимости от системы и положения флага.
+ *
+ * Три состояния, а не два. Пока признак был один (`systemType === 'water' &&
+ * waterSupplyEnabled()`), «не водоснабжение» и «водоснабжение под выключенным
+ * флагом» сливались в одно `false`, и проект В1 получал разделы канализации:
+ * `!isWater` оказывалось истиной, и на экране появлялись каталог колодцев и
+ * каталог насосов ЛНС. Разделы не просто исчезали — вместо них приходили чужие.
+ *
+ * `hidden` — не «нет данных» и не «нет системы». Это состояние, у которого есть
+ * причина, и экран обязан её назвать.
+ */
+export type WaterBranchState = 'available' | 'hidden' | 'not-water'
+
+export function waterBranchState(systemType: string): WaterBranchState {
+  if (systemType !== 'water') return 'not-water'
+  return waterSupplyEnabled() ? 'available' : 'hidden'
+}

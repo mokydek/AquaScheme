@@ -16,6 +16,7 @@ import { CrossingsSection } from './project/CrossingsSection'
 import { DemandSection } from './project/DemandSection'
 import { TraceSection } from './project/TraceSection'
 import { HydraulicsSection } from './project/HydraulicsSection'
+import { WaterBranchNotice } from './project/WaterBranchNotice'
 import { EquipmentSection } from './project/EquipmentSection'
 import { ResultsSection } from './project/ResultsSection'
 import { ExportSection } from './project/ExportSection'
@@ -32,7 +33,7 @@ import { ReconstructionSurveySection } from './project/ReconstructionSurveySecti
 import { SourceBundleRunSection } from './project/SourceBundleRunSection'
 import { TuImportSection } from './project/TuImportSection'
 import { StankevichaDemoView } from './project/StankevichaDemoView'
-import { trainingScreensEnabled, waterSupplyEnabled } from '../shared/features'
+import { trainingScreensEnabled, waterBranchState } from '../shared/features'
 import { fetchExisting } from '../shared/existing'
 import type { ExistingPipeRow } from '../shared/existing'
 import { GeologySection } from './project/GeologySection'
@@ -540,13 +541,24 @@ export function ProjectPage() {
   const systemType = project?.system_type ?? 'water'
   const workType = project?.work_type ?? 'new'
   /**
-   * Ветка В1 на экране проекта.
+   * Ветка В1 на экране проекта: три состояния, а не два.
    *
    * Закрыта флагом: расчёт водоснабжения опирается на несверенные пункты
-   * реестра. Проект В1, созданный до скрытия, при выключенном флаге показывает
-   * только общие разделы — данные при этом не трогаются и не теряются.
+   * реестра. Проект В1, созданный до скрытия, ОТКРЫВАЕТСЯ и данные его целы —
+   * но вместо исчезнувших разделов показывает объяснение, а не пустоту.
    */
-  const isWater = systemType === 'water' && waterSupplyEnabled()
+  const waterBranch = waterBranchState(systemType)
+  const isWater = waterBranch === 'available'
+  /**
+   * Проект В1 под выключенным флагом.
+   *
+   * Отличать это состояние от «не водоснабжение» ОБЯЗАТЕЛЬНО. Один признак
+   * `isWater` на оба случая давал проекту В1 разделы канализации: `!isWater`
+   * оказывалось истиной, и на экране водопроводного проекта появлялись каталог
+   * колодцев и каталог насосов ЛНС. Разделы не просто исчезали — вместо них
+   * приходили чужие.
+   */
+  const isWaterHidden = waterBranch === 'hidden'
   const isSewer = systemType === 'sewer'
   const isStorm = systemType === 'storm'
   const effectiveRouteStatus = (isSewer || isStorm)
@@ -862,6 +874,7 @@ export function ProjectPage() {
               onChanged={load}
             />
           )}
+          {isWaterHidden && <WaterBranchNotice />}
           {isWater && (
             <>
               <ImportSection
@@ -927,7 +940,7 @@ export function ProjectPage() {
             </>
           )}
           <TopographySection projectId={project.id} dataset={datasets.topography} verticalPlanDataset={datasets.vertical_plan} onSaved={load} />
-          {!isWater && (
+          {(isSewer || isStorm) && (
             <>
               <CatalogSection
                 projectId={project.id}

@@ -171,3 +171,53 @@ export function summarizeReadiness(set: WorkingDrawingSet): ProjectReadiness {
           + `пригодны к выпуску ${byStatus.VERIFIED}. Наибольшая: ${issues[0].code} — ${issues[0].sheetCount} листов.`,
   }
 }
+
+/**
+ * Почему ветка водоснабжения В1 закрыта — числами из реестра, а не словами.
+ *
+ * Флаг `VITE_WATER_SUPPLY` скрывает В1 не по прихоти: расчёт водоснабжения
+ * опирается на пункты, которые не сверены с официальными редакциями. Пока экран
+ * просто прятал разделы, инженер видел проект, который «сломался», и причины не
+ * знал — отсутствие было выражено ПУСТОТОЙ, а не названо.
+ *
+ * Числа СЧИТАЮТСЯ ПО РЕЕСТРУ и не пишутся в текст руками: сверят пункт —
+ * счётчик уменьшится сам, и экран не соврёт задним числом.
+ *
+ * Нового стоп-фактора здесь не заводится. Причина уже есть в общей карте —
+ * `NORMS_REQUIRE_REVIEW`, — и адрес берётся оттуда же, откуда его берут все
+ * остальные причины: раздел, якорь и действие.
+ */
+export interface WaterBranchNormStatus {
+  /** Всего записей нормативного реестра. */
+  registryClauses: number
+  /** Из них неподтверждённых. */
+  unverifiedClauses: number
+  /** Из неподтверждённых — применимых к водоснабжению. */
+  applicableToWater: number
+  /** Код причины из общей карты: новый не заводится. */
+  code: string
+  /** Раздел, якорь и действие — те же, что у этой причины на листах. */
+  target: ReadinessTarget
+}
+
+/** Код причины, по которой закрыта ветка В1. Из общей карты, не новый. */
+export const WATER_BRANCH_BLOCKER_CODE = 'NORMS_REQUIRE_REVIEW'
+
+export function waterBranchNormStatus(
+  clauses: ReadonlyArray<{ appliesSystem: readonly string[] }>,
+  registrySize: number,
+): WaterBranchNormStatus {
+  const target = SECTION_BY_CODE[WATER_BRANCH_BLOCKER_CODE]
+  if (target === undefined) {
+    // Карта причин и этот экран обязаны опираться на одну запись. Пропала
+    // запись — это дефект сборки, а не повод показать причину без адреса.
+    throw new Error(`Причина ${WATER_BRANCH_BLOCKER_CODE} исчезла из карты разделов.`)
+  }
+  return {
+    registryClauses: registrySize,
+    unverifiedClauses: clauses.length,
+    applicableToWater: clauses.filter((clause) => clause.appliesSystem.includes('water')).length,
+    code: WATER_BRANCH_BLOCKER_CODE,
+    target,
+  }
+}
