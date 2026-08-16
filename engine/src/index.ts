@@ -89,3 +89,6 @@ export * from './norms/conditions-text'
 export * from './norms/conditions-tu'
 export * from './scan-table'
 export * from './utility-marks'
+// Тип итога перезакладки профиля: он лежит в GravityProfile.reconstruction, и
+// экран, который его показывает, обязан уметь его назвать.
+export * from './reconstruction-profile'

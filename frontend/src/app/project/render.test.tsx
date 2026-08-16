@@ -56,6 +56,7 @@ const { ReconstructionSurveySection } = await import('./ReconstructionSurveySect
 const { TuImportSection } = await import('./TuImportSection')
 const { NormsSection } = await import('./FormSections')
 const { WaterBranchNotice } = await import('./WaterBranchNotice')
+const { ReconstructionProfileNotes } = await import('./ReconstructionProfileNotes')
 const { NORM_REGISTRY, unverifiedClauses, READINESS_SECTIONS, WATER_BRANCH_BLOCKER_CODE } = await import('@aquascheme/engine')
 const {
   maxFilling, auditProjectProvenance, planBasinPressureLinks, extractConditionsFromTu,
@@ -1057,5 +1058,66 @@ describe('проект В1 под выключенным флагом объяс
     expect(markup).toContain(`href="#${target.anchor}"`)
     expect(markup).toContain(target.title)
     expect(markup).toContain(target.action)
+  })
+})
+
+describe('перезакладка профиля от измеренных лотков — на экране', () => {
+  /**
+   * Четыре обратных уклона объекта Станкевича. Движок находил их с самого
+   * появления `layReconstructionProfile`, складывал в `profile.reconstruction`
+   * — и ни один вид этого не читал. Инженер видел глубины 2,91…4,50 м и не
+   * знал, что четыре участка из тринадцати текут против уклона.
+   */
+  const reconstruction = {
+    stations: [],
+    tieNodeIds: ['ВК-1', 'ВК-2', 'ВК-3'],
+    tied: true,
+    reason: 'Профиль заложен от измеренных отметок: связей 14 из 14 узлов.',
+    shallow: [],
+    conflicts: [
+      {
+        fromNodeId: 'ВК-2', toNodeId: 'ВК-3', lengthM: 69.75,
+        actualSlope: -0.01104, minSlope: 0.00227, maxSlope: 0.1, kind: 'counter',
+        message: 'Лоток поднимается против течения.',
+      },
+      {
+        fromNodeId: 'ВК-13', toNodeId: 'ВК-14', lengthM: 29.36,
+        actualSlope: -0.02827, minSlope: 0.00227, maxSlope: 0.1, kind: 'counter',
+        message: 'Лоток поднимается против течения.',
+      },
+    ],
+  }
+  const markup = html(createElement(ReconstructionProfileNotes, { reconstruction } as never))
+
+  it('называет каждый участок, его уклон со знаком и норму', () => {
+    expect(markup).toContain('data-reconstruction-notes="true"')
+    expect(markup).toContain('ВК-2')
+    expect(markup).toContain('ВК-3')
+    // Знак сохраняется: минус здесь и есть весь смысл строки.
+    expect(markup).toContain('-11.04')
+    expect(markup).toContain('-28.27')
+    // Норма рядом, иначе число не с чем сравнить.
+    expect(markup).toContain('2.27')
+    expect(markup).toContain('data-slope-conflict="counter"')
+    // Сообщение движка доходит дословно, а не пересказывается видом.
+    expect(markup).toContain('Лоток поднимается против течения.')
+  })
+
+  it('задаёт владельцу вопрос, на который он отвечает одним предложением', () => {
+    expect(markup).toContain('data-reconstruction-question="true"')
+    expect(markup).toContain('project.gravity.reconstruction.question')
+    // React экранирует кавычки: подмена словаря выводит &quot;count&quot;:2.
+    expect(markup).toContain('&quot;count&quot;:2')
+  })
+
+  it('без конфликтов не поднимает ложной тревоги, а без перезакладки молчит', () => {
+    const clean = html(createElement(ReconstructionProfileNotes, {
+      reconstruction: { ...reconstruction, conflicts: [] },
+    } as never))
+    expect(clean).toContain('data-reconstruction-notes="true"')
+    expect(clean).not.toContain('data-reconstruction-question')
+    expect(clean).toContain('stat-line ok')
+    // Профиля реконструкции нет вовсе (новое строительство) — вида тоже нет.
+    expect(html(createElement(ReconstructionProfileNotes, {} as never))).toBe('')
   })
 })

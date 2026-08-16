@@ -43,6 +43,7 @@ import { networkFromRows } from '../../shared/network'
 import { readTechnicalConditions } from '../../shared/technicalConditions'
 import type { NodeRow, PipeRow } from '../../shared/network'
 import { loadActiveCatalogNominalDiameters, resolveGravityCatalog } from '../../shared/catalog'
+import { ReconstructionProfileNotes } from './ReconstructionProfileNotes'
 import { readRouteConstraints } from '../../shared/dxfContext'
 import { saveDataset } from '../../shared/datasets'
 import type { BuildingRow, DatasetRow } from '../../shared/datasets'
@@ -1364,6 +1365,13 @@ export function GravitySection({
                 {gravityPlan.invertTie.reason}
               </p>
             )}
+            {/*
+              Итог перезакладки профиля от измеренных лотков. Движок считал его
+              и раньше — конфликты уклона, мелкие узлы, опорные связи, — но ни
+              один вид его не читал: на объекте Станкевича четыре участка из
+              тринадцати текут против уклона, и инженер об этом не знал.
+            */}
+            <ReconstructionProfileNotes reconstruction={result?.profile?.reconstruction} />
             <p className={`stat-line${gravityPlan.feasibility.feasible ? ' ok' : ' warn'}`}>
               {gravityPlan.feasibility.reason}
             </p>
