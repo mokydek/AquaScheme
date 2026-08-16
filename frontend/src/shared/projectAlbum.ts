@@ -22,7 +22,7 @@ import {
   planStroke,
 } from './planStyles'
 import type { PlanLineRole } from './planStyles'
-import { allocatePlanLineBudget, planSourceLines } from './planLayerRole'
+import { allocatePlanLineBudget, namedSetLines, planSourceLines } from './planLayerRole'
 import type { PlanSourceLine, PlanSourceLines, RoleLineBudget } from './planLayerRole'
 import { buildPlanSheetScene, clipPlanPolyline } from './planScene'
 import type { PlanPipeDesign } from './planScene'
@@ -450,6 +450,46 @@ function lineMarkSvg(
 }
 
 /**
+ * Замкнутые контуры листа — ОДИН БЛОК НА ВСЕ ЛИСТЫ.
+ *
+ * Кольца рисует не общий проход `cadContextSvg`, а этот блок: заливка и обводка
+ * полигона — не то же самое, что ломаная, и часть колец приходит не из чертежа
+ * вовсе (генплан даёт `buildingPolygons`). Линии, ставшие кольцом, `planSourceLines`
+ * отсеивает по признаку `drawnAsRing`, поэтому второго следа не будет.
+ *
+ * Блок жил только у планового листа, и это стоило схеме всей застройки:
+ * замкнутый контур здания с чертежа отсеивался как «уже нарисован кольцом», а
+ * рисовать его было некому — у обзорной схемы блока колец не было. У Станкевича
+ * так пропадали шестнадцать зданий, то есть ровно то, ради чего схему и смотрят.
+ *
+ * Полоса отвода приходит ОДНИМ АРГУМЕНТОМ, а не читается отсюда из
+ * `constraints`: у схемы есть собственный вход для неё, и два источника внутри
+ * одной функции давали бы двойной след. Кто источник — решает вызывающий лист.
+ */
+function planRingsSvg(
+  constraints: ProjectAlbumInput['constraints'],
+  corridorRings: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>,
+  linePoints: (points: Array<{ x: number; y: number }>) => string,
+  svgUnitsPerMm: number,
+): string {
+  const rings: Array<[PlanLineRole, ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> | undefined]> = [
+    ['existingBuilding', constraints?.hardObstacleRings],
+    ['existingBuilding', constraints?.buildingPolygons],
+    ['topobase', constraints?.parcelRings],
+    ['corridor', constraints?.forbiddenRings],
+    ['corridor', constraints?.protectionZoneRings],
+    ['corridor', constraints?.protectionZones],
+    ['corridor', constraints?.approvedCrossingRings],
+    ['corridor', constraints?.approvedCrossingZones],
+    ['water', constraints?.waterRings],
+    ['corridor', corridorRings],
+  ]
+  return rings.flatMap(([role, group]) => (group ?? []).map((ring) =>
+    `<polygon data-plan-ring="${role}" points="${linePoints([...ring])}" fill="none" ${planStroke(role, svgUnitsPerMm)}/>`))
+    .join('')
+}
+
+/**
  * Названия ролей в условных обозначениях.
  *
  * Ровно по одному на роль таблицы стилей: роль без названия не попала бы в
@@ -621,7 +661,10 @@ export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationS
   const missing: SituationSchemeResult['missing'] = []
   const contextSource = input.constraints?.cadContextLines ?? []
   if (contextSource.length === 0) missing.push('topobase')
-  if (!input.corridorRings || input.corridorRings.length === 0) missing.push('corridor')
+  // Пробел называется по ФАКТУ: полосы отвода нет ни на собственном входе схемы,
+  // ни в наборе с чертежа. Раньше проверялся только вход, и схема, получившая
+  // полосу отвода вместе с чертежом, всё равно объявляла её отсутствующей.
+  if ((input.corridorRings ?? input.constraints?.corridorRings ?? []).length === 0) missing.push('corridor')
 
   if (nodes.length === 0) {
     return { svg: '', scaleDenominator: SCHEME_SCALES[0], contextLines: 0, droppedLines: 0, roles: [], missing }
@@ -714,13 +757,29 @@ export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationS
     return `${mark}<text x="${(point.x + radius + 2).toFixed(1)}" y="${(point.y - radius).toFixed(1)}" font-size="${planFontSize(svgUnitsPerMm).toFixed(2)}">${xmlText(label)}</text>`
   }).join('')
 
-  const corridor = (input.corridorRings ?? []).map((ring) => {
-    const points = ring.map((point) => {
+  /**
+   * Замкнутые контуры схемы — тот же блок, что и у планового листа.
+   *
+   * Прежде схема рисовала ОДНУ полосу отвода и больше ничего: ни зданий, ни
+   * зон, ни водоёмов. Пока замкнутые контуры доходили до неё общим проходом
+   * подосновы — чёрным волосом, — потеря была незаметна; с появлением ролей
+   * такой контур стал отсеиваться как «уже нарисован кольцом», а рисовать его
+   * на схеме было некому.
+   *
+   * Полоса отвода берётся ИЗ ОДНОГО источника: собственный вход схемы, а если
+   * его не заполнили — то, что пришло с чертежом. Два источника внутри одного
+   * блока дали бы двойной след.
+   */
+  const schemeCorridorRings = input.corridorRings ?? input.constraints?.corridorRings ?? []
+  const rings = planRingsSvg(
+    input.constraints,
+    schemeCorridorRings,
+    (points) => points.map((point) => {
       const projected = project(point)
       return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`
-    }).join(' ')
-    return `<polyline data-scheme-corridor="true" points="${points}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`
-  }).join('')
+    }).join(' '),
+    svgUnitsPerMm,
+  )
 
   const barMetres = SCHEME_SCALES[0] === scaleDenominator ? 20 : Math.round(scaleDenominator / 20)
   const barWidth = barMetres * scale
@@ -738,7 +797,7 @@ export function buildSituationSchemeSvg(input: SituationSchemeInput): SituationS
     + ` data-svg-units-per-mm="${svgUnitsPerMm.toFixed(4)}">`
     + `<rect width="${canvasWidth}" height="${canvasHeight}" fill="#fff"/>`
     + `<rect x="${frame}" y="${frame}" width="${canvasWidth - 2 * frame}" height="${canvasHeight - 2 * frame}" fill="none" ${planStroke('sheetFrame', svgUnitsPerMm)}/>`
-    + `<g data-scheme-context="true">${context.svg}</g>${corridor}`
+    + `<g data-scheme-context="true">${context.svg}</g><g data-scheme-rings="true">${rings}</g>`
     + `<g data-scheme-route="true">${route}${wells}</g>`
     + `${north}${scaleBar}`
     + `<text x="${frame + 8}" y="${frame + 16}" font-size="12" font-weight="700">${xmlText(input.title)}</text>`
@@ -790,7 +849,7 @@ function contourSvg(relief: ContourResult, project: SvgProjector, bounds: Bounds
       parts.push(
         `<polyline data-contour="${line.levelM}" points="${projected
           .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')}"`
-        + ` fill="none" stroke="#8a6b3d" stroke-width="${line.index ? 1.1 : 0.6}"`
+        + ` fill="none" stroke="${planColour('contour')}" stroke-width="${line.index ? 1.1 : 0.6}"`
         + ' stroke-linejoin="round" stroke-opacity="0.85"/>',
       )
       if (!line.index || projected.length < 3) continue
@@ -806,7 +865,7 @@ function contourSvg(relief: ContourResult, project: SvgProjector, bounds: Bounds
       parts.push(
         `<g transform="translate(${middle.x.toFixed(1)} ${middle.y.toFixed(1)}) rotate(${angle.toFixed(1)})">`
         + '<rect x="-11" y="-4.5" width="22" height="9" fill="#fff" fill-opacity="0.9"/>'
-        + `<text x="0" y="2.5" text-anchor="middle" font-size="6.5" fill="#8a6b3d">${line.levelM.toFixed(2)}</text></g>`,
+        + `<text x="0" y="2.5" text-anchor="middle" font-size="6.5" fill="${planColour('contour')}">${line.levelM.toFixed(2)}</text></g>`,
       )
     }
   }
@@ -927,31 +986,11 @@ function planSvg(
   }).join(' ')
   const placer = labelPlacer()
   const fontSize = planFontSize(svgUnitsPerMm)
-  /**
-   * ЗАМКНУТЫЕ КОНТУРЫ — и только они.
-   *
-   * Линейной графики здесь больше нет: дороги, водотоки, существующие сети,
-   * красные линии, оси и препятствия приходят на лист из `cadContextSvg`, где
-   * каждая линия рисуется один раз и в стиле своей роли. Прежде тот же набор
-   * выводился ЗДЕСЬ вторым проходом поверх чёрной копии самого себя — отсюда и
-   * двойная линия, и лишние чернила.
-   *
-   * Кольца остаются: разбор чертежа складывает замкнутые контуры зданий, зон и
-   * полосы отвода в отдельные наборы, часть из них приходит не из чертежа
-   * вовсе (генплан даёт `buildingPolygons`), и заливка/обводка полигона — не то
-   * же самое, что ломаная. Линии, ставшие кольцом, `planSourceLines` отсеивает
-   * по признаку `closed`, поэтому второго следа не будет и здесь.
-   */
-  const constraints = [
-    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.buildingPolygons ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('existingBuilding', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.parcelRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('topobase', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.forbiddenRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
-    ...[...(input.constraints?.protectionZoneRings ?? []), ...(input.constraints?.protectionZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
-    ...[...(input.constraints?.approvedCrossingRings ?? []), ...(input.constraints?.approvedCrossingZones ?? [])].map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('water', svgUnitsPerMm)}/>`),
-    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', svgUnitsPerMm)}/>`),
-  ].join('')
+  // Замкнутые контуры — общим блоком, тем же, что и у ситуационной схемы.
+  // Полоса отвода у планового листа одна: та, что пришла с чертежом.
+  const constraints = planRingsSvg(
+    input.constraints, input.constraints?.corridorRings ?? [], linePoints, svgUnitsPerMm,
+  )
   const relief = albumContours(input.surveyPoints)
   const contours = contourSvg(relief, project, {
     minX: window.minX,
@@ -973,8 +1012,8 @@ function planSvg(
     const label = xmlText(node.label)
     const labelWidth = Math.max(28, node.label.length * 5.2)
     const symbol = node.kind === 'source'
-      ? `<rect x="${(projected.x - 4).toFixed(1)}" y="${(projected.y - 4).toFixed(1)}" width="8" height="8" fill="#fff" stroke="#1746b5" stroke-width="2"/>`
-      : `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="4" fill="#fff" stroke="#1746b5" stroke-width="2"/>`
+      ? `<rect x="${(projected.x - 4).toFixed(1)}" y="${(projected.y - 4).toFixed(1)}" width="8" height="8" fill="#fff" stroke="${planColour('designedPipe')}" stroke-width="2"/>`
+      : `<circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="4" fill="#fff" stroke="${planColour('designedPipe')}" stroke-width="2"/>`
     // Восемь мест вокруг колодца: справа-сверху, слева-сверху, справа-снизу и
     // так далее. Обозначение колодца обязано остаться на листе, поэтому если
     // свободного места нет, подпись ставится в первое предложенное — лучше
@@ -1013,7 +1052,7 @@ function planSvg(
     }))
     const box = placer.place(candidates) ?? candidates[0]
     const dy = box.y + boxH / 2 - projected.y
-    return `<g data-plan-pipe-label="${xmlText(pipe.pipeId)}" transform="translate(${projected.x.toFixed(1)} ${(projected.y + dy).toFixed(1)}) rotate(${-pipe.labelAngleDeg.toFixed(2)})"><rect x="-3" y="-9" width="${w.toFixed(1)}" height="13" fill="#fff" fill-opacity="0.9" stroke="#1746b5" stroke-width="0.5"/><text x="1" y="0" font-size="7.5" fill="#1746b5">${xmlText(pipe.label)}</text></g>`
+    return `<g data-plan-pipe-label="${xmlText(pipe.pipeId)}" transform="translate(${projected.x.toFixed(1)} ${(projected.y + dy).toFixed(1)}) rotate(${-pipe.labelAngleDeg.toFixed(2)})"><rect x="-3" y="-9" width="${w.toFixed(1)}" height="13" fill="#fff" fill-opacity="0.9" stroke="${planColour('designedPipe')}" stroke-width="0.5"/><text x="1" y="0" font-size="7.5" fill="${planColour('designedPipe')}">${xmlText(pipe.label)}</text></g>`
   }).join('')
 
   const stationMarks = scene.stations.map((station) => {
@@ -1021,7 +1060,7 @@ function planSvg(
     const matchLine = station.boundary
       ? `<line x1="${projected.x.toFixed(1)}" y1="55" x2="${projected.x.toFixed(1)}" y2="425" stroke="#d33" stroke-width="0.8" stroke-dasharray="5 4"/>`
       : ''
-    const mark = `${matchLine}<g data-plan-station="${station.chainageM.toFixed(2)}"><line x1="${projected.x.toFixed(1)}" y1="${(projected.y - 6).toFixed(1)}" x2="${projected.x.toFixed(1)}" y2="${(projected.y + 6).toFixed(1)}" stroke="#111" stroke-width="0.8"/><circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="2.2" fill="#fff" stroke="#1746b5"/>`
+    const mark = `${matchLine}<g data-plan-station="${station.chainageM.toFixed(2)}"><line x1="${projected.x.toFixed(1)}" y1="${(projected.y - 6).toFixed(1)}" x2="${projected.x.toFixed(1)}" y2="${(projected.y + 6).toFixed(1)}" stroke="#111" stroke-width="0.8"/><circle cx="${projected.x.toFixed(1)}" cy="${projected.y.toFixed(1)}" r="2.2" fill="#fff" stroke="${planColour('designedPipe')}"/>`
     // Штрих пикета остаётся всегда, подпись — только если для неё есть место:
     // пикетаж читается и по соседним подписям, а мешанина не читается вовсе.
     const width = Math.max(24, station.label.length * 4.6)
@@ -1121,7 +1160,7 @@ function planSvg(
     'designedPipe',
     ...context.roles.filter((item) => item.drawn > 0).map((item) => item.role),
   ], svgUnitsPerMm, [
-    { symbol: (x, y) => `<circle cx="${(x + 11).toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#fff" stroke="#1746b5"/>`, label: 'колодец / камера' },
+    { symbol: (x, y) => `<circle cx="${(x + 11).toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#fff" stroke="${planColour('designedPipe')}"/>`, label: 'колодец / камера' },
     { symbol: (x, y) => `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x + 22).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#d33" stroke-dasharray="5 4"/>`, label: 'граница листа' },
     // Горизонталь названа вместе с сечением: без сечения обозначение не
     // читается. Стиль берётся из той же таблицы, что и сама линия.
@@ -1174,12 +1213,12 @@ function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): s
   const context = cadContextSvg(input.constraints, project, { minX, maxX, minY, maxY }, 1, null, {
     field: { minX: 0, maxX: 1000, minY: 0, maxY: 500 },
   })
-  const constraints = [
-    context.svg,
-    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e2e2e2" ${planStroke('existingBuilding', 1)}/>`),
-    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" ${planStroke('water', 1)}/>`),
-    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" ${planStroke('corridor', 1)}/>`),
-  ].join('')
+  // Кольца — тем же общим блоком, что у планового листа и у схемы. Собственные
+  // заливки (#e2e2e2, #d8f1f8) сняты: их не было в таблице стилей, и обзорный
+  // лист красил ими то же, что соседний лист обводил по-другому.
+  const constraints = context.svg + planRingsSvg(
+    input.constraints, input.constraints?.corridorRings ?? [], linePoints, 1,
+  )
   const topo = input.surveyPoints.filter((point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY)
   const topoStride = Math.max(1, Math.ceil(topo.length / 420))
   const topoSvg = topo.filter((_, index) => index % topoStride === 0)
@@ -1197,9 +1236,9 @@ function networkPlanSvg(input: ProjectAlbumInput, sheet: WorkingDrawingSheet): s
     const showLabel = index === 0 || diameterChanged || distanceFromLastLabel >= minimumLabelDistance
     if (showLabel) lastLabel = { x: labelX, y: labelY, diameterMm: diameter }
     const label = showLabel
-      ? `<text data-network-label="true" x="${(labelX + 5).toFixed(1)}" y="${(labelY - 5).toFixed(1)}" font-size="8" fill="#1746b5">${xmlText(path.pipeId)}${diameter ? ` · Ø${diameter}` : ''}</text>`
+      ? `<text data-network-label="true" x="${(labelX + 5).toFixed(1)}" y="${(labelY - 5).toFixed(1)}" font-size="8" fill="${planColour('designedPipe')}">${xmlText(path.pipeId)}${diameter ? ` · Ø${diameter}` : ''}</text>`
       : ''
-    return `<polyline data-network-pipe="${xmlText(path.pipeId)}" points="${linePoints(path.points)}" fill="none" stroke="#1746b5" stroke-width="4" stroke-linejoin="round"/>${label}`
+    return `<polyline data-network-pipe="${xmlText(path.pipeId)}" points="${linePoints(path.points)}" fill="none" stroke="${planColour('designedPipe')}" stroke-width="4" stroke-linejoin="round"/>${label}`
   }).join('')
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500"><defs><clipPath id="network-${sheet.sequence}"><rect x="35" y="15" width="930" height="445"/></clipPath></defs><rect width="1000" height="500" fill="#fff"/><rect x="35" y="15" width="930" height="445" fill="none" stroke="#111"/><g clip-path="url(#network-${sheet.sequence})">${constraints}${topoSvg}${networkSvg}</g><g transform="translate(55 45)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><text x="40" y="485" font-size="8">Сводный план построен по ${networkPaths.length} подтверждённым полилиниям сети; прямые хорды не используются в финальном выпуске.</text></svg>`
 }
@@ -1509,14 +1548,20 @@ function profileSvg(
       const lanes = [0, 1, 2, 3, 4, 5].map((lane) => fieldTop + 13 + lane * 24)
       const candidates = lanes.map((top) => ({ x: crossingX + 5, y: top, w: width, h: 22 }))
       const box = crossingPlacer.place(candidates) ?? candidates[0]
-      return `<line x1="${crossingX}" y1="45" x2="${crossingX}" y2="335" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 4"/>`
-        + `<circle cx="${crossingX}" cy="${designY}" r="4" fill="#fff" stroke="#9b2c8c"/>`
-        + `<path d="M${crossingX - 5} ${existingY} L${crossingX + 5} ${existingY}" stroke="#9b2c8c" stroke-width="2"/>`
+      // ПЯТЫЙ СЛОВАРЬ ЦВЕТОВ БЫЛ ЗДЕСЬ. Пересекаемая существующая сеть на профиле
+      // рисовалась фиолетовой (#9b2c8c, подписи #7c226f) — тем самым цветом, из-за
+      // которого чинились условные обозначения планового листа. Одна и та же сеть
+      // выходила оранжевой на плане и фиолетовой на профиле. Цвет теперь один и
+      // берётся из таблицы; ширины линий профиля не тронуты — они к цели не
+      // относятся и мерились отдельно.
+      return `<line x1="${crossingX}" y1="45" x2="${crossingX}" y2="335" stroke="${planColour('existingUtility')}" stroke-width="1.5" stroke-dasharray="5 4"/>`
+        + `<circle cx="${crossingX}" cy="${designY}" r="4" fill="#fff" stroke="${planColour('existingUtility')}"/>`
+        + `<path d="M${crossingX - 5} ${existingY} L${crossingX + 5} ${existingY}" stroke="${planColour('existingUtility')}" stroke-width="2"/>`
         // Белая подложка под ярусом: выносные линии соседних пересечений
         // проходят сквозь подпись и без неё её не прочесть.
         + `<rect x="${(box.x - 2).toFixed(1)}" y="${(box.y - 1).toFixed(1)}" width="${width.toFixed(1)}" height="21" fill="#fff" fill-opacity="0.88"/>`
-        + `<text x="${box.x.toFixed(1)}" y="${(box.y + 7).toFixed(1)}" font-size="7" fill="#7c226f">${xmlText(title)}</text>`
-        + `<text x="${box.x.toFixed(1)}" y="${(box.y + 18).toFixed(1)}" font-size="7" fill="#7c226f">${xmlText(clearance)}</text>`
+        + `<text x="${box.x.toFixed(1)}" y="${(box.y + 7).toFixed(1)}" font-size="7" fill="${planColour('existingUtility')}">${xmlText(title)}</text>`
+        + `<text x="${box.x.toFixed(1)}" y="${(box.y + 18).toFixed(1)}" font-size="7" fill="${planColour('existingUtility')}">${xmlText(clearance)}</text>`
     }).join('')
   const geology = activeBoreholes.flatMap(({ borehole, projection }) => {
     const chainageM = projection.chainageM
@@ -1529,7 +1574,7 @@ function profileSvg(
       return `<line x1="${boreholeX - 5}" y1="${boundaryY}" x2="${boreholeX + 5}" y2="${boundaryY}" stroke="#7a5a32"/><text x="${boreholeX + 6}" y="${middleY}" font-size="6" fill="#6b4c2b">ИГЭ-${xmlText(layer.igeCode ?? '—')}</text>`
     }).join('')
     const water = Number.isFinite(borehole.water.depthM)
-      ? `<line x1="${boreholeX - 7}" y1="${y(mouthElevationM - borehole.water.depthM!, chainageM)}" x2="${boreholeX + 7}" y2="${y(mouthElevationM - borehole.water.depthM!, chainageM)}" stroke="#2685b5" stroke-width="2"/><text x="${boreholeX - 9}" y="${y(mouthElevationM - borehole.water.depthM!, chainageM) - 2}" text-anchor="end" font-size="6" fill="#2685b5">УГВ</text>`
+      ? `<line x1="${boreholeX - 7}" y1="${y(mouthElevationM - borehole.water.depthM!, chainageM)}" x2="${boreholeX + 7}" y2="${y(mouthElevationM - borehole.water.depthM!, chainageM)}" stroke="${planColour('water')}" stroke-width="2"/><text x="${boreholeX - 9}" y="${y(mouthElevationM - borehole.water.depthM!, chainageM) - 2}" text-anchor="end" font-size="6" fill="${planColour('water')}">УГВ</text>`
       : ''
     return [`<line x1="${boreholeX}" y1="${y(mouthElevationM, chainageM)}" x2="${boreholeX}" y2="${y(mouthElevationM - deepest, chainageM)}" stroke="#7a5a32" stroke-width="2"/>${layerLines}${water}<text x="${boreholeX}" y="${y(mouthElevationM, chainageM) - 5}" text-anchor="middle" font-size="7" fill="#6b4c2b">${xmlText(borehole.label)}</text>`]
   }).join('')
@@ -1545,7 +1590,7 @@ function profileSvg(
     return `<rect data-sidebar-band="${row.fromMm}-${row.toMm}" x="35" y="${top.toFixed(1)}" width="${(canvasWidth - 70).toFixed(1)}" height="${height.toFixed(1)}" fill="none" stroke="#111" stroke-width="0.5"/>`
       + `<line x1="${headerRight}" y1="${top.toFixed(1)}" x2="${headerRight}" y2="${(top + height).toFixed(1)}" stroke="#111" stroke-width="0.5"/>${title}`
   }).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR)}" data-vertical-scale-denominator="${verticalDenominator}" data-vertical-mm-per-meter="${scaleMillimetresPerMetre(verticalDenominator)}" data-svg-units-per-mm="${svgUnitsPerMm}"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="${fieldTop.toFixed(1)}" width="${canvasWidth - 195}" height="${(fieldBottom - fieldTop).toFixed(1)}"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${segments.map((segment) => segment.datumM.toFixed(2)).join(', ')} м · масштаб гор. 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}, верт. 1:${verticalDenominator}</text><g clip-path="url(#profile-${sheet.sheetNumber})">${ground.map((points) => `<polyline data-profile-ground="true" points="${points}" fill="none" stroke="#6c5134" stroke-width="2.5"/>`).join('')}${invert.map((points) => `<polyline data-profile-invert="true" points="${points}" fill="none" stroke="#1746b5" stroke-width="3.5"/>`).join('')}${datumMarks}${geology}${crossings}</g>${columns}${wholePickets.join('')}${table}${segmentValues}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} 500" data-horizontal-scale-denominator="${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}" data-horizontal-mm-per-meter="${scaleMillimetresPerMetre(PROFILE_HORIZONTAL_SCALE_DENOMINATOR)}" data-vertical-scale-denominator="${verticalDenominator}" data-vertical-mm-per-meter="${scaleMillimetresPerMetre(verticalDenominator)}" data-svg-units-per-mm="${svgUnitsPerMm}"><defs><clipPath id="profile-${sheet.sheetNumber}"><rect x="160" y="${fieldTop.toFixed(1)}" width="${canvasWidth - 195}" height="${(fieldBottom - fieldTop).toFixed(1)}"/></clipPath></defs><rect width="${canvasWidth}" height="500" fill="#fff"/><text x="35" y="22" font-size="9">Условный горизонт ${segments.map((segment) => segment.datumM.toFixed(2)).join(', ')} м · масштаб гор. 1:${PROFILE_HORIZONTAL_SCALE_DENOMINATOR}, верт. 1:${verticalDenominator}</text><g clip-path="url(#profile-${sheet.sheetNumber})">${ground.map((points) => `<polyline data-profile-ground="true" points="${points}" fill="none" stroke="#6c5134" stroke-width="2.5"/>`).join('')}${invert.map((points) => `<polyline data-profile-invert="true" points="${points}" fill="none" stroke="${planColour('designedPipe')}" stroke-width="3.5"/>`).join('')}${datumMarks}${geology}${crossings}</g>${columns}${wholePickets.join('')}${table}${segmentValues}</svg>`
 }
 
 function basicTable(headers: string[], rows: Array<Array<string | number>>, widths?: Array<number | string>): PdfNode {
@@ -1559,6 +1604,16 @@ function basicTable(headers: string[], rows: Array<Array<string | number>>, widt
     fontSize: 8,
   }
 }
+
+/**
+ * Обзорная врезка листа «Общие данные»: ширина холста и печатная ширина.
+ *
+ * Печатная ширина — та, что стоит в `fit` на самом листе. Числа объявлены
+ * рядом и используются обоими местами: разъехавшись, они молча испортили бы
+ * перевод миллиметров бумаги в единицы холста.
+ */
+const GENERAL_DATA_INSET_WIDTH = 420
+const GENERAL_DATA_INSET_FIT_PT = 370
 
 function generalDataOverviewSvg(input: ProjectAlbumInput): string {
   const path = input.drawingSet.mainPath
@@ -1584,22 +1639,55 @@ function generalDataOverviewSvg(input: ProjectAlbumInput): string {
   const scale = Math.min(365 / width, 350 / height)
   const x = (value: number) => 28 + (value - minX) * scale
   const y = (value: number) => 385 - (value - minY) * scale
+  /**
+   * Единиц холста на миллиметр бумаги — ПОСЧИТАНО, а не подобрано на глаз.
+   *
+   * Врезка не в масштабе местности: она обзорная и вписана в отведённое место.
+   * Но толщина линии на ней всё равно измеряется в миллиметрах бумаги, и
+   * перевод берётся из того, чем врезка на бумагу и ложится: `fit` на листе
+   * задаёт её печатную ширину в пунктах (`GENERAL_DATA_INSET_FIT_PT`), холст
+   * врезки шириной `GENERAL_DATA_INSET_WIDTH` единиц. Пункт — 25,4/72 мм.
+   *
+   * 420 единиц на 370 пт = 130,56 мм даёт 3,217 единицы на миллиметр: тонкая
+   * линия 0,127 мм выходит 0,41 единицы. Подгонять этот множитель «чтобы
+   * похоже» нельзя — тогда он станет пятым словарём, только числом.
+   */
+  const svgUnitsPerMm = GENERAL_DATA_INSET_WIDTH / (GENERAL_DATA_INSET_FIT_PT * 25.4 / 72)
   const linePoints = (points: Array<{ x: number; y: number }>) => points
     .map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`)
     .join(' ')
-  const constraints = [
-    ...(input.constraints?.hardObstacleRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#e5e5e5" stroke="#555"/>`),
-    ...(input.constraints?.waterRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="#d8f1f8" stroke="#2685b5"/>`),
-    ...(input.constraints?.corridorRings ?? []).map((ring) => `<polygon points="${linePoints(ring)}" fill="none" stroke="#d33232" stroke-width="1.5" stroke-dasharray="7 4"/>`),
-    ...(input.constraints?.roadLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#8b734f" stroke-width="3"/>`),
-    ...(input.constraints?.waterLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#2685b5" stroke-width="2"/>`),
-    ...(input.constraints?.utilityLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#9b2c8c" stroke-width="1.5" stroke-dasharray="5 3"/>`),
-    ...(input.constraints?.redLines ?? []).map((line) => `<polyline points="${linePoints(line.points)}" fill="none" stroke="#d22" stroke-width="2"/>`),
-  ].join('')
+  /**
+   * Врезка ведёт те же роли и те же стили, что и лист.
+   *
+   * Это был ЧЕТВЁРТЫЙ словарь цветов, набранный числами по месту: сеть
+   * фиолетовой штриховой #9b2c8c, дороги коричневыми #8b734f, красная линия
+   * #d22, здания заливкой #e5e5e5. Ни один из них не совпадал с измеренной
+   * таблицей, и в одном альбоме существующая сеть на плановом листе была
+   * оранжевой сплошной, а на листе «Общие данные» — фиолетовой пунктирной:
+   * инженер видел два разных объекта.
+   *
+   * Полный контур чертежа врезке не подаётся: на четырёхстах единицах холста
+   * четырнадцать тысяч линий дали бы чёрное пятно. Берутся именованные наборы —
+   * тем же соответствием `namedSetLines`, что и запасная ветвь листа.
+   */
+  const lines = namedSetLines(input.constraints)
+  const drawnRoles = new Set<PlanLineRole>(lines.map((line) => line.role))
+  const constraints = planRingsSvg(
+    input.constraints, input.constraints?.corridorRings ?? [], linePoints, svgUnitsPerMm,
+  ) + lines.map((line) =>
+    `<polyline data-plan-role="${line.role}" points="${linePoints([...line.points])}" fill="none" ${planStroke(line.role, svgUnitsPerMm)}/>`).join('')
+  for (const [role, group] of [
+    ['existingBuilding', input.constraints?.hardObstacleRings],
+    ['existingBuilding', input.constraints?.buildingPolygons],
+    ['water', input.constraints?.waterRings],
+    ['corridor', input.constraints?.corridorRings],
+  ] as Array<[PlanLineRole, ReadonlyArray<unknown> | undefined]>) {
+    if ((group ?? []).length > 0) drawnRoles.add(role)
+  }
   const route = linePoints(path)
   const first = path[0]
   const last = path[path.length - 1]
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 430"><rect x="1" y="1" width="418" height="428" fill="#fff" stroke="#111"/><text x="210" y="22" text-anchor="middle" font-size="13" font-weight="700">Ситуационная схема</text><g>${constraints}<polyline points="${route}" fill="none" stroke="#1746b5" stroke-width="5" stroke-linejoin="round"/><circle cx="${x(first.x)}" cy="${y(first.y)}" r="5" fill="#fff" stroke="#1746b5" stroke-width="2"/><circle cx="${x(last.x)}" cy="${y(last.y)}" r="5" fill="#1746b5"/><text x="${x(first.x) + 7}" y="${y(first.y) - 7}" font-size="9">Начало трассы</text><text x="${x(last.x) - 7}" y="${y(last.y) - 7}" text-anchor="end" font-size="9">Выпуск</text></g><g transform="translate(26 44)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(16 398)"><line x1="0" y1="0" x2="24" y2="0" stroke="#1746b5" stroke-width="4"/><text x="31" y="3" font-size="8">проектная ось</text><line x1="130" y1="0" x2="154" y2="0" stroke="#d33232" stroke-dasharray="6 3"/><text x="161" y="3" font-size="8">ограничения</text></g></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${GENERAL_DATA_INSET_WIDTH} 430"><rect x="1" y="1" width="418" height="428" fill="#fff" stroke="#111"/><text x="210" y="22" text-anchor="middle" font-size="13" font-weight="700">Ситуационная схема</text><g>${constraints}<polyline data-plan-role="routeAxis" points="${route}" fill="none" ${planStroke('routeAxis', svgUnitsPerMm)} stroke-linejoin="round"/><circle cx="${x(first.x)}" cy="${y(first.y)}" r="5" fill="#fff" stroke="${planColour('routeAxis')}" stroke-width="2"/><circle cx="${x(last.x)}" cy="${y(last.y)}" r="5" fill="${planColour('routeAxis')}"/><text x="${x(first.x) + 7}" y="${y(first.y) - 7}" font-size="9">Начало трассы</text><text x="${x(last.x) - 7}" y="${y(last.y) - 7}" text-anchor="end" font-size="9">Выпуск</text></g><g transform="translate(26 44)"><path d="M0 28 L0 0 M0 0 L-5 10 M0 0 L5 10" stroke="#111" fill="none"/><text x="0" y="-5" text-anchor="middle" font-size="10">С</text></g><g transform="translate(14 396)">${planLegendSvg(['routeAxis', ...PLAN_ROLE_DRAW_ORDER.filter((role) => drawnRoles.has(role))], svgUnitsPerMm)}</g></svg>`
 }
 
 function generalDataPage(input: ProjectAlbumInput): PdfNode {
@@ -1669,7 +1757,7 @@ function generalDataPage(input: ProjectAlbumInput): PdfNode {
           },
           {
             width: '*',
-            stack: [{ svg: generalDataOverviewSvg(input), fit: [370, 430] }],
+            stack: [{ svg: generalDataOverviewSvg(input), fit: [GENERAL_DATA_INSET_FIT_PT, 430] }],
           },
         ],
         columnGap: 18,

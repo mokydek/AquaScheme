@@ -143,6 +143,29 @@ export function planSourceLines(constraints: RouteConstraintInput | null | undef
     }
     return { lines, origin: 'drawing', unknownRoleLines, ringLines, ignoredLines }
   }
+  const lines = namedSetLines(constraints)
+  return {
+    lines,
+    origin: lines.length > 0 ? 'named-sets' : 'none',
+    unknownRoleLines: 0,
+    ringLines: 0,
+    ignoredLines: 0,
+  }
+}
+
+/**
+ * Линии ИМЕНОВАННЫХ наборов со своими ролями.
+ *
+ * Разбор чертежа, кроме полного контура, раскладывает разобранное по наборам:
+ * существующие сети, красные линии, дороги, гидрография. Соответствие «набор →
+ * роль» держится ЗДЕСЬ и нигде больше: им пользуется и запасная ветвь
+ * `planSourceLines`, когда полного контура в наборе нет, и обзорная врезка
+ * листа «Общие данные», которой полный контур не нужен вовсе — на четырёхстах
+ * единицах холста четырнадцать тысяч линий дали бы чёрное пятно.
+ *
+ * Порядок тот же, что у отрисовки: подоснова первой, предмет чертежа последним.
+ */
+export function namedSetLines(constraints: RouteConstraintInput | null | undefined): PlanSourceLine[] {
   const named: Array<[PlanLineRole, ReadonlyArray<RouteSegment> | undefined]> = [
     ['topobase', constraints?.terrainLines],
     ['topobase', constraints?.guideLines],
@@ -152,15 +175,8 @@ export function planSourceLines(constraints: RouteConstraintInput | null | undef
     ['existingUtility', constraints?.utilityLines],
     ['redLine', constraints?.redLines],
   ]
-  const lines = named.flatMap(([role, segments]) =>
+  return named.flatMap(([role, segments]) =>
     (segments ?? []).map((segment) => ({ points: segment.points, role, layer: segment.layer })))
-  return {
-    lines,
-    origin: lines.length > 0 ? 'named-sets' : 'none',
-    unknownRoleLines: 0,
-    ringLines: 0,
-    ignoredLines: 0,
-  }
 }
 
 /**

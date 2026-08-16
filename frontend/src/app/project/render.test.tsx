@@ -46,6 +46,7 @@ const { ExistingNetworkSection } = await import('./ExistingNetworkSection')
 const { ImportSection } = await import('./ImportSection')
 const { SituationSchemeView } = await import('./SituationSchemeView')
 const { buildSituationSchemeSvg } = await import('../../shared/projectAlbum')
+const { PLAN_LINE_STYLE } = await import('../../shared/planStyles')
 const { STANKEVICHA_KIT_SLOTS, emptyKitState } = await import('../../shared/kitWizard')
 const { ProvenanceAuditView } = await import('./ProvenanceAuditView')
 const { TopographySection } = await import('./TopographySection')
@@ -873,7 +874,9 @@ describe('ситуационная схема строится по топоос
       constraints,
       corridorRings: [[{ x: -10, y: -10 }, { x: 250, y: -10 }, { x: 250, y: 50 }]],
     })
-    expect(markup).toContain('data-scheme-corridor')
+    // Полоса отвода рисуется общим блоком колец — тем же, что и у планового
+    // листа, — и помечена ролью, а не собственным признаком схемы.
+    expect(markup).toContain('data-plan-ring="corridor"')
     expect(markup).not.toContain('data-scheme-missing="corridor"')
   })
 
@@ -893,6 +896,67 @@ describe('ситуационная схема строится по топоос
     const markup = view({ constraints })
     expect(markup).not.toContain('replay')
     expect(markup).not.toContain('builder.pause')
+  })
+
+  /**
+   * Замкнутый контур здания на обзорной схеме.
+   *
+   * Ситуационную схему смотрят ради того, где трасса идёт относительно
+   * ЗАСТРОЙКИ. У Станкевича это шестнадцать зданий.
+   *
+   * Отсев `drawnAsRing` верен для планового листа: там кольца выводит отдельный
+   * блок полигонов. У схемы такого блока не было вовсе, и контур, ставший
+   * кольцом, не рисовал никто — до появления ролей он попадал на схему общим
+   * проходом чёрным волосом.
+   */
+  const buildingRing = [{ x: 40, y: 10 }, { x: 90, y: 10 }, { x: 90, y: 40 }, { x: 40, y: 40 }]
+  const withBuilding = (drawnAsRing: boolean) => buildSituationSchemeSvg({
+    title: 'т',
+    network,
+    constraints: {
+      ...(constraints as unknown as Record<string, unknown>),
+      cadContextLines: [
+        ...(constraints as unknown as { cadContextLines: unknown[] }).cadContextLines,
+        {
+          points: [...buildingRing, buildingRing[0]], role: 'building', closed: true,
+          ...(drawnAsRing ? { drawnAsRing: true } : {}),
+        },
+      ],
+      hardObstacleRings: drawnAsRing ? [buildingRing] : [],
+    },
+  } as never)
+
+  /**
+   * След роли считается ПО РОЛИ, а не по цвету.
+   *
+   * Цвет `#000000` носят четыре роли сразу — подоснова, здания, дороги и рамка
+   * листа, — и счёт по цвету ловил бы их все. Ломаная помечена `data-plan-role`,
+   * кольцо — `data-plan-ring`; вместе они и дают полное число следов роли.
+   */
+  const roleTraces = (svg: string, role: string) =>
+    [...svg.matchAll(new RegExp(`data-plan-(?:role|ring)="${role}"`, 'g'))].length
+
+  it('здание, ставшее кольцом, на схеме есть — и ровно один раз', () => {
+    const asRing = withBuilding(true)
+    const asLine = withBuilding(false)
+    // Контур без флага рисовался всегда — это образец.
+    expect(roleTraces(asLine.svg, 'existingBuilding')).toBe(1)
+    // С флагом — тот же контур и тот же один след, а не ноль и не два.
+    expect(roleTraces(asRing.svg, 'existingBuilding')).toBe(1)
+    // Цвет у обоих — из измеренной таблицы, а не свой у каждого листа.
+    expect(asRing.svg).toContain(PLAN_LINE_STYLE.existingBuilding.colour)
+  })
+
+  it('полоса отвода на схеме не задваивается при двух источниках колец', () => {
+    // Схеме полоса отвода приходит собственным входом, а в общем блоке колец
+    // лежит `constraints.corridorRings`. Заполнены оба — след должен быть один.
+    const rings = [[{ x: -10, y: -10 }, { x: 250, y: -10 }, { x: 250, y: 50 }]]
+    const built = buildSituationSchemeSvg({
+      title: 'т', network,
+      constraints: { ...(constraints as unknown as Record<string, unknown>), corridorRings: rings },
+      corridorRings: rings,
+    } as never)
+    expect(roleTraces(built.svg, 'corridor')).toBe(1)
   })
 })
 

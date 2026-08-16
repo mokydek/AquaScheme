@@ -315,6 +315,66 @@ describe('project working-drawing album', () => {
     expect(legend).not.toContain(PLAN_LINE_STYLE.redLine.colour)
   })
 
+  it('врезка «Общие данные» ведёт цвета таблицы, а не собственный словарь', () => {
+    // В одном альбоме существующая сеть была на плановом листе оранжевой
+    // сплошной, а во врезке «Общие данные» — фиолетовой пунктирной (#9b2c8c):
+    // инженер видел два разных объекта.
+    const constraints = {
+      corridorRings: [[{ x: 0, y: 0 }, { x: 650, y: 0 }, { x: 650, y: 120 }]],
+      utilityLines: [{ layer: 'Лив', points: [{ x: 0, y: 40 }, { x: 650, y: 40 }] }],
+      redLines: [{ points: [{ x: 0, y: 70 }, { x: 650, y: 70 }] }],
+      roadLines: [{ points: [{ x: 0, y: 90 }, { x: 650, y: 90 }] }],
+      waterLines: [{ points: [{ x: 0, y: 110 }, { x: 650, y: 110 }] }],
+      hardObstacleRings: [[{ x: 100, y: 10 }, { x: 160, y: 10 }, { x: 160, y: 30 }]],
+    }
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints,
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content).replaceAll('\\"', '"')
+    const inset = /(<svg[^>]*viewBox="0 0 420 430"[\s\S]*?<\/svg>)/.exec(serialized)?.[1] ?? ''
+    expect(inset).toContain('Ситуационная схема')
+
+    // Ни одного цвета мимо таблицы стилей. Служебная графика — рамка врезки
+    // (#111), бумага (#fff) и обводка коробки условных обозначений (#888) —
+    // чертежом не является и в таблицу ролей не входит.
+    const allowed = new Set<string>([
+      ...Object.values(PLAN_LINE_STYLE).map((style) => style.colour), '#fff', '#111', '#888',
+    ])
+    const used = [...inset.matchAll(/(?:stroke|fill)="(#[0-9a-fA-F]{3,6})"/g)].map((match) => match[1])
+    expect(used.length).toBeGreaterThan(0)
+    expect([...new Set(used)].filter((colour) => !allowed.has(colour))).toEqual([])
+
+    // Цвет сети во врезке равен её цвету на плановом листе — сущность одна.
+    const planSvg = /(<svg[^>]*?data-horizontal-scale-denominator[\s\S]*?<\/svg>)/.exec(serialized)?.[1] ?? ''
+    expect(inset).toContain(`data-plan-role="existingUtility" points`)
+    expect(inset).toContain(PLAN_LINE_STYLE.existingUtility.colour)
+    expect(planSvg).toContain(PLAN_LINE_STYLE.existingUtility.colour)
+  })
+
+  it('пересечение существующей сети на профиле того же цвета, что и на плане', () => {
+    // Пятый словарь: на профиле пересекаемая сеть рисовалась фиолетовой.
+    const doc = buildProjectAlbumDoc({
+      projectName: 'Тестовый объект', projectCode: 'К2', system: 'storm', network, profile, schedule,
+      drawingSet: drawingSet(), surveyPoints, manholeConstructions,
+      pipeDiameterMm: new Map([['AB', 800]]), outletFlowLps: 12,
+      constraints: {
+        corridorRings: [],
+        crossings: [{
+          id: 'X-1', stationM: 300, kind: 'utility', owner: 'Synthetic owner', size: '100 mm',
+          source: 'Synthetic survey', existingElevationM: 98.4, designInvertElevationM: 96.1,
+          clearanceM: 1.8, requiredClearanceM: 1, method: 'open cut', approved: true,
+        }],
+      },
+    }) as { content: unknown[] }
+    const serialized = JSON.stringify(doc.content).replaceAll('\\"', '"')
+    expect(serialized).toContain('X-1')
+    expect(serialized).not.toContain('#9b2c8c')
+    expect(serialized).not.toContain('#7c226f')
+  })
+
   it('прореживание называется по ролям, а не одним числом', () => {
     // Полсотни красных линий рядом с массивом подосновы: прежде их срезало тем
     // же шагом, что и всё остальное, и лист об этом молчал.
