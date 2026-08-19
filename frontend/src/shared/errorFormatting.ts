@@ -98,3 +98,20 @@ export function formatAppError(error: unknown): string {
 
   return truncate(displayValue(error) ?? FALLBACK_ERROR)
 }
+
+/**
+ * Похоже ли сообщение об ошибке на отказ базы принять вид набора.
+ *
+ * Подсказка «примените миграцию …» стояла на четырёх экранах ПОСТОЯННО, и её
+ * читал инженер, у которого всё в порядке: указание администратору в рабочем
+ * разделе. Убрать её совсем нельзя — когда ограничение действительно бьёт,
+ * без неё непонятно, что делать. Поэтому она показывается ровно тогда, когда
+ * база отказала: по коду 23514 либо по имени ограничения в тексте ошибки.
+ */
+export function looksLikeDatasetKindRejection(message: string | null | undefined): boolean {
+  if (!message) return false
+  const text = message.toLowerCase()
+  return text.includes('23514')
+    || text.includes('datasets_kind_check')
+    || (text.includes('kind') && (text.includes('constraint') || text.includes('ограничен')))
+}

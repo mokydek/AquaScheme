@@ -1210,14 +1210,31 @@ export function buildWorkingDrawingSet(input: WorkingDrawingInput): WorkingDrawi
   {
     const blockers = [...planChecks.blockers]
     const warnings = [...planChecks.warnings]
-    if (networkPaths.paths.length === 0) blockers.push(issue(
-      'NETWORK_GEOMETRY_MISSING',
-      'Нет геометрии сети для формирования сводного плана.',
-      'route',
-    ))
+    /*
+      ОДНА ПРИЧИНА — ОДИН КОД, И КАЖДЫЙ КОД ЗНАЧИТ ТО, ЧТО НАПИСАНО.
+
+      Участок без подтверждённой полилинии обнуляет `points` (см. возврат
+      `{ points: [] }` в сборщике путей), и оба кода срабатывали разом. На
+      живом сайте владелец видел «Нет геометрии сети» на проекте, где рядом
+      написано «Загружена трасса: 14 узлов, 13 участков, 483 м», — программа
+      утверждала отсутствие того, что у неё есть.
+
+      Отсутствие геометрии и отсутствие осей — разные состояния: в первом нет
+      ни узлов, ни участков, во втором они есть, а линии между ними не заданы.
+      Поэтому «нет геометрии» говорится только тогда, когда путей нет НЕ
+      из-за осей.
+    */
+    if (networkPaths.paths.length === 0 && networkPaths.missingAlignmentPipeIds.length === 0) {
+      blockers.push(issue(
+        'NETWORK_GEOMETRY_MISSING',
+        'Нет геометрии сети для формирования сводного плана.',
+        'route',
+      ))
+    }
     if (networkPaths.missingAlignmentPipeIds.length > 0) blockers.push(issue(
       'NETWORK_ALIGNMENT_MISSING',
-      `У ${networkPaths.missingAlignmentPipeIds.length} участков сводного плана отсутствуют фактические полилинии.`,
+      `Узлы и участки есть, но у ${networkPaths.missingAlignmentPipeIds.length} участков не задана`
+        + ' линия оси: сводный план строится по ней, а не по прямым между узлами.',
       'route',
     ))
     const sources = [...planChecks.sources]

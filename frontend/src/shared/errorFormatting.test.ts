@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAppError } from './errorFormatting'
+import { formatAppError, looksLikeDatasetKindRejection } from './errorFormatting'
 
 describe('formatAppError', () => {
   it('formats an Error through its message without exposing a stack', () => {
@@ -56,5 +56,24 @@ describe('formatAppError', () => {
 
     expect(() => formatAppError(unreadable)).not.toThrow()
     expect(formatAppError(unreadable)).not.toContain('[object Object]')
+  })
+})
+
+describe('подсказка о миграции показывается только по делу', () => {
+  it('узнаёт отказ базы принять вид набора', () => {
+    // Настоящий текст ошибки Postgres, на который подсказка и рассчитана.
+    expect(looksLikeDatasetKindRejection(
+      'new row for relation "datasets" violates check constraint "datasets_kind_check"',
+    )).toBe(true)
+    expect(looksLikeDatasetKindRejection('ERROR: 23514: check constraint')).toBe(true)
+    expect(looksLikeDatasetKindRejection('база не принимает этот вид набора: ограничение kind')).toBe(true)
+  })
+
+  it('молчит, когда всё в порядке или сломалось другое', () => {
+    // Инженер, у которого всё хорошо, не должен читать про миграции.
+    expect(looksLikeDatasetKindRejection(null)).toBe(false)
+    expect(looksLikeDatasetKindRejection('')).toBe(false)
+    expect(looksLikeDatasetKindRejection('Не удалось прочитать файл каталога')).toBe(false)
+    expect(looksLikeDatasetKindRejection('network error')).toBe(false)
   })
 })

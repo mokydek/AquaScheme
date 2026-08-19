@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { looksLikeDatasetKindRejection } from '../../shared/errorFormatting'
 import type { DatasetRow } from '../../shared/datasets'
 import { saveDataset } from '../../shared/datasets'
 import { titleBlockContentFrom } from './titleBlockContent'
@@ -131,7 +132,8 @@ export function TitleBlockSection({
         {organisation.trim() === '' ? t('project.titleBlock.noOrganisation') : ''}
       </p>
       {error && <p className="notice error">{error}</p>}
-      <p className="hint">{t('project.titleBlock.migrationHint')}</p>
+      {/* Подсказка администратору — только когда база действительно отказала. */}
+      {looksLikeDatasetKindRejection(error) && <p className="hint">{t('project.titleBlock.migrationHint')}</p>}
     </Panel>
   )
 }

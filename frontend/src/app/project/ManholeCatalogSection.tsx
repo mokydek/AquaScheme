@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
+import { looksLikeDatasetKindRejection } from '../../shared/errorFormatting'
 import {
   MANHOLE_CATALOG_EXAMPLE,
   MANHOLE_CATALOG_HEADERS,
@@ -98,7 +99,8 @@ export function ManholeCatalogSection({
         </div>
       )}
       {notice && <p className="notice">{notice}</p>}
-      <p className="hint">{t('project.manholeCatalog.migrationHint')}</p>
+      {/* Подсказка администратору — только когда база действительно отказала. */}
+      {looksLikeDatasetKindRejection(notice) && <p className="hint">{t('project.manholeCatalog.migrationHint')}</p>}
     </Panel>
   )
 }

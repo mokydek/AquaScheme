@@ -342,6 +342,29 @@ describe('buildWorkingDrawingSet', () => {
     expect(routePlan?.status).toBe('VERIFIED')
     expect(overview?.status).toBe('BLOCKED')
     expect(overview?.blockers.map((item) => item.code)).toContain('NETWORK_ALIGNMENT_MISSING')
+    /*
+      И ТОЛЬКО ЕГО. Отсутствие оси обнуляет пути, и раньше рядом вставал
+      NETWORK_GEOMETRY_MISSING — «нет геометрии сети» на проекте, где узлы и
+      участки есть. Владелец видел это на живом сайте: «Загружена трасса: 14
+      узлов, 13 участков, 483 м» и тут же «Нет геометрии сети».
+    */
+    expect(overview?.blockers.map((item) => item.code)).not.toContain('NETWORK_GEOMETRY_MISSING')
+    expect(overview?.blockers.find((item) => item.code === 'NETWORK_ALIGNMENT_MISSING')?.message)
+      .toContain('Узлы и участки есть')
+  })
+
+  it('«нет геометрии сети» говорится, когда её действительно нет', () => {
+    // Обратная сторона: код обязан срабатывать там, где он верен, — иначе
+    // правка выше просто заглушила бы причину.
+    // Пустая сеть — вот когда геометрии действительно нет: ни узлов, ни
+    // участков, и сводному плану строить нечего.
+    const set = buildWorkingDrawingSet({
+      ...readyInput(),
+      network: { nodes: [], pipes: [], totalLengthM: 0 },
+    })
+    const overview = set.sheets.find((sheet) => sheet.kind === 'network_plan')
+    expect(overview?.blockers.map((item) => item.code)).toContain('NETWORK_GEOMETRY_MISSING')
+    expect(overview?.blockers.map((item) => item.code)).not.toContain('NETWORK_ALIGNMENT_MISSING')
   })
 
   it('blocks every main profile sheet when its factual alignment is missing', () => {

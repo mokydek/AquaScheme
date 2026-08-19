@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { looksLikeDatasetKindRejection } from '../../shared/errorFormatting'
 import { compareWithMasterPlan } from '@aquascheme/engine'
 import type { PlanSegment, SchemeComparisonRow } from '@aquascheme/engine'
 
@@ -195,7 +196,8 @@ export function MasterPlanView({
       )}
 
       {error && <p className="notice">{error}</p>}
-      <p className="hint">{t('project.masterPlan.migrationHint')}</p>
+      {/* Подсказка администратору — только когда база действительно отказала. */}
+      {looksLikeDatasetKindRejection(error) && <p className="hint">{t('project.masterPlan.migrationHint')}</p>}
     </details>
   )
 }

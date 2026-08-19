@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
+import { looksLikeDatasetKindRejection } from '../../shared/errorFormatting'
 import { PUMP_CATALOG_EXAMPLE, PUMP_CATALOG_HEADERS, parsePumpCatalogRows } from '@aquascheme/engine'
 import type { EffluentKind, PumpCatalogueItem, ReliabilityCategory } from '@aquascheme/engine'
 import type { DatasetRow } from '../../shared/datasets'
@@ -205,7 +206,8 @@ export function PumpCatalogSection({
         </div>
       )}
       {notice && <p className="notice">{notice}</p>}
-      <p className="hint">{t('project.pumpCatalog.migrationHint')}</p>
+      {/* Подсказка администратору — только когда база действительно отказала. */}
+      {looksLikeDatasetKindRejection(notice) && <p className="hint">{t('project.pumpCatalog.migrationHint')}</p>}
     </Panel>
   )
 }
