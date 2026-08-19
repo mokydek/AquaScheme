@@ -1146,7 +1146,8 @@ describe('промерзание: кандидаты отчёта видны, в
     },
   }
   const markup = html(createElement(GeologySection, {
-    projectId: 'p1', dataset, boreholes: [], surveyPoints: [], onChanged: async () => {},
+    projectId: 'p1', dataset, basisDataset: undefined,
+    boreholes: [], surveyPoints: [], onChanged: async () => {},
   } as never))
 
   it('показывает все три кандидата с грунтом и величиной', () => {
@@ -1170,9 +1171,41 @@ describe('промерзание: кандидаты отчёта видны, в
     const bare = html(createElement(GeologySection, {
       projectId: 'p1',
       dataset: { id: 'g2', content: { soilType: 'clay', groundwaterDepthM: 6, corrosivity: 'low' } },
-      boreholes: [], surveyPoints: [], onChanged: async () => {},
+      basisDataset: undefined, boreholes: [], surveyPoints: [], onChanged: async () => {},
     } as never))
     expect(bare).not.toContain('data-freezing-candidates')
+  })
+
+  it('кандидаты из разобранного отчёта доходят до выбора с цитатой', () => {
+    // Слот мастера кладёт разбор в запись basis-файла — не в набор геологии:
+    // там живут подтверждённые величины, и разбор их не трогает.
+    const withReport = html(createElement(GeologySection, {
+      projectId: 'p1',
+      dataset: { id: 'g3', content: { soilType: 'clay', groundwaterDepthM: 6, corrosivity: 'low' } },
+      basisDataset: {
+        id: 'b1',
+        content: {
+          items: {
+            stankevicha_geologyReport: {
+              fileName: 'Геологический Отчет.docx',
+              geologyReport: {
+                freezingDepthCandidates: [
+                  { valueM: 0.79, soil: 'суглинков', quote: 'сезонного промерзания для суглинков – 0,79м', form: 'prose' },
+                  { valueM: 1.03, soil: 'песка средней крупности', quote: 'для песка средней крупности – 1,03м', form: 'prose' },
+                ],
+                ige: [{ code: '1', name: 'суглинок твердый' }],
+              },
+            },
+          },
+        },
+      },
+      boreholes: [], surveyPoints: [], onChanged: async () => {},
+    } as never))
+    expect(withReport).toContain('data-freezing-candidates="true"')
+    expect(withReport).toContain('data-freezing-candidate="суглинков"')
+    expect(withReport).toContain('data-freezing-candidate="песка средней крупности"')
+    expect(withReport).toContain('0.79')
+    expect(withReport).toContain('1.03')
   })
 })
 

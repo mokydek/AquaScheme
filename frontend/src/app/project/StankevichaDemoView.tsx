@@ -24,7 +24,7 @@ import { KitWizardPanel } from './KitWizardPanel'
  * «отложено» так, что заметить это можно было только глазами.
  */
 export const PARSED_KIT_SLOT_IDS = [
-  'topobaseFull', 'surveyStankevicha', 'technicalConditions', 'surveyReport',
+  'topobaseFull', 'surveyStankevicha', 'technicalConditions', 'surveyReport', 'geologyReport',
 ] as const
 
 /**
@@ -141,6 +141,51 @@ export function StankevichaDemoView({
     }
   }
 
+  /**
+   * Геологический отчёт: слот его РАЗБИРАЕТ, а не только складывает.
+   *
+   * Слот был объявлен `basis` с пометкой «разбор — этап 3», и этап третий не
+   * наступил. При этом всё для разбора давно написано и лежало без дела:
+   * `docxText` достаёт текст из DOCX, `parseGeologyReportSummary` читает из
+   * него кандидатов промерзания с грунтом и цитатой, описания ИГЭ и УГВ.
+   * Шесть настоящих документов объекта ложились в проект и не сдвигали расчёт.
+   *
+   * ИЗВЛЕЧЁННОЕ ≠ ПОДТВЕРЖДЁННОЕ. Результат кладётся В ЗАПИСЬ BASIS-ФАЙЛА,
+   * рядом с самим документом, а не в набор геологии: в наборе живут величины,
+   * подтверждённые инженером, и затирать их разбором нельзя. Раздел геологии
+   * читает предложение оттуда и показывает его кандидатами — выбор и
+   * подтверждение остаются за инженером.
+   */
+  const parseGeologyReport = async (file: File): Promise<KitSlotState> => {
+    const { docxText } = await import('../../shared/docxText')
+    const { parseGeologyReportSummary } = await import('@aquascheme/engine')
+    const text = docxText(new Uint8Array(await file.arrayBuffer()))
+    if (text.trim() === '') {
+      // Молчаливое «сохранено» скрыло бы, что документ не прочитан.
+      throw new Error(t('project.kit.docxNoText'))
+    }
+    const summary = parseGeologyReportSummary(text)
+    await saveBasisFile(projectId, 'stankevicha_geologyReport', file.name, {
+      fileName: file.name,
+      // Предложение разбора: величины с цитатами, без единого выбора.
+      geologyReport: {
+        freezingDepthCandidates: summary.freezingDepthCandidates,
+        ige: summary.ige,
+        groundwater: summary.groundwater,
+        maxAggressiveness: summary.maxAggressiveness,
+      },
+    })
+    return {
+      kind: 'parsed',
+      fileName: file.name,
+      counters: [
+        { label: t('project.kit.counterFreezingCandidates'), value: summary.freezingDepthCandidates.length },
+        { label: t('project.kit.counterIge'), value: summary.ige.length },
+        { label: t('project.kit.counterChars'), value: text.length },
+      ],
+    }
+  }
+
   const storeAsBasis = (slotId: string, stage: number) => async (file: File): Promise<KitSlotState> => {
     await saveBasisFile(projectId, `stankevicha_${slotId}`, file.name, { fileName: file.name })
     return { kind: 'stored', fileName: file.name, parsedAtStage: stage }
@@ -155,6 +200,7 @@ export function StankevichaDemoView({
     surveyStankevicha: parseSurvey,
     technicalConditions: acceptConditions,
     surveyReport: acceptSurveyReport,
+    geologyReport: parseGeologyReport,
   }
 
   const handlers: Record<string, (file: File) => Promise<KitSlotState>> = Object.fromEntries(

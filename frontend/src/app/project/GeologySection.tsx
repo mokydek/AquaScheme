@@ -63,12 +63,24 @@ const AGGRESSIVENESS_LABEL: Record<Aggressiveness, string> = { low: 'low', mediu
 export function GeologySection({
   projectId,
   dataset,
+  basisDataset,
   boreholes,
   surveyPoints,
   onChanged,
 }: {
   projectId: string
   dataset: DatasetRow | undefined
+  /**
+   * Набор basis-файлов: в нём лежит РАЗБОР геологического отчёта, положенного
+   * в мастер комплекта.
+   *
+   * Предложение разбора живёт рядом с документом, а не в наборе геологии:
+   * в наборе — величины, подтверждённые инженером, и разбор их не трогает.
+   * Здесь оба источника кандидатов сходятся на экране, а выбор остаётся за
+   * человеком. Проп передаётся явно и не имеет умолчания: непереданная связь
+   * с данными уже стоила проекту пути загрузки объекта.
+   */
+  basisDataset: DatasetRow | undefined
   boreholes: Borehole[]
   /** Границы площадки для отбраковки врезок на геологическом чертеже. */
   surveyPoints: SurveyPoint[]
@@ -112,6 +124,29 @@ export function GeologySection({
   const [soilType, setSoilType] = useState<SoilType>(content?.soilType ?? 'loam')
   const [groundwater, setGroundwater] = useState(String(content?.groundwaterDepthM ?? ''))
   const [corrosivity, setCorrosivity] = useState<Corrosivity>(content?.corrosivity ?? 'medium')
+  /**
+   * Кандидаты промерзания: из разбора отчёта и из набора проекта.
+   *
+   * Разбор кладёт их в запись basis-файла с цитатой и грунтом; набор может
+   * нести свои (например, посев объекта). Показываются оба, дубли по величине
+   * снимаются — выбирает инженер.
+   */
+  const reportGeology = ((basisDataset?.content ?? {}) as {
+    items?: Record<string, { geologyReport?: {
+      freezingDepthCandidates?: Array<{ valueM: number; soil: string | null; quote: string; form: string }>
+      ige?: Array<{ code: string; name: string }>
+      groundwater?: { minM: number; maxM: number } | null
+    } }>
+  }).items?.stankevicha_geologyReport?.geologyReport
+  const freezingCandidates = [
+    ...(reportGeology?.freezingDepthCandidates ?? []).map((candidate) => ({
+      soil: candidate.soil ?? '—', valueM: candidate.valueM, quote: candidate.quote,
+    })),
+    ...(content?.freezingDepthCandidates ?? []).map((candidate) => ({
+      soil: candidate.soil, valueM: candidate.valueM, quote: content?.freezingDepthQuote ?? '',
+    })),
+  ].filter((candidate, index, all) => all.findIndex((other) => other.valueM === candidate.valueM) === index)
+
   const [freezing, setFreezing] = useState(content?.freezingDepthM == null ? '' : String(content.freezingDepthM))
   const [freezingSource, setFreezingSource] = useState(content?.freezingDepthSource ?? content?.sourceFile ?? '')
   const [freezingVerified, setFreezingVerified] = useState(content?.freezingDepthVerified === true)
@@ -787,11 +822,11 @@ export function GeologySection({
           Нажатие подставляет величину и подписывает её грунтом и строкой
           отчёта — тем, на что можно сослаться.
         */}
-        {(content?.freezingDepthCandidates ?? []).length > 0 && (
+        {freezingCandidates.length > 0 && (
           <div className="field" data-freezing-candidates="true">
             <span className="field-label">{t('project.geology.frostCandidates')}</span>
             <div className="chip-row">
-              {(content?.freezingDepthCandidates ?? []).map((candidate) => (
+              {freezingCandidates.map((candidate) => (
                 <button
                   type="button"
                   key={candidate.soil}
@@ -799,8 +834,8 @@ export function GeologySection({
                   data-freezing-candidate={candidate.soil}
                   onClick={() => {
                     setFreezing(String(candidate.valueM))
-                    setFreezingSource(content?.freezingDepthQuote
-                      ? `${candidate.soil}; ${content.freezingDepthQuote}`
+                    setFreezingSource(candidate.quote
+                      ? `${candidate.soil}; ${candidate.quote}`
                       : candidate.soil)
                     // Выбор — ещё не подтверждение: инженер жмёт «подтверждено»
                     // отдельно, увидев, что подставилось.

@@ -21,12 +21,14 @@ describe('мастер комплекта', () => {
       'geologyAppendices',
       'routeScheme',
     ])
-    // Разбираются полная топооснова, съёмка (для совместимости), ТУ и акт
-    // технического обследования; остальные объявлены basis, и у каждого назван
-    // этап разбора.
+    // Разбираются полная топооснова, съёмка (для совместимости), ТУ, акт
+    // технического обследования и геологический отчёт. У геологии разбор был
+    // ОБЪЯВЛЕН этапом 3 и не написан: документ ложился в проект и не сдвигал
+    // расчёт. Этапов 3, 4 и 5 не существует, поэтому «разбор потом» — это
+    // обещание, а не состояние; у оставшихся basis-слотов оно ещё висит.
     const parsed = STANKEVICHA_KIT_SLOTS.filter((slot) => slot.handling === 'parsed')
     expect(parsed.map((slot) => slot.id))
-      .toEqual(['topobaseFull', 'surveyStankevicha', 'technicalConditions', 'surveyReport'])
+      .toEqual(['topobaseFull', 'surveyStankevicha', 'technicalConditions', 'surveyReport', 'geologyReport'])
     // Полная топооснова стоит ДО технических условий: диаметр ложится на уже
     // разобранную основу, а не наоборот.
     const order = STANKEVICHA_KIT_SLOTS.map((slot) => slot.id)

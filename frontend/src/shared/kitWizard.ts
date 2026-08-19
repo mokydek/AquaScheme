@@ -63,7 +63,7 @@ export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
   // и диаметр уложенной трубы, протяжённость, глубину заложения и категорию
   // состояния — то, чего нет ни в ТУ, ни в геологии.
   { id: 'surveyReport', hint: 'ТО_5669_Станкевича (2).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null },
-  { id: 'geologyReport', hint: 'Геологический Отчет.docx', accept: '.docx', handling: 'basis', parsedAtStage: 3 },
+  { id: 'geologyReport', hint: 'Геологический Отчет.docx', accept: '.docx', handling: 'parsed', parsedAtStage: null },
   { id: 'geologyAppendices', hint: 'Приложения 3, 4, 5 (.xls)', accept: '.xls,.xlsx', handling: 'basis', parsedAtStage: 3 },
   { id: 'routeScheme', hint: 'Станкевича_ схема трассы.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 5 },
 ] as const

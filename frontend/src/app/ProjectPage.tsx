@@ -970,6 +970,7 @@ export function ProjectPage() {
           <GeologySection
             projectId={project.id}
             dataset={datasets.geology}
+            basisDataset={datasets.basis}
             boreholes={boreholes}
             surveyPoints={topoPoints}
             onChanged={load}
