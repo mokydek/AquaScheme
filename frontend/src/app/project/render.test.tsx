@@ -368,7 +368,7 @@ describe('прогон комплекта исходных данных', () => 
 describe('демонстрация на настоящем объекте', () => {
   it('камер столько же, сколько в документах, и это видно как совпадение', () => {
     expect(STANKEVICHA_CHAMBERS).toHaveLength(STANKEVICHA_CONDITIONS.declaredChambers)
-    expect(html(createElement(StankevichaDemoView))).toContain('project.stankevicha.matches')
+    expect(html(createElement(StankevichaDemoView, { projectId: 'p1' }))).toContain('project.stankevicha.matches')
   })
 
   it('длина считается из координат, а не хранится числом', () => {
@@ -382,7 +382,7 @@ describe('демонстрация на настоящем объекте', () =
   it('расхождение по длине названо прямо, а не спрятано', () => {
     // Демонстрация на настоящем объекте ценна именно расхождением: если его
     // убрать с экрана, она станет такой же декорацией, как вымышленная сеть.
-    const markup = html(createElement(StankevichaDemoView))
+    const markup = html(createElement(StankevichaDemoView, { projectId: 'p1' }))
     expect(markup).toContain('project.stankevicha.lengthGap')
     expect(markup).toContain('project.stankevicha.decisions')
     expect(markup).toMatch(/\+\d+\.\d\d \(\+\d+\.\d%\)/)
@@ -647,7 +647,7 @@ describe('панель мастера комплекта', () => {
   })
 
   it('кнопка выжимки несёт пометку о неполноте данных', () => {
-    const markup = html(createElement(StankevichaDemoView))
+    const markup = html(createElement(StankevichaDemoView, { projectId: 'p1' }))
     expect(markup).toContain('data-kit-seed-note')
     expect(markup).toContain('project.kit.seedNote')
     expect(markup).toContain('data-kit-wizard')
@@ -998,7 +998,7 @@ describe('продовая навигация: В1 и учебные экран�
   it('мастер комплекта Станкевича остаётся: это рабочий путь, а не учебный экран', () => {
     // Учебная выжимка уходит из продовой сборки, мастер — нет: им грузят
     // настоящий объект.
-    const markup = html(createElement(StankevichaDemoView))
+    const markup = html(createElement(StankevichaDemoView, { projectId: 'p1' }))
     expect(markup).toContain('data-kit-wizard')
     expect(markup).toContain('kit-file-topobaseFull')
   })
@@ -1190,5 +1190,33 @@ describe('итог расчёта не обещает того, чего нел�
     expect(pipeline.releaseBlocked).toContain('Готовность к выпуску')
     expect(pipeline.releasePartial).toContain('{{verified}}')
     expect(pipeline.releaseReady).toContain('{{total}}')
+  })
+})
+
+describe('мастер комплекта получает проект на месте вызова', () => {
+  /**
+   * НАЙДЕНО НА ЖИВОМ САЙТЕ, а не в проверке. Владелец положил в слоты пять
+   * настоящих документов, нажал «Прогнать комплект (5)» и получил пять раз
+   * «Проект не открыт: сохранять basis-файл некуда» — на странице
+   * /app/projects/5d7e1463-…, то есть при открытом проекте.
+   *
+   * Причина — `<StankevichaDemoView />` без `projectId`. Проп был объявлен
+   * необязательным, поэтому TypeScript промолчал; проверки монтировали
+   * компонент напрямую и тоже молчали — они не видят МЕСТА ВЫЗОВА.
+   *
+   * Мастер комплекта — единственный путь загрузить настоящий объект: кнопка
+   * «Настоящий объект» кладёт только выжимку, без подосновы. Непереданный проп
+   * стоил всего пути загрузки.
+   *
+   * ProjectPage в проверке не отрисовать — он тянет хранилище и маршрутизацию,
+   * — поэтому сторожем стоит исходник, как и для `!isWater`.
+   */
+  it('в разметке страницы проекта мастер не вызывается без projectId', () => {
+    const source = readFileSync(new URL('../ProjectPage.tsx', import.meta.url), 'utf8')
+    const calls = [...source.matchAll(/<StankevichaDemoView[\s/>][^>]*>/g)].map((match) => match[0])
+    expect(calls.length).toBeGreaterThan(0)
+    for (const call of calls) {
+      expect(call, `мастер комплекта вызван без проекта: ${call}`).toContain('projectId')
+    }
   })
 })

@@ -676,7 +676,7 @@ export function ProjectPage() {
         {realObjectShown && (
           <div className="panel" style={{ marginTop: 12 }}>
             <h4>{t('project.stankevicha.title')}</h4>
-            <StankevichaDemoView />
+            <StankevichaDemoView projectId={project.id} />
           </div>
         )}
         {demoChoiceOpen && !demoBusy && trainingScreensEnabled()

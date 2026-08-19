@@ -41,11 +41,25 @@ export function StankevichaDemoView({
   projectId,
   confirmedDiameter = null,
 }: {
-  /** Без него basis-файлы сохранять некуда: слот скажет об этом ошибкой. */
-  projectId?: string
+  /**
+   * Проект, в который мастер складывает basis-файлы. ОБЯЗАТЕЛЕН.
+   *
+   * Был необязательным — и это стоило всего пути загрузки объекта. На живом
+   * сайте `ProjectPage` рисовал `<StankevichaDemoView />` без проекта, слоты
+   * принимали файлы, а прогон отвечал «Проект не открыт: сохранять basis-файл
+   * некуда» — пять раз подряд, на странице открытого проекта. TypeScript
+   * молчал: проп объявлен необязательным. Проверки монтировали компонент
+   * напрямую и тоже молчали: они не видят места вызова.
+   *
+   * Обязательность — не формальность, а перенос проверки к компилятору:
+   * мастер комплекта без проекта не имеет смысла, и теперь его нельзя вызвать
+   * без него. Отсутствие выражено типом, а не сообщением об ошибке после того,
+   * как пользователь выбрал пять файлов.
+   */
+  projectId: string
   /** Подтверждённый в секции ТУ диаметр — мастер лишь показывает результат. */
   confirmedDiameter?: { valueMm: number; source: string } | null
-} = {}) {
+}) {
   const { t } = useTranslation()
   const [picked, setPicked] = useState<Record<string, File | undefined>>({})
   const [kit, setKit] = useState<KitState>(() => emptyKitState())
@@ -88,7 +102,6 @@ export function StankevichaDemoView({
    * принимает файл, а величину показывает тогда, когда владелец её подтвердит.
    */
   const acceptConditions = async (file: File): Promise<KitSlotState> => {
-    if (!projectId) throw new Error(t('project.kit.noProject'))
     await saveBasisFile(projectId, 'stankevicha_technicalConditions', file.name, { fileName: file.name })
     if (!confirmedDiameter) return { kind: 'stored', fileName: file.name, parsedAtStage: 1 }
     return {
@@ -107,7 +120,6 @@ export function StankevichaDemoView({
    * этого хватает, чтобы владелец увидел, что файл прочитан, а не проглочен.
    */
   const acceptSurveyReport = async (file: File): Promise<KitSlotState> => {
-    if (!projectId) throw new Error(t('project.kit.noProject'))
     await saveBasisFile(projectId, 'stankevicha_surveyReport', file.name, { fileName: file.name })
     const { loadPdfTextByPage } = await import('../../shared/pdfText')
     const pages = (await loadPdfTextByPage(file)).map((page, index) => ({
@@ -130,7 +142,6 @@ export function StankevichaDemoView({
   }
 
   const storeAsBasis = (slotId: string, stage: number) => async (file: File): Promise<KitSlotState> => {
-    if (!projectId) throw new Error(t('project.kit.noProject'))
     await saveBasisFile(projectId, `stankevicha_${slotId}`, file.name, { fileName: file.name })
     return { kind: 'stored', fileName: file.name, parsedAtStage: stage }
   }
