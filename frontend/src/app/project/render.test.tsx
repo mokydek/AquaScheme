@@ -1253,3 +1253,32 @@ describe('мастер комплекта получает проект на м�
     }
   })
 })
+
+describe('сообщения называют то, что произошло', () => {
+  it('посев настоящего объекта не отчитывается синтетическим демо', () => {
+    // Владелец сеял свой К1 «Станкевича» и читал наверху «Синтетическое демо
+    // К2 загружено»: данные были целы, врал только текст.
+    const source = readFileSync(new URL('../ProjectPage.tsx', import.meta.url), 'utf8')
+    const code = source.split(/\r?\n/).filter((line) => {
+      const trimmed = line.trim()
+      return !trimmed.startsWith('*') && !trimmed.startsWith('/*') && !trimmed.startsWith('//')
+    }).join(' ')
+    // Ветка настоящего объекта ставит собственный итог, а не общий с демо.
+    expect(code).toContain("setRealObjectShown(true)")
+    expect(code).toContain("setDemoNotice('realObjectDone')")
+    expect(ru.translation.project.realObjectDone).toContain('Станкевича')
+    expect(ru.translation.project.realObjectDone).not.toContain('К2')
+    expect(ru.translation.project.demoDone).toContain('демо')
+  })
+
+  it('без выбранной глубины промерзания профиль не считается по числу из воздуха', () => {
+    const source = readFileSync(new URL('./GravitySection.tsx', import.meta.url), 'utf8')
+    const code = source.split(/\r?\n/).filter((line) => {
+      const trimmed = line.trim()
+      return !trimmed.startsWith('*') && !trimmed.startsWith('/*') && !trimmed.startsWith('//')
+    }).join(' ')
+    // 2,00 м нет ни в одном документе объекта: у Станкевича максимум 1,03 м.
+    expect(code).not.toContain('DEFAULT_FREEZING_DEPTH_M')
+    expect(ru.translation.project.gravity.freezingNotChosen).toContain('не считается')
+  })
+})

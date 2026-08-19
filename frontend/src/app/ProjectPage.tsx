@@ -97,7 +97,15 @@ export function ProjectPage() {
   const [demoBusy, setDemoBusy] = useState(false)
   const [demoChoiceOpen, setDemoChoiceOpen] = useState(false)
   const [realObjectShown, setRealObjectShown] = useState(false)
-  const [demoNotice, setDemoNotice] = useState<'demoDone' | 'demoError' | null>(null)
+  /**
+   * Итог посева. ДВА УСПЕХА, А НЕ ОДИН.
+   *
+   * Обе ветки — синтетическое демо К2 и настоящий объект Станкевича — ставили
+   * один и тот же признак, а текст был написан про демо. Владелец сеял свой
+   * объект К1 и читал наверху «Синтетическое демо К2 загружено»: данные целы,
+   * врал только текст. Сообщение обязано называть то, что произошло.
+   */
+  const [demoNotice, setDemoNotice] = useState<'demoDone' | 'realObjectDone' | 'demoError' | null>(null)
   const [demoFailures, setDemoFailures] = useState<string[]>([])
   const [demoStage, setDemoStage] = useState<string | null>(null)
   const [demoCanCancel, setDemoCanCancel] = useState(false)
@@ -376,7 +384,7 @@ export function ProjectPage() {
       if (update.error) throw update.error
       await load()
       setRealObjectShown(true)
-      setDemoNotice('demoDone')
+      setDemoNotice('realObjectDone')
       return true
     } catch (error) {
       await load().catch(() => undefined)
@@ -705,6 +713,7 @@ export function ProjectPage() {
         )}
         {demoNotice === 'demoError' && <p className="notice error">{t('project.demoError')}</p>}
         {demoNotice === 'demoDone' && <p className="notice info">{t('project.demoDone')}</p>}
+        {demoNotice === 'realObjectDone' && <p className="notice info">{t('project.realObjectDone')}</p>}
         {demoFailures.length > 0 && (
           <p className="notice error">Не загрузились разделы: {demoFailures.join(', ')}</p>
         )}

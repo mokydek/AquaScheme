@@ -8,7 +8,6 @@ import {
   calculateStormRunoff,
   checkRouteInCorridor,
   computeNetworkDemand,
-  DEFAULT_FREEZING_DEPTH_M,
   NORMATIVE_DEFAULTS,
   ringFromGeoJsonGeometry,
   manholeSpacingM,
@@ -428,9 +427,19 @@ export function GravitySection({
       )
       for (const b of demand.buildings) if (b.id) buildingFlowLps.set(b.id, b.designFlowLps)
     }
-    // Keep draft calculations inspectable, but never present this fallback as
-    // verified project geology. The drawing register blocks final issue.
-    const freezingDepthM = freezingDepth.valueM ?? DEFAULT_FREEZING_DEPTH_M
+    /*
+      БЕЗ ГЛУБИНЫ ПРОМЕРЗАНИЯ ПРОФИЛЬ НЕ СЧИТАЕТСЯ.
+      Здесь стояла подстановка глубины по умолчанию — 2,00 м, числа, которого нет
+      ни в одном документе объекта: по отчёту Станкевича наибольший кандидат
+      1,03 м, по отчёту Талдыколя наименьший 1,71 м. Промерзание задаёт
+      наименьшее заглубление, то есть весь профиль, и «предварительный расчёт»
+      по числу из воздуха давал глубины, к объекту отношения не имеющие.
+      Показать их — хуже, чем не показать: инженер видит правдоподобные метры.
+      Отсутствие выражается ОТКАЗОМ СЧИТАТЬ, а раздел ниже называет причину и
+      ведёт к выбору кандидата из отчёта.
+    */
+    if (freezingDepth.valueM === null) return null
+    const freezingDepthM = freezingDepth.valueM
     return solveGravityNetwork({
       network,
       buildingFlowLps,
@@ -484,12 +493,16 @@ export function GravitySection({
     return [...result.pipes].sort((a, b) => b.flowLps - a.flowLps)
   }, [result])
 
+  // Профили ветвей — та же глубина промерзания и то же правило: без выбранной
+  // величины их не считают, а не считают по умолчанию.
   const branchProfileResolution = useMemo(
-    () => resolveGravityBranchProfilesForDrawings({
-      network,
-      result,
-      freezingDepthM: freezingDepth.valueM ?? DEFAULT_FREEZING_DEPTH_M,
-    }),
+    () => (freezingDepth.valueM === null
+      ? { branchProfiles: [], blockers: [] }
+      : resolveGravityBranchProfilesForDrawings({
+        network,
+        result,
+        freezingDepthM: freezingDepth.valueM,
+      })),
     [freezingDepth.valueM, network, result],
   )
 
@@ -1351,9 +1364,11 @@ export function GravitySection({
           <p className={`stat-line${freezingDepth.verified ? ' ok' : ' warn'}`}>
             {freezingDepth.verified
               ? `Подтверждено: ${freezingDepth.detail}.`
-              : `Черновой режим: ${freezingDepth.detail}; для предварительного расчёта используется ${
-                (freezingDepth.valueM ?? DEFAULT_FREEZING_DEPTH_M).toFixed(2)
-              } м.`}
+              : freezingDepth.valueM === null
+                ? t('project.gravity.freezingNotChosen')
+                : `Черновой режим: ${freezingDepth.detail}; для предварительного расчёта используется ${
+                  freezingDepth.valueM.toFixed(2)
+                } м.`}
           </p>
           {!freezingDepth.verified && freezingDepth.blockers.map((message) => (
             <p className="stat-line warn" key={message}>{message}</p>

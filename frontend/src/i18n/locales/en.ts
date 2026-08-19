@@ -203,6 +203,7 @@ export const en = {
       demo: 'Load demo',
       demoHint: 'A synthetic district: survey, 40 buildings, source, geology and code defaults',
       demoDone: 'Synthetic K2 demo loaded. The gravity calculation and outfall check are shown below; final issue is blocked for demo data.',
+      realObjectDone: 'The Stankevicha object digest is loaded: 14 chambers with elevations, the technical conditions and the geology report. This is NOT the full kit — the topobase, the survey act and the appendices are loaded through the kit wizard slots below.',
       demoError: 'Failed to load demo data',
       scheme: {
         legend: 'Legend',
@@ -238,6 +239,7 @@ export const en = {
         thChainage: 'Chainage, m',
         thGround: 'Ground, m',
         thPlanned: 'Design surface, m',
+        freezingNotChosen: 'The frost depth is not chosen, so the profile is not computed: it sets the minimum burial, that is, the whole profile. There is no default here — and none in the project documents either. Pick a candidate from the report in the geology section.',
         freezingTitle: 'Frost depth for the profile',
         geologyCoverageTitle: 'Geology coverage along the route',
         reconstruction: {
