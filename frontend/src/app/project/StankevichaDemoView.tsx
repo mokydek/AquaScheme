@@ -256,7 +256,7 @@ export function StankevichaDemoView({
           boreholes: GEO.boreholes,
           layers: GEO.layers.map((layer) => layer.code).join(', '),
           seismicity: GEO.seismicityPoints,
-          freezing: GEO.freezingDepthM.suglinok,
+          freezing: GEO.freezingDepthCandidates.map((c) => c.valueM.toFixed(2)).join(' / '),
         })}
       </p>
       <p className="stat-line">{t('project.stankevicha.customer', { customer: TU.customer })}</p>

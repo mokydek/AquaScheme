@@ -226,6 +226,7 @@ export function GravitySection({
   const [strategy, setStrategy] = useState<'minDiameter' | 'minBurial'>('minBurial')
   const [corridorCheck, setCorridorCheck] = useState<CorridorCheck | null>(null)
   const [saving, setSaving] = useState(false)
+  const [runPersisted, setRunPersisted] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const handledRunRequestRef = useRef(0)
@@ -461,7 +462,14 @@ export function GravitySection({
     void persistGravity(projectId, result)
       .then(() => {
         setSavedAt(new Date().toISOString())
-        onRunComplete?.('done')
+        /*
+          «Рассчитан» и «можно выпускать» — РАЗНЫЕ УТВЕРЖДЕНИЯ. Шапка проекта
+          говорила «Проект рассчитан. Можно экспортировать документацию», а на
+          той же странице ниже стояло «к выпуску 0 (0%), заблокировано 5».
+          Инженер читал верхнюю строку и шёл выпускать то, чего нельзя.
+          Состояние выпуска известно здесь — оно и уходит вместе с итогом.
+        */
+        setRunPersisted(true)
       })
       .catch((error) => {
         const detail = formatAppError(error)
@@ -846,6 +854,30 @@ export function GravitySection({
     systemType,
     unresolvedLayerCount,
   ])
+  /**
+   * «Рассчитан» и «можно выпускать» — РАЗНЫЕ УТВЕРЖДЕНИЯ.
+   *
+   * Шапка проекта говорила «Проект рассчитан. Можно экспортировать
+   * документацию», а на той же странице ниже стояло «к выпуску 0 (0%),
+   * заблокировано 5». Инженер читал верхнюю строку и шёл выпускать то, чего
+   * нельзя. Теперь итог расчёта несёт состояние выпуска — оно известно ровно
+   * здесь, после сборки комплекта, и потому отчёт отделён от сохранения.
+   */
+  useEffect(() => {
+    if (!runPersisted) return
+    setRunPersisted(false)
+    const sheets = workingDrawingSet.sheets
+    const verified = sheets.filter((sheet) => sheet.status === 'VERIFIED').length
+    onRunComplete?.('done', t(
+      verified === 0
+        ? 'project.pipeline.releaseBlocked'
+        : verified === sheets.length
+          ? 'project.pipeline.releaseReady'
+          : 'project.pipeline.releasePartial',
+      { total: sheets.length, verified },
+    ))
+  }, [onRunComplete, runPersisted, t, workingDrawingSet])
+
   const finalOutputAllowed = workingDrawingSet.summary.finalExportAllowed
 
   // Перепады читаются из уже решённого профиля: решатель прижимает лоток к

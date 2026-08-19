@@ -35,6 +35,15 @@ interface GeologyContent {
   freezingDepthM?: number
   freezingDepthSource?: string
   freezingDepthVerified?: boolean
+  /**
+   * Кандидаты промерзания из отчёта: грунт и величина.
+   *
+   * Отчёт даёт глубину по нескольким грунтам и не говорит, какой лежит на
+   * отметке лотка. Программа выбирать не вправе — кандидаты выводятся списком,
+   * инженер называет свой.
+   */
+  freezingDepthCandidates?: Array<{ soil: string; valueM: number }>
+  freezingDepthQuote?: string
   profileGeologyMaxOffsetM?: number
   profileGeologySource?: string
   profileGeologyVerified?: boolean
@@ -770,6 +779,41 @@ export function GeologySection({
             }}
           />
         </label>
+        {/*
+          ВЫБОР ГРУНТА — ЗА ИНЖЕНЕРОМ. Раздел готовности давно обещал «выберите
+          одну глубину промерзания из кандидатов отчёта — с грунтом и цитатой»,
+          а показать кандидаты было негде: посев тихо брал суглинок, и величина
+          приезжала на экран уже выбранной, с рангом «принято по умолчанию».
+          Нажатие подставляет величину и подписывает её грунтом и строкой
+          отчёта — тем, на что можно сослаться.
+        */}
+        {(content?.freezingDepthCandidates ?? []).length > 0 && (
+          <div className="field" data-freezing-candidates="true">
+            <span className="field-label">{t('project.geology.frostCandidates')}</span>
+            <div className="chip-row">
+              {(content?.freezingDepthCandidates ?? []).map((candidate) => (
+                <button
+                  type="button"
+                  key={candidate.soil}
+                  className={`btn btn-sm${freezing === String(candidate.valueM) ? '' : ' btn-ghost'}`}
+                  data-freezing-candidate={candidate.soil}
+                  onClick={() => {
+                    setFreezing(String(candidate.valueM))
+                    setFreezingSource(content?.freezingDepthQuote
+                      ? `${candidate.soil}; ${content.freezingDepthQuote}`
+                      : candidate.soil)
+                    // Выбор — ещё не подтверждение: инженер жмёт «подтверждено»
+                    // отдельно, увидев, что подставилось.
+                    setFreezingVerified(false)
+                  }}
+                >
+                  {candidate.soil}: {candidate.valueM.toFixed(2)} м
+                </button>
+              ))}
+            </div>
+            <p className="hint">{t('project.geology.frostCandidatesHint')}</p>
+          </div>
+        )}
         <label className="field">
           <span className="field-label">{t('project.geology.frostSource')}</span>
           <input

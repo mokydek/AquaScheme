@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, stankevichaChainLengthM } from './stankevichaDemo'
+import { STANKEVICHA_CHAMBERS, STANKEVICHA_CONDITIONS, STANKEVICHA_GEOLOGY, stankevichaChainLengthM } from './stankevichaDemo'
 
 // Модуль тянет клиент базы, а он требует переменных окружения, которых в тесте
 // нет. Проверяется чистая сборка сети, до базы дело не доходит.
@@ -162,3 +162,45 @@ describe('отказ базы объясняется миграцией, а не
 
 // Ссылка на сеятель нужна, чтобы импорт не выпал как неиспользуемый.
 expect(typeof seedStankevichaProject).toBe('function')
+
+describe('промерзание: посев не выбирает грунт за инженера', () => {
+  /**
+   * Отчёт по объекту (г. Алматы) даёт глубину по трём грунтам и не говорит,
+   * какой лежит на отметке лотка. Посев брал суглинок — наименьший из трёх, —
+   * и величина уходила в расчёт с рангом «принято по умолчанию». Это тот же
+   * молчаливый выбор, что и прежний `Math.max`, только зеркальный.
+   */
+  it('кандидаты объявлены списком с грунтом и цитатой отчёта', () => {
+    const candidates = STANKEVICHA_GEOLOGY.freezingDepthCandidates
+    expect(candidates.map((candidate) => candidate.valueM)).toEqual([0.79, 0.96, 1.03])
+    for (const candidate of candidates) {
+      expect(candidate.soil.length).toBeGreaterThan(0)
+      // Цитата обязана содержать величину: подписать выбор нечем, если строки
+      // отчёта под ним нет.
+      expect(STANKEVICHA_GEOLOGY.freezingDepthQuote).toContain(
+        candidate.valueM.toFixed(2).replace('.', ',').replace(/,?0+$/, ''),
+      )
+    }
+  })
+
+  it('в наборе геологии нет выбранной величины — только кандидаты', async () => {
+    const saved: Array<{ kind: string; content: Record<string, unknown> }> = []
+    vi.doMock('./datasets', () => ({
+      saveDataset: (_project: string, kind: string, content: Record<string, unknown>) => {
+        saved.push({ kind, content })
+        return Promise.resolve()
+      },
+    }))
+    vi.resetModules()
+    const seed = await import('./stankevichaSeed')
+    await seed.seedStankevichaProject('project-1').catch(() => undefined)
+    const geology = saved.find((row) => row.kind === 'geology')
+    if (geology) {
+      // Величина не выбрана: выбирает инженер, программа кладёт кандидатов.
+      expect(geology.content.freezingDepthM).toBeUndefined()
+      expect(Array.isArray(geology.content.freezingDepthCandidates)).toBe(true)
+    }
+    vi.doUnmock('./datasets')
+    vi.resetModules()
+  })
+})

@@ -117,9 +117,16 @@ export async function seedStankevichaProject(projectId: string): Promise<Stankev
     boreholeDepthM: GEO.boreholeDepthM,
     groundwaterEncountered: GEO.groundwaterEncountered,
     layers: GEO.layers,
-    // Промерзание для суглинка: им сложена верхняя часть разреза.
-    freezingDepthM: GEO.freezingDepthM.suglinok,
-    freezingDepthBySoil: GEO.freezingDepthM,
+    /*
+      ПОСЕВ НЕ ВЫБИРАЕТ ГРУНТ. Здесь стояло `freezingDepthM: суглинок` — то
+      есть наименьший из трёх кандидатов отчёта, — и величина уходила в расчёт
+      как расчётная, получая на экране ранг «принято по умолчанию». Это тот же
+      молчаливый выбор, что и прежний `Math.max`, только зеркальный: разница
+      между 0,79 и 1,03 м — треть наименьшего заглубления.
+      Кандидаты кладутся списком, выбор делает инженер в разделе геологии.
+    */
+    freezingDepthCandidates: GEO.freezingDepthCandidates,
+    freezingDepthQuote: GEO.freezingDepthQuote,
     source: 'Геологический отчёт по объекту, скважины С-1…С-3',
   }, { boreholes: GEO.boreholes, layers: GEO.layers.length }, 'stankevicha-geology.json'))
 

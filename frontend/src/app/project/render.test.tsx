@@ -57,6 +57,8 @@ const { TuImportSection } = await import('./TuImportSection')
 const { NormsSection } = await import('./FormSections')
 const { WaterBranchNotice } = await import('./WaterBranchNotice')
 const { ReconstructionProfileNotes } = await import('./ReconstructionProfileNotes')
+const { GeologySection } = await import('./GeologySection')
+const { ru } = await import('../../i18n/locales/ru')
 const { NORM_REGISTRY, unverifiedClauses, READINESS_SECTIONS, WATER_BRANCH_BLOCKER_CODE } = await import('@aquascheme/engine')
 const {
   maxFilling, auditProjectProvenance, planBasinPressureLinks, extractConditionsFromTu,
@@ -1119,5 +1121,74 @@ describe('перезакладка профиля от измеренных ло
     expect(clean).toContain('stat-line ok')
     // Профиля реконструкции нет вовсе (новое строительство) — вида тоже нет.
     expect(html(createElement(ReconstructionProfileNotes, {} as never))).toBe('')
+  })
+})
+
+describe('промерзание: кандидаты отчёта видны, выбор за инженером', () => {
+  /**
+   * На живом сайте стояло «Черновой режим: 0.79 м; источник:
+   * stankevicha-geology.json», ранг — «принято по умолчанию». Величина ИЗ
+   * отчёта этого объекта (Алматы, суглинок), но выбрал её посев, а не инженер:
+   * отчёт даёт три грунта — 0,79 / 0,96 / 1,03 м — и не говорит, какой лежит
+   * на отметке лотка. Раздел готовности при этом давно обещал «выберите одну
+   * из кандидатов отчёта», а показать их было негде.
+   */
+  const dataset = {
+    id: 'g1',
+    content: {
+      soilType: 'clay', groundwaterDepthM: 6, corrosivity: 'low',
+      freezingDepthCandidates: [
+        { soil: 'суглинок, глина', valueM: 0.79 },
+        { soil: 'песок пылеватый', valueM: 0.96 },
+        { soil: 'песок средней крупности', valueM: 1.03 },
+      ],
+      freezingDepthQuote: 'Нормативная глубина сезонного промерзания для суглинков – 0,79м…',
+    },
+  }
+  const markup = html(createElement(GeologySection, {
+    projectId: 'p1', dataset, boreholes: [], surveyPoints: [], onChanged: async () => {},
+  } as never))
+
+  it('показывает все три кандидата с грунтом и величиной', () => {
+    expect(markup).toContain('data-freezing-candidates="true"')
+    for (const soil of ['суглинок, глина', 'песок пылеватый', 'песок средней крупности']) {
+      expect(markup).toContain(`data-freezing-candidate="${soil}"`)
+    }
+    expect(markup).toContain('0.79')
+    expect(markup).toContain('1.03')
+  })
+
+  it('ни один кандидат не выбран заранее', () => {
+    // Ровно то, что чинится: величина не должна приезжать уже выбранной.
+    const active = [...markup.matchAll(/data-freezing-candidate="[^"]+"/g)]
+    expect(active).toHaveLength(3)
+    // Все три — второстепенные кнопки: ни одна не помечена как выбранная.
+    expect(markup.split('btn-ghost').length - 1).toBeGreaterThanOrEqual(3)
+  })
+
+  it('без кандидатов в наборе выбор не показывается', () => {
+    const bare = html(createElement(GeologySection, {
+      projectId: 'p1',
+      dataset: { id: 'g2', content: { soilType: 'clay', groundwaterDepthM: 6, corrosivity: 'low' } },
+      boreholes: [], surveyPoints: [], onChanged: async () => {},
+    } as never))
+    expect(bare).not.toContain('data-freezing-candidates')
+  })
+})
+
+describe('итог расчёта не обещает того, чего нельзя', () => {
+  it('«рассчитан» больше не значит «можно экспортировать»', () => {
+    // Шапка говорила «Проект рассчитан. Можно экспортировать документацию», а
+    // ниже на той же странице стояло «к выпуску 0 (0%), заблокировано 5».
+    expect(ru.translation.project.pipeline.done).not.toContain('экспорт')
+    expect(ru.translation.project.pipeline.done).toBe('Проект рассчитан и сохранён')
+  })
+
+  it('состояние выпуска называется отдельной строкой и адресует раздел', () => {
+    const pipeline = ru.translation.project.pipeline
+    expect(pipeline.releaseBlocked).toContain('{{total}}')
+    expect(pipeline.releaseBlocked).toContain('Готовность к выпуску')
+    expect(pipeline.releasePartial).toContain('{{verified}}')
+    expect(pipeline.releaseReady).toContain('{{total}}')
   })
 })
