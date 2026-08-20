@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import {
   assessRouteSurveyCoverage,
   compareRouteToReference,
-  DEFAULT_FREEZING_DEPTH_M,
   ringFromGeoJsonGeometry,
   ROUTE_ALGORITHM_VERSION,
   solveGravityNetwork,
@@ -174,9 +173,17 @@ export function SituationSchemeSection({
         : building.design_flow_lps ?? building.residents ?? 0)
     }
     const freezing = freezingDepthStatus(geologyDataset)
-    // The fallback is allowed only to keep a visibly preliminary preview
-    // calculable. Working drawings independently block final issue.
-    const freezingDepthM = freezing.valueM ?? DEFAULT_FREEZING_DEPTH_M
+    /*
+      ВТОРАЯ ПОДСТАНОВКА 2,00 М. Первую убрали из раздела самотёка и поставили
+      сторожем его исходник — эта осталась и в поле зрения сторожа не попала, а
+      в список законных подстановок внесена не была: храповик её не видел.
+      Правило то же: промерзание задаёт наименьшее заглубление, то есть весь
+      профиль, и предпросмотр по числу, которого нет в документах объекта,
+      показывает правдоподобные метры не про этот объект. Предпросмотра нет —
+      как и при незаданной трассе, неготовом каталоге и пустой сети выше.
+    */
+    if (freezing.valueM === null) return null
+    const freezingDepthM = freezing.valueM
     const lns = network.nodes.find((node) => node.kind === 'lns_inlet' || node.kind === 'pumping_station')
     const gravity = solveGravityNetwork({
       network,

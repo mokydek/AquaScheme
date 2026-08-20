@@ -92,6 +92,37 @@ async function updateDatasetRows(
 }
 
 /** Insert or update the single dataset row of the given kind for a project. */
+/**
+ * Содержимое набора, каким оно лежит в базе СЕЙЧАС.
+ *
+ * Нужен запасному пути сохранения basis-файлов: он обязан сливать своё с уже
+ * записанным, а не писать поверх снимка, взятого в браузере. Снимок устаревает
+ * от каждой предыдущей записи, и шесть загрузок подряд оставляли один файл.
+ */
+export async function loadDatasetContent(projectId: string, kind: DatasetKind): Promise<unknown> {
+  const { data, error } = await supabase
+    .from('datasets')
+    .select('content')
+    .eq('project_id', projectId)
+    .eq('kind', kind)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  // Установки без миграции 0014 могут держать несколько строк одного вида:
+  // берётся объединение, чтобы чтение не теряло то, чего не видит запись.
+  const merged: Record<string, unknown> = {}
+  for (const row of data ?? []) {
+    const content = row.content
+    if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
+      const files = { ...(merged.files as Record<string, unknown> ?? {}) }
+      Object.assign(merged, content)
+      const rowFiles = (content as Record<string, unknown>).files
+      if (typeof rowFiles === 'object' && rowFiles !== null) Object.assign(files, rowFiles)
+      if (Object.keys(files).length > 0) merged.files = files
+    }
+  }
+  return merged
+}
+
 export async function saveDataset(
   projectId: string,
   kind: DatasetKind,

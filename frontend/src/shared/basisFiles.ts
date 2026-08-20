@@ -1,4 +1,4 @@
-import { saveDataset } from './datasets'
+import { loadDatasetContent, saveDataset } from './datasets'
 import { SUPABASE_ANON_KEY, SUPABASE_REST_URL, supabase } from './supabase'
 
 type JsonObject = Record<string, unknown>
@@ -58,16 +58,43 @@ function hasBasisFileRpc(): Promise<boolean> {
   return basisFileRpcCapability
 }
 
+/**
+ * Очередь записей: следующая начинается после того, как предыдущая легла.
+ *
+ * ЭТО И БЫЛА ПОТЕРЯ. Шесть загрузок мастера шли подряд, каждая писала набор
+ * целиком из обрывка, переданного вызывающим, и затирала предыдущую. В базе
+ * оставался последний файл, а мастер отчитывался «Готово 6 из 8, с ошибкой 0».
+ *
+ * Взяты ОБА средства сразу, потому что они закрывают разные дыры. Перечитка
+ * снимает устаревание снимка (браузер не знает, что записали до него), очередь
+ * снимает гонку внутри одной страницы (перечитка без неё читает базу до того,
+ * как соседняя запись туда дошла). Порознь каждое оставляет свою половину
+ * потери, и обе половины наблюдались.
+ */
+let basisWriteQueue: Promise<unknown> = Promise.resolve()
+
+function queueBasisWrite<T>(task: () => Promise<T>): Promise<T> {
+  const next = basisWriteQueue.then(task, task)
+  // Очередь не должна вставать из-за неудачи одной записи: следующая пробует.
+  basisWriteQueue = next.then(() => undefined, () => undefined)
+  return next
+}
+
 async function saveBasisFileLegacy(
   projectId: string,
   itemId: string,
   fileName: string,
   base: JsonObject,
 ): Promise<void> {
-  const files = jsonObject(base.files)
-  await saveDataset(projectId, 'basis', {
-    ...base,
-    files: { ...files, [itemId]: fileName },
+  await queueBasisWrite(async () => {
+    // Записанное в базе главнее снимка из браузера — как и в атомарном пути.
+    const stored = jsonObject(await loadDatasetContent(projectId, 'basis'))
+    const files = { ...jsonObject(base.files), ...jsonObject(stored.files) }
+    await saveDataset(projectId, 'basis', {
+      ...base,
+      ...stored,
+      files: { ...files, [itemId]: fileName },
+    })
   })
 }
 

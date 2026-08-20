@@ -1274,6 +1274,17 @@ describe('сообщения называют то, что произошло', 
   })
 
   it('без выбранной глубины промерзания профиль не считается по числу из воздуха', () => {
+    // Сторож смотрит на ОБА раздела: первую подстановку убрали из самотёка, а
+    // вторая, в ситуационной схеме, осталась и в поле зрения не попала — её не
+    // было и в списке законных, так что храповик её тоже не видел.
+    for (const name of ['./GravitySection.tsx', './SituationSchemeSection.tsx']) {
+      const text = readFileSync(new URL(name, import.meta.url), 'utf8')
+      const body = text.split(/\r?\n/).filter((line) => {
+        const trimmed = line.trim()
+        return !trimmed.startsWith('*') && !trimmed.startsWith('/*') && !trimmed.startsWith('//')
+      }).join(' ')
+      expect(body, name).not.toContain('DEFAULT_FREEZING_DEPTH_M')
+    }
     const source = readFileSync(new URL('./GravitySection.tsx', import.meta.url), 'utf8')
     const code = source.split(/\r?\n/).filter((line) => {
       const trimmed = line.trim()

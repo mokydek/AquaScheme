@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   getSession: vi.fn(),
   saveDataset: vi.fn(),
+  loadDatasetContent: vi.fn(),
   fetch: vi.fn(),
 }))
 
@@ -19,6 +20,7 @@ vi.mock('./supabase', () => ({
 
 vi.mock('./datasets', () => ({
   saveDataset: mocks.saveDataset,
+  loadDatasetContent: mocks.loadDatasetContent,
 }))
 
 let saveBasisFile: typeof import('./basisFiles')['saveBasisFile']
@@ -29,6 +31,8 @@ describe('saveBasisFile', () => {
     mocks.rpc.mockReset()
     mocks.getSession.mockReset()
     mocks.saveDataset.mockReset()
+    mocks.loadDatasetContent.mockReset()
+    mocks.loadDatasetContent.mockResolvedValue({})
     mocks.fetch.mockReset()
     mocks.getSession.mockResolvedValue({
       data: { session: { access_token: 'current-user-jwt' } },
@@ -146,5 +150,72 @@ describe('save_basis_file SQL contract', () => {
     expect(sql).toMatch(/update public\.datasets[\s\S]*where project_id = p_project_id[\s\S]*kind = 'basis'/i)
     expect(sql).toMatch(/when unique_violation then/i)
     expect(sql).toMatch(/grant execute[\s\S]*to authenticated/i)
+  })
+})
+
+describe('запасной путь не теряет файлы', () => {
+  /**
+   * ИЗМЕРЕНО НА ЖИВОЙ БАЗЕ. Владелец загрузил мастером шесть документов, мастер
+   * отчитался «Готово 6 из 8; с ошибкой 0», а в наборе `basis` остался ОДИН
+   * ключ — последний. Пять документов пропали молча.
+   *
+   * Причина: запасной путь писал набор целиком из того обрывка содержимого,
+   * который передал вызывающий, не читая, что уже лежит в базе. Шесть записей
+   * подряд — каждая затирала предыдущую.
+   */
+  beforeEach(async () => {
+    vi.resetModules()
+    for (const mock of [mocks.rpc, mocks.getSession, mocks.saveDataset, mocks.loadDatasetContent, mocks.fetch]) {
+      mock.mockReset()
+    }
+    mocks.getSession.mockResolvedValue({
+      data: { session: { access_token: 'current-user-jwt' } }, error: null,
+    })
+    mocks.loadDatasetContent.mockResolvedValue({})
+    // RPC в этом сценарии недоступна: старая база, недокатанная миграция.
+    mocks.fetch.mockResolvedValue({ ok: true, json: async () => ({ paths: {} }) })
+    vi.stubGlobal('fetch', mocks.fetch)
+    ;({ saveBasisFile } = await import('./basisFiles'))
+  })
+
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('шесть сохранений подряд дают шесть ключей, а не один', async () => {
+    // Подставная база: `saveDataset` пишет, чтение отдаёт записанное.
+    let stored: Record<string, unknown> = {}
+    mocks.saveDataset.mockImplementation(async (_project: string, _kind: string, content: unknown) => {
+      stored = content as Record<string, unknown>
+    })
+    mocks.loadDatasetContent.mockImplementation(async () => stored)
+
+    const items = ['tu', 'assignment', 'geology', 'topo', 'apz', 'vertical']
+    for (const item of items) {
+      await saveBasisFile('project-1', item, `${item}.pdf`, { fileName: `${item}.pdf` })
+    }
+    expect(Object.keys((stored.files ?? {}) as Record<string, string>).sort()).toEqual([...items].sort())
+  })
+
+  it('параллельные сохранения тоже не затирают друг друга', async () => {
+    let stored: Record<string, unknown> = {}
+    mocks.saveDataset.mockImplementation(async (_project: string, _kind: string, content: unknown) => {
+      // Задержка расширяет окно гонки: без очереди последний затрёт всех.
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      stored = content as Record<string, unknown>
+    })
+    mocks.loadDatasetContent.mockImplementation(async () => stored)
+
+    await Promise.all(['tu', 'assignment', 'geology'].map((item) =>
+      saveBasisFile('project-1', item, `${item}.pdf`, { fileName: `${item}.pdf` })))
+    expect(Object.keys((stored.files ?? {}) as Record<string, string>).sort())
+      .toEqual(['assignment', 'geology', 'tu'])
+  })
+
+  it('отказ RPC не по причине её отсутствия не подменяется запасным путём', async () => {
+    // 22023 — недопустимый идентификатор. Это ошибка, и она обязана дойти до
+    // экрана, а не превратиться в тихую запись мимо проверки.
+    mocks.fetch.mockResolvedValue({ ok: true, json: async () => ({ paths: { '/rpc/save_basis_file': {} } }) })
+    mocks.rpc.mockResolvedValue({ error: { code: '22023', message: 'invalid basis item: whatever' } })
+    await expect(saveBasisFile('project-1', 'whatever', 'x.pdf', {})).rejects.toMatchObject({ code: '22023' })
+    expect(mocks.saveDataset).not.toHaveBeenCalled()
   })
 })
