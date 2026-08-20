@@ -134,6 +134,41 @@ describe('мастер комплекта', () => {
   })
 })
 
+describe('причина отказа доходит до слота словами', () => {
+  it('отказ базы читается человеком, а не как [object Object]', async () => {
+    /*
+      Отказ PostgREST — плайн-объект, а не Error. `String(cause)` давал
+      «[object Object]», и слот показывал бы это вместо «invalid basis item».
+      То есть та самая ошибка, из-за которой мастер терял документы, была бы
+      на экране нечитаемой — и владелец опять пошёл бы в базу руками.
+    */
+    const state = await runKit(
+      { technicalConditions: file('tu.pdf') },
+      {
+        technicalConditions: async () => {
+          throw { code: '22023', message: 'invalid basis item: stankevicha_technicalConditions' }
+        },
+      },
+    )
+    const slot = state.technicalConditions
+    expect(slot.kind).toBe('failed')
+    const reason = slot.kind === 'failed' ? slot.reason : ''
+    expect(reason).not.toContain('[object Object]')
+    expect(reason).toContain('22023')
+    expect(reason).toContain('invalid basis item')
+  })
+
+  it('обычная ошибка разбора остаётся своим текстом', async () => {
+    const state = await runKit(
+      { geologyReport: file('g.docx') },
+      { geologyReport: async () => { throw new Error('В файле DOCX нет текста') } },
+    )
+    expect(state.geologyReport).toEqual({
+      kind: 'failed', fileName: 'g.docx', reason: 'В файле DOCX нет текста',
+    })
+  })
+})
+
 describe('«Готово N» считается по базе, а не по числу удачных вызовов', () => {
   /**
    * ИЗМЕРЕНО НА ЖИВОМ САЙТЕ. Мастер написал «Готово 6 из 8; с ошибкой 0», а в

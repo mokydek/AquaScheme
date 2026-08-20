@@ -14,6 +14,7 @@
  */
 
 import type { BasisItemId } from './basisFiles'
+import { formatAppError } from './errorFormatting'
 
 /** Что слот делает с файлом на этом этапе. */
 export type KitSlotHandling =
@@ -231,7 +232,22 @@ export async function runKit(
       try {
         next = await handler(file)
       } catch (cause) {
-        next = { kind: 'failed', fileName: file.name, reason: cause instanceof Error ? cause.message : String(cause) }
+        /*
+          Причина берётся `formatAppError`, а не `String(cause)`.
+
+          Отказ базы — ПЛАЙН-ОБЪЕКТ, а не Error: `supabase.rpc()` без
+          `.throwOnError()` отдаёт разобранный JSON. `String(cause)` на нём
+          давал «[object Object]», и слот показывал бы это вместо «invalid
+          basis item: …» — то есть ровно ту ошибку, с которой начался весь
+          разбор, инженер прочитать бы не смог.
+        */
+        next = {
+          kind: 'failed',
+          fileName: file.name,
+          // Своё исключение уже несёт готовую фразу; префикс «message: » ей
+          // не нужен. Разбор полей — только для того, что не Error.
+          reason: cause instanceof Error ? cause.message : formatAppError(cause),
+        }
       }
     }
     state[slot.id] = next
