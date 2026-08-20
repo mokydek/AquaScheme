@@ -152,7 +152,7 @@ describe('«Готово N» считается по базе, а не по чи
     // В базе только схема трассы — ровно то, что владелец увидел запросом.
     const checked = verifyKitAgainstStored(
       afterRun(),
-      { kind: 'read', itemIds: ['route_scheme'] },
+      { kind: 'read', files: { route_scheme: 'схема.pdf' } },
       'В базе проекта его нет.',
     )
     expect(checked.routeScheme).toEqual({ kind: 'stored', fileName: 'схема.pdf', parsedAtStage: 5 })
@@ -173,7 +173,7 @@ describe('«Готово N» считается по базе, а не по чи
   it('все документы на месте — прогон не трогают', () => {
     const checked = verifyKitAgainstStored(
       afterRun(),
-      { kind: 'read', itemIds: ['tu', 'assignment', 'route_scheme'] },
+      { kind: 'read', files: { tu: 'ТУ.pdf', assignment: 'ТЗ.pdf', route_scheme: 'схема.pdf' } },
       'В базе проекта его нет.',
     )
     expect(checked).toEqual(afterRun())
@@ -203,8 +203,43 @@ describe('«Готово N» считается по базе, а не по чи
       topobaseFull: { kind: 'parsed', fileName: 'm.dxf', counters: [] },
       surveyStankevicha: { kind: 'covered', byId: 'topobaseFull' },
     }
-    const checked = verifyKitAgainstStored(state, { kind: 'read', itemIds: ['topo'] }, 'нет')
+    const checked = verifyKitAgainstStored(state, { kind: 'read', files: { topo: 'm.dxf' } }, 'нет')
     expect(checked.surveyStankevicha).toEqual({ kind: 'covered', byId: 'topobaseFull' })
     expect(checked.geologyReport).toEqual({ kind: 'empty' })
+  })
+
+  it('затёртый файл не засчитывается: сверяется имя, а не наличие ключа', () => {
+    /*
+      Два слота топоосновы писали ОДИН ключ `topo`: восемь загруженных
+      документов давали семь, имя полной топоосновы затиралось съёмкой, а
+      сверка отвечала «Готово 8 из 8» — ключ-то на месте. Идентификаторы
+      разведены миграцией 0023, но проверка обязана ловить и будущее
+      столкновение, а не то одно, которое уже известно.
+    */
+    const state: KitState = {
+      ...emptyKitState(),
+      topobaseFull: { kind: 'parsed', fileName: 'Молдагалиева.dxf', counters: [] },
+      surveyStankevicha: { kind: 'parsed', fileName: 'станкевича.dxf', counters: [] },
+    }
+    const checked = verifyKitAgainstStored(
+      state,
+      // Как выглядит база, если под ключом слота лежит ЧУЖОЕ имя: раньше это
+      // засчитывалось за сохранение, потому что спрашивали про ключ.
+      { kind: 'read', files: { topo: 'станкевича.dxf', topo_survey: 'станкевича.dxf' } },
+      'В базе проекта его нет.',
+    )
+    expect(checked.topobaseFull).toEqual({
+      kind: 'failed', fileName: 'Молдагалиева.dxf', reason: 'В базе проекта его нет.',
+    })
+    // Свой файл на своём месте — слот остаётся заполненным.
+    expect(checked.surveyStankevicha).toEqual({
+      kind: 'parsed', fileName: 'станкевича.dxf', counters: [],
+    })
+    expect(kitProgress(checked).filled).toBe(1)
+  })
+
+  it('все восемь слотов пишут восемь разных документов', () => {
+    const ids = STANKEVICHA_KIT_SLOTS.map((slot) => slot.basisItemId)
+    expect(new Set(ids).size).toBe(STANKEVICHA_KIT_SLOTS.length)
   })
 })

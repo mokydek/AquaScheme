@@ -37,8 +37,12 @@ export interface KitSlotDefinition {
    * сопоставления. Три остальных в этот перечень не входят и имеют собственные
    * имена (`survey_act`, `geology_appendices`, `route_scheme`).
    *
-   * Две формы топоосновы делят один идентификатор `topo`: это один и тот же
-   * документ ИРД, и второй слот помечен как покрываемый первым.
+   * Идентификаторы РАЗНЫЕ У ВСЕХ ВОСЬМИ. Две формы топоосновы сначала делили
+   * `topo` — «один документ ИРД в двух формах»; на прогоне это дало семь
+   * ключей на восемь загруженных файлов, имя полной топоосновы затиралось
+   * съёмкой, а сверка с базой отвечала «Готово 8 из 8», потому что ключ-то на
+   * месте. В перечне ИРД топооснова по-прежнему одна (`topo`, полная), а
+   * частная съёмка — отдельный файл объекта с отдельным именем.
    */
   basisItemId: BasisItemId
   /**
@@ -75,7 +79,7 @@ export interface KitSlotDefinition {
  */
 export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
   { id: 'topobaseFull', hint: 'Молдагалиева.dwg → .dxf (полная топооснова)', accept: '.dxf', handling: 'parsed', parsedAtStage: null, basisItemId: 'topo' },
-  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull', basisItemId: 'topo' },
+  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull', basisItemId: 'topo_survey' },
   { id: 'technicalConditions', hint: 'ТУ_05-3-2723 (1).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null, basisItemId: 'tu' },
   { id: 'designBrief', hint: 'ТЗ_5669_Станкевича.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 4, basisItemId: 'assignment' },
   // Акт технического обследования разбирается текстовым слоем: он даёт материал
@@ -135,8 +139,15 @@ export function kitProgress(state: KitState, slots: readonly KitSlotDefinition[]
 
 /** Чем кончилась перечитка набора basis после прогона. */
 export type KitStoredCheck =
-  /** Набор прочитан: перечислены идентификаторы документов, лежащих в базе. */
-  | { kind: 'read'; itemIds: readonly string[] }
+  /**
+   * Набор прочитан: имя файла по каждому документу, лежащему в базе.
+   *
+   * Именно ИМЯ, а не один перечень ключей. Пока слоты делили идентификатор,
+   * проверка «ключ на месте» отвечала «на месте» обоим — и затёртый файл
+   * засчитывался как сохранённый. Сравнение имён ловит любое такое
+   * столкновение, включая то, которого ещё нет.
+   */
+  | { kind: 'read'; files: Readonly<Record<string, string>> }
   /** Перечитать не удалось; готовая к показу причина. */
   | { kind: 'failed'; reason: string }
 
@@ -166,7 +177,7 @@ export function verifyKitAgainstStored(
       next[slot.id] = { kind: 'unverified', fileName: value.fileName, reason: stored.reason }
       continue
     }
-    if (!stored.itemIds.includes(slot.basisItemId)) {
+    if (stored.files[slot.basisItemId] !== value.fileName) {
       next[slot.id] = { kind: 'failed', fileName: value.fileName, reason: missingReason }
     }
   }

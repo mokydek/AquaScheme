@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BASIS_ITEM_IDS } from './basisFiles'
 import type { BasisItemId } from './basisFiles'
@@ -141,6 +141,25 @@ describe('saveBasisFile', () => {
   })
 })
 
+/**
+ * Белый список из последней миграции, которая его объявляет.
+ *
+ * Разбор, а не копия: копия — это второй список, а расхождение двух списков и
+ * было причиной того, что мастер терял документы.
+ */
+function latestWhitelist(): string[] {
+  const dir = new URL('../../../backend/migrations/', import.meta.url)
+  const names = readdirSync(dir).filter((name) => name.endsWith('.sql')).sort()
+  let latest: string[] = []
+  for (const name of names) {
+    const sql = readFileSync(new URL(name, dir), 'utf8')
+    const declaration = /array\[([\s\S]*?)\]::text\[\]/.exec(sql)
+    if (!declaration) continue
+    latest = [...declaration[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1])
+  }
+  return latest
+}
+
 describe('save_basis_file SQL contract', () => {
   it('locks, deep-merges and retries the canonical basis row under owner scope', () => {
     const sql = readFileSync(
@@ -170,13 +189,10 @@ describe('save_basis_file SQL contract', () => {
    * переписанный список разошёлся бы ровно так же, как разошлись первые два.
    */
   it('белый список базы совпадает с BASIS_ITEM_IDS и покрывает каждый слот', () => {
-    const sql = readFileSync(
-      new URL('../../../backend/migrations/0022_basis_kit_documents.sql', import.meta.url),
-      'utf8',
-    )
-    const declaration = /p_item_id = any \(array\[([\s\S]*?)\]::text\[\]\)/.exec(sql)
-    expect(declaration, 'в 0022 не найден белый список идентификаторов').not.toBeNull()
-    const fromSql = [...(declaration?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((match) => match[1])
+    // Читается ПОСЛЕДНЯЯ миграция, объявляющая список: он переезжал уже
+    // дважды (0015 → 0022 → 0023), и проверка, прибитая к номеру файла,
+    // молча осталась бы сверять позавчерашний перечень.
+    const fromSql = latestWhitelist()
 
     expect([...fromSql].sort()).toEqual([...BASIS_ITEM_IDS].sort())
 

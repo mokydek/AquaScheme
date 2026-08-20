@@ -263,9 +263,13 @@ export function StankevichaDemoView({
     try {
       const content = await loadDatasetContent(projectId, 'basis')
       const files = (content as { files?: Record<string, unknown> } | null)?.files
+      const stored_ = typeof files === 'object' && files !== null ? files : {}
       stored = {
         kind: 'read',
-        itemIds: typeof files === 'object' && files !== null ? Object.keys(files) : [],
+        // Имена приводятся к строкам: чужое значение в наборе не должно
+        // случайно совпасть с именем файла и засчитаться за сохранение.
+        files: Object.fromEntries(Object.entries(stored_)
+          .filter(([, name]) => typeof name === 'string') as Array<[string, string]>),
       }
     } catch (cause) {
       stored = { kind: 'failed', reason: t('project.kit.checkFailed', { reason: formatAppError(cause) }) }

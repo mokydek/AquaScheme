@@ -28,15 +28,16 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 /**
  * Белый список идентификаторов — из миграций, а не из копии здесь.
  *
- * Берётся последняя миграция, объявляющая список: копия в скрипте разошлась бы
- * с базой ровно так же, как разошлись ключи мастера.
+ * Берётся последняя миграция, объявляющая список (сейчас это `basis_item_ids()`
+ * из 0023): копия в скрипте разошлась бы с базой ровно так же, как разошлись
+ * ключи мастера.
  */
 export function whitelistFromMigrations(root = ROOT) {
   const dir = join(root, 'backend', 'migrations')
   let latest = []
   for (const name of readdirSync(dir).filter((file) => file.endsWith('.sql')).sort()) {
     const sql = readFileSync(join(dir, name), 'utf8')
-    const declaration = /p_item_id = any \(array\[([\s\S]*?)\]::text\[\]\)/.exec(sql)
+    const declaration = /array\[([\s\S]*?)\]::text\[\]/.exec(sql)
     if (!declaration) continue
     latest = [...declaration[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1])
   }

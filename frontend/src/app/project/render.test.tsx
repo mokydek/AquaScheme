@@ -1363,7 +1363,7 @@ describe('реестры говорят про одни и те же бумаг�
     // словарей и переводчик между ними — это и была потеря.
     expect(STANKEVICHA_KIT_SLOTS.map((slot) => [slot.id, slot.basisItemId])).toEqual([
       ['topobaseFull', 'topo'],
-      ['surveyStankevicha', 'topo'],
+      ['surveyStankevicha', 'topo_survey'],
       ['technicalConditions', 'tu'],
       ['designBrief', 'assignment'],
       ['surveyReport', 'survey_act'],
