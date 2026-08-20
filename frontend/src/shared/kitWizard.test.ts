@@ -4,7 +4,9 @@ import {
   emptyKitState,
   kitProgress,
   runKit,
+  verifyKitAgainstStored,
   type KitSlotState,
+  type KitState,
 } from './kitWizard'
 
 const file = (name: string) => new File([new Uint8Array([1, 2, 3])], name)
@@ -48,7 +50,7 @@ describe('мастер комплекта', () => {
     const state = emptyKitState()
     expect(Object.keys(state)).toHaveLength(STANKEVICHA_KIT_SLOTS.length)
     expect(Object.values(state).every((slot) => slot.kind === 'empty')).toBe(true)
-    expect(kitProgress(state)).toEqual({ filled: 0, total: 8, failed: 0, covered: 0 })
+    expect(kitProgress(state)).toEqual({ filled: 0, total: 8, failed: 0, covered: 0, unverified: 0 })
   })
 
   it('слот с ошибкой не роняет остальные и попадает в состояние ошибкой', async () => {
@@ -84,7 +86,7 @@ describe('мастер комплекта', () => {
     })
     // Упавший слот не помешал следующему за ним.
     expect(state.designBrief).toEqual({ kind: 'stored', fileName: 'tz.pdf', parsedAtStage: 4 })
-    expect(kitProgress(state)).toEqual({ filled: 2, total: 8, failed: 1, covered: 0 })
+    expect(kitProgress(state)).toEqual({ filled: 2, total: 8, failed: 1, covered: 0, unverified: 0 })
   })
 
   it('слот без обработчика называет причину, а не тихо пропускается', async () => {
@@ -129,5 +131,80 @@ describe('мастер комплекта', () => {
     )
     expect(state.surveyStankevicha).toEqual({ kind: 'empty' })
     expect(state.technicalConditions.kind).toBe('stored')
+  })
+})
+
+describe('«Готово N» считается по базе, а не по числу удачных вызовов', () => {
+  /**
+   * ИЗМЕРЕНО НА ЖИВОМ САЙТЕ. Мастер написал «Готово 6 из 8; с ошибкой 0», а в
+   * наборе `basis` этого проекта лежал ОДИН ключ — `stankevicha_routeScheme`.
+   * Пять документов пропали, и ни одна из шести записей об этом не сообщила:
+   * все шесть вызовов вернулись без исключения, а мастер считал именно их.
+   */
+  const afterRun = (): KitState => ({
+    ...emptyKitState(),
+    technicalConditions: { kind: 'parsed', fileName: 'ТУ.pdf', counters: [] },
+    designBrief: { kind: 'stored', fileName: 'ТЗ.pdf', parsedAtStage: 4 },
+    routeScheme: { kind: 'stored', fileName: 'схема.pdf', parsedAtStage: 5 },
+  })
+
+  it('слот, чьего документа в базе нет, становится ошибкой с причиной', () => {
+    // В базе только схема трассы — ровно то, что владелец увидел запросом.
+    const checked = verifyKitAgainstStored(
+      afterRun(),
+      { kind: 'read', itemIds: ['route_scheme'] },
+      'В базе проекта его нет.',
+    )
+    expect(checked.routeScheme).toEqual({ kind: 'stored', fileName: 'схема.pdf', parsedAtStage: 5 })
+    expect(checked.technicalConditions).toEqual({
+      kind: 'failed', fileName: 'ТУ.pdf', reason: 'В базе проекта его нет.',
+    })
+    expect(checked.designBrief).toEqual({
+      kind: 'failed', fileName: 'ТЗ.pdf', reason: 'В базе проекта его нет.',
+    })
+
+    const progress = kitProgress(checked)
+    // Было бы «Готово 3; с ошибкой 0». Стало — по факту в базе.
+    expect(progress.filled).toBe(1)
+    expect(progress.failed).toBe(2)
+    expect(progress.unverified).toBe(0)
+  })
+
+  it('все документы на месте — прогон не трогают', () => {
+    const checked = verifyKitAgainstStored(
+      afterRun(),
+      { kind: 'read', itemIds: ['tu', 'assignment', 'route_scheme'] },
+      'В базе проекта его нет.',
+    )
+    expect(checked).toEqual(afterRun())
+    expect(kitProgress(checked).filled).toBe(3)
+  })
+
+  it('неудачная сверка не выдаётся ни за успех, ни за потерю', () => {
+    // Сеть отвалилась на перечитке. Записи, возможно, прошли — обвинить их
+    // нельзя; но и засчитать в «Готово» нельзя тем более.
+    const checked = verifyKitAgainstStored(
+      afterRun(),
+      { kind: 'failed', reason: 'Сверить с базой не удалось: сеть недоступна.' },
+      'В базе проекта его нет.',
+    )
+    const progress = kitProgress(checked)
+    expect(progress.filled).toBe(0)
+    expect(progress.failed).toBe(0)
+    expect(progress.unverified).toBe(3)
+    expect(checked.technicalConditions).toEqual({
+      kind: 'unverified', fileName: 'ТУ.pdf', reason: 'Сверить с базой не удалось: сеть недоступна.',
+    })
+  })
+
+  it('покрытый и пустой слоты сверкой не задеваются', () => {
+    const state: KitState = {
+      ...emptyKitState(),
+      topobaseFull: { kind: 'parsed', fileName: 'm.dxf', counters: [] },
+      surveyStankevicha: { kind: 'covered', byId: 'topobaseFull' },
+    }
+    const checked = verifyKitAgainstStored(state, { kind: 'read', itemIds: ['topo'] }, 'нет')
+    expect(checked.surveyStankevicha).toEqual({ kind: 'covered', byId: 'topobaseFull' })
+    expect(checked.geologyReport).toEqual({ kind: 'empty' })
   })
 })

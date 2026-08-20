@@ -93,6 +93,15 @@ export type KitSlotState =
   | { kind: 'parsed'; fileName: string; counters: Array<{ label: string; value: number }> }
   | { kind: 'stored'; fileName: string; parsedAtStage: number }
   | { kind: 'failed'; fileName: string; reason: string }
+  /**
+   * Файл ушёл в запись без ошибки, но подтвердить его в базе не удалось.
+   *
+   * НЕ «готово» и НЕ «ошибка». Успешный вызов записи — это ещё не документ в
+   * базе: ровно на этом разошлись «Готово 6 из 8» и один ключ в наборе.
+   * Считать такой слот заполненным значит повторить ту же неправду, считать
+   * потерянным — обвинить запись, которая, возможно, прошла.
+   */
+  | { kind: 'unverified'; fileName: string; reason: string }
   /** Содержимое слота уже пришло другим файлом — требовать его незачем. */
   | { kind: 'covered'; byId: string }
 
@@ -103,9 +112,16 @@ export function emptyKitState(slots: readonly KitSlotDefinition[] = STANKEVICHA_
   return Object.fromEntries(slots.map((slot) => [slot.id, { kind: 'empty' } as KitSlotState]))
 }
 
-/** Сколько слотов заполнено — для строки «готово N из M». */
+/**
+ * Сколько слотов заполнено — для строки «готово N из M».
+ *
+ * `filled` считается ПО ПОДТВЕРЖДЁННЫМ состояниям. Слот, чей документ не
+ * найден в базе, к этому моменту уже переведён `verifyKitAgainstStored` в
+ * `failed` или `unverified` и сюда не попадает: «Готово N» — это число
+ * документов в базе, а не число вызовов, вернувшихся без исключения.
+ */
 export function kitProgress(state: KitState, slots: readonly KitSlotDefinition[] = STANKEVICHA_KIT_SLOTS): {
-  filled: number; total: number; failed: number; covered: number
+  filled: number; total: number; failed: number; covered: number; unverified: number
 } {
   const values = slots.map((slot) => state[slot.id] ?? { kind: 'empty' as const })
   return {
@@ -113,7 +129,48 @@ export function kitProgress(state: KitState, slots: readonly KitSlotDefinition[]
     total: slots.length,
     failed: values.filter((value) => value.kind === 'failed').length,
     covered: values.filter((value) => value.kind === 'covered').length,
+    unverified: values.filter((value) => value.kind === 'unverified').length,
   }
+}
+
+/** Чем кончилась перечитка набора basis после прогона. */
+export type KitStoredCheck =
+  /** Набор прочитан: перечислены идентификаторы документов, лежащих в базе. */
+  | { kind: 'read'; itemIds: readonly string[] }
+  /** Перечитать не удалось; готовая к показу причина. */
+  | { kind: 'failed'; reason: string }
+
+/**
+ * Сверяет отчёт мастера с тем, что на самом деле лежит в базе.
+ *
+ * ИЗМЕРЕНО НА ЖИВОМ САЙТЕ: мастер сказал «Готово 6 из 8; с ошибкой 0», а в
+ * наборе `basis` был ОДИН ключ. Все шесть вызовов записи вернулись без
+ * исключения — и это всё, что мастер проверял. Успешный вызов и документ в
+ * базе оказались разными вещами, а на экране — одной.
+ *
+ * Тексты причин приходят снаружи готовыми: сообщения живут в словарях, а не
+ * здесь. Причина неудачной перечитки лежит в самой проверке — заводить под неё
+ * второй параметр, пустой в половине вызовов, значило бы завести подстановку.
+ */
+export function verifyKitAgainstStored(
+  state: KitState,
+  stored: KitStoredCheck,
+  missingReason: string,
+  slots: readonly KitSlotDefinition[] = STANKEVICHA_KIT_SLOTS,
+): KitState {
+  const next = { ...state }
+  for (const slot of slots) {
+    const value = next[slot.id]
+    if (!value || (value.kind !== 'parsed' && value.kind !== 'stored')) continue
+    if (stored.kind === 'failed') {
+      next[slot.id] = { kind: 'unverified', fileName: value.fileName, reason: stored.reason }
+      continue
+    }
+    if (!stored.itemIds.includes(slot.basisItemId)) {
+      next[slot.id] = { kind: 'failed', fileName: value.fileName, reason: missingReason }
+    }
+  }
+  return next
 }
 
 /**

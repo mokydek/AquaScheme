@@ -8,9 +8,11 @@ import {
   STANKEVICHA_MIN_MAIN_DEPTH_M,
   stankevichaChainLengthM,
 } from '../../shared/stankevichaDemo'
-import { STANKEVICHA_KIT_SLOTS, emptyKitState, runKit } from '../../shared/kitWizard'
-import type { KitSlotDefinition, KitSlotState, KitState } from '../../shared/kitWizard'
+import { STANKEVICHA_KIT_SLOTS, emptyKitState, runKit, verifyKitAgainstStored } from '../../shared/kitWizard'
+import type { KitSlotDefinition, KitSlotState, KitState, KitStoredCheck } from '../../shared/kitWizard'
 import { saveBasisFile } from '../../shared/basisFiles'
+import { loadDatasetContent } from '../../shared/datasets'
+import { formatAppError } from '../../shared/errorFormatting'
 import { trainingScreensEnabled } from '../../shared/features'
 import { KitWizardPanel } from './KitWizardPanel'
 
@@ -243,12 +245,32 @@ export function StankevichaDemoView({
     setPicked((current) => ({ ...current, [slotId]: file }))
   }
 
+  /**
+   * Прогон и СВЕРКА С БАЗОЙ. Второе — не украшение первого.
+   *
+   * Мастер отчитывался по числу вызовов, вернувшихся без исключения: шесть
+   * успехов при одном ключе в наборе. Теперь после прогона набор `basis`
+   * перечитывается, и слот, чьего документа в базе нет, становится ошибкой с
+   * причиной. Не удалась сама перечитка — слот не заполнен и не потерян, а
+   * «не подтверждён»: врать в обе стороны одинаково нельзя.
+   */
   const run = async () => {
     const next = await runKit(picked, handlers, STANKEVICHA_KIT_SLOTS, (id, value) => {
       setBusySlotId(id)
       setKit((current) => ({ ...current, [id]: value }))
     })
-    setKit(next)
+    let stored: KitStoredCheck
+    try {
+      const content = await loadDatasetContent(projectId, 'basis')
+      const files = (content as { files?: Record<string, unknown> } | null)?.files
+      stored = {
+        kind: 'read',
+        itemIds: typeof files === 'object' && files !== null ? Object.keys(files) : [],
+      }
+    } catch (cause) {
+      stored = { kind: 'failed', reason: t('project.kit.checkFailed', { reason: formatAppError(cause) }) }
+    }
+    setKit(verifyKitAgainstStored(next, stored, t('project.kit.notInDatabase')))
     setBusySlotId(null)
   }
 

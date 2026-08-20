@@ -924,7 +924,7 @@ export const en = {
       kit: {
         title: 'Source kit wizard',
         hint: 'Kit files are picked once and run through the regular pipelines, survey first and documents after. An empty slot stays listed so the kit is visible as a whole.',
-        progress: 'Done {{filled}} of {{total}}; covered {{covered}}; failed {{failed}}.',
+        progress: 'Ready {{filled}} of {{total}}; covered {{covered}}; failed {{failed}}; unconfirmed {{unverified}}.',
         thOrder: '#',
         thSlot: 'Kit slot',
         thFile: 'File',
@@ -935,6 +935,9 @@ export const en = {
         statusParsed: 'parsed: {{file}}',
         statusCovered: 'covered by the full topographic base ({{by}})',
         statusStored: 'stored as a basis file: {{file}}; parsing at stage {{stage}}',
+        statusUnverified: 'unconfirmed: {{file}} — {{reason}}',
+        notInDatabase: 'The wizard wrote the file, but the project database does not hold it. The document is not uploaded.',
+        checkFailed: 'Could not verify against the database: {{reason}}',
         statusFailed: 'failed on {{file}}: {{reason}}',
         run: 'Run the kit ({{count}})',
         dxfUnreadable: 'DXF not parsed: the file does not read as a drawing.',

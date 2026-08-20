@@ -59,6 +59,15 @@ export function KitWizardPanel({
         </span>
       )
     }
+    if (value.kind === 'unverified') {
+      // Не «ок» и не «ошибка»: собственный вид, чтобы взгляд не засчитал его
+      // ни туда, ни сюда.
+      return (
+        <span className="warn" role="alert" data-kit-unverified={slot.id}>
+          {t('project.kit.statusUnverified', { file: value.fileName, reason: value.reason })}
+        </span>
+      )
+    }
     if (value.kind === 'failed') {
       return (
         <span className="error" role="alert">
@@ -75,7 +84,8 @@ export function KitWizardPanel({
       <p className="hint">{t('project.kit.hint')}</p>
       <p className="stat-line">
         {t('project.kit.progress', {
-          filled: progress.filled, total: progress.total, failed: progress.failed, covered: progress.covered,
+          filled: progress.filled, total: progress.total, failed: progress.failed,
+          covered: progress.covered, unverified: progress.unverified,
         })}
       </p>
 

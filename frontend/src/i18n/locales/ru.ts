@@ -924,7 +924,7 @@ export const ru = {
       kit: {
         title: 'Мастер комплекта',
         hint: 'Файлы комплекта выбираются один раз и прогоняются штатными конвейерами в порядке от съёмки к документам. Слот без файла остаётся объявленным: комплект виден целиком.',
-        progress: 'Готово {{filled}} из {{total}}; покрыто {{covered}}; с ошибкой {{failed}}.',
+        progress: 'Готово {{filled}} из {{total}}; покрыто {{covered}}; с ошибкой {{failed}}; не подтверждено {{unverified}}.',
         thOrder: '№',
         thSlot: 'Слот комплекта',
         thFile: 'Файл',
@@ -935,6 +935,9 @@ export const ru = {
         statusParsed: 'разобрано: {{file}}',
         statusCovered: 'покрыт полной топоосновой ({{by}})',
         statusStored: 'сохранено basis-файлом: {{file}}; разбор — этап {{stage}}',
+        statusUnverified: 'не подтверждено: {{file}} — {{reason}}',
+        notInDatabase: 'Мастер записал файл, но в базе проекта его нет. Документ не загружен.',
+        checkFailed: 'Сверить с базой не удалось: {{reason}}',
         statusFailed: 'ошибка на {{file}}: {{reason}}',
         run: 'Прогнать комплект ({{count}})',
         dxfUnreadable: 'DXF не разобран: файл не читается как чертёж.',

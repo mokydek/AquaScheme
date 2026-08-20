@@ -647,6 +647,28 @@ describe('панель мастера комплекта', () => {
     expect(markup).toContain('&quot;covered&quot;:1')
   })
 
+  it('неподтверждённое не выглядит ни готовым, ни упавшим', () => {
+    /*
+      Успешная запись и документ в базе — разные вещи; на живом сайте они
+      разошлись на пять документов. Слот, чью запись не удалось сверить с
+      базой, получает собственный вид: в «Готово» он не попадает, ошибкой не
+      называется, и причина стоит текстом.
+    */
+    const markup = panel({
+      ...emptyKitState(),
+      topobaseFull: { kind: 'parsed', fileName: 'a.dxf', counters: [] },
+      technicalConditions: {
+        kind: 'unverified', fileName: 'tu.pdf', reason: 'Сверить с базой не удалось: сеть недоступна.',
+      },
+    })
+    expect(markup).toContain('data-kit-unverified="technicalConditions"')
+    expect(markup).toContain('project.kit.statusUnverified')
+    expect(markup).toContain('Сверить с базой не удалось: сеть недоступна.')
+    expect(markup).toContain('&quot;filled&quot;:1')
+    expect(markup).toContain('&quot;failed&quot;:0')
+    expect(markup).toContain('&quot;unverified&quot;:1')
+  })
+
   it('кнопка выжимки несёт пометку о неполноте данных', () => {
     const markup = html(createElement(StankevichaDemoView, { projectId: 'p1' }))
     expect(markup).toContain('data-kit-seed-note')
