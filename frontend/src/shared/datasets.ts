@@ -109,15 +109,23 @@ export async function loadDatasetContent(projectId: string, kind: DatasetKind): 
   if (error) throw error
   // Установки без миграции 0014 могут держать несколько строк одного вида:
   // берётся объединение, чтобы чтение не теряло то, чего не видит запись.
+  //
+  // Два ключа объединяются вглубь: в них по одной записи на документ, и
+  // поверхностная замена целого объекта потеряла бы соседние документы —
+  // ровно так набор basis и терял файлы. Остальные ключи заменяются целиком.
+  const DEEP: readonly string[] = ['files', 'extracted']
   const merged: Record<string, unknown> = {}
   for (const row of data ?? []) {
     const content = row.content
     if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
-      const files = { ...(merged.files as Record<string, unknown> ?? {}) }
+      const deep = new Map(DEEP.map((key) => [key, { ...(merged[key] as Record<string, unknown> ?? {}) }]))
       Object.assign(merged, content)
-      const rowFiles = (content as Record<string, unknown>).files
-      if (typeof rowFiles === 'object' && rowFiles !== null) Object.assign(files, rowFiles)
-      if (Object.keys(files).length > 0) merged.files = files
+      for (const key of DEEP) {
+        const rowValue = (content as Record<string, unknown>)[key]
+        const accumulated = deep.get(key) ?? {}
+        if (typeof rowValue === 'object' && rowValue !== null) Object.assign(accumulated, rowValue)
+        if (Object.keys(accumulated).length > 0) merged[key] = accumulated
+      }
     }
   }
   return merged

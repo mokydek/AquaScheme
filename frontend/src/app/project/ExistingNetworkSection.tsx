@@ -65,8 +65,8 @@ export function ExistingNetworkSection({
    * мастер кладёт результат рядом с документом, раздел его показывает.
    */
   const storedActFacts = ((basisDataset?.content ?? {}) as {
-    items?: Record<string, { surveyAct?: SurveyActFacts }>
-  }).items?.stankevicha_surveyReport?.surveyAct ?? null
+    extracted?: Record<string, SurveyActFacts | undefined>
+  }).extracted?.survey_act ?? null
   const shownActFacts = actFacts ?? storedActFacts
   const [actId, setActId] = useState<string | null>(null)
   const [actFileName, setActFileName] = useState<string>('')

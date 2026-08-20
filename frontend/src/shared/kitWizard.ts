@@ -13,6 +13,8 @@
  * на каком этапе его разберут.
  */
 
+import type { BasisItemId } from './basisFiles'
+
 /** Что слот делает с файлом на этом этапе. */
 export type KitSlotHandling =
   /** Файл проходит штатный конвейер и даёт счётчики. */
@@ -23,18 +25,22 @@ export type KitSlotHandling =
 export interface KitSlotDefinition {
   id: string
   /**
-   * Тот же документ в реестре исходно-разрешительной документации.
+   * Идентификатор документа в наборе basis — ОБЯЗАТЕЛЬНЫЙ для каждого слота.
    *
-   * Мастер и ИРД считали одни и те же бумаги по разным ключам: мастер писал
-   * `stankevicha_<слот>`, ИРД искал `tu`, `assignment`, `geology`, `topo`. На
-   * одной странице выходило «Готово 6 из 8» и «Доступно в проекте: 0 из 9» про
-   * ОДИН И ТОТ ЖЕ комплект, и инженер грузил документ второй раз.
+   * Мастер писал своими ключами (`stankevicha_<слот>`), которых нет в белом
+   * списке базы: атомарная запись отвергала каждый вызов, клиент уходил на
+   * запасной путь, и шесть загрузок оставляли один файл. Теперь слот пишет под
+   * тем же именем, каким документ известен базе и остальным разделам.
    *
-   * Соответствие объявлено ЗДЕСЬ и только здесь. Слот без `basisItemId` — не
-   * упущение: акт технического обследования, приложения к геологии и схема
-   * трассы в перечень ИРД не входят, и засчитывать их туда было бы неправдой.
+   * Четыре слота ложатся на перечень исходно-разрешительной документации
+   * (`topo`, `tu`, `assignment`, `geology`) — и раздел ИРД видит их без всякого
+   * сопоставления. Три остальных в этот перечень не входят и имеют собственные
+   * имена (`survey_act`, `geology_appendices`, `route_scheme`).
+   *
+   * Две формы топоосновы делят один идентификатор `topo`: это один и тот же
+   * документ ИРД, и второй слот помечен как покрываемый первым.
    */
-  basisItemId?: string
+  basisItemId: BasisItemId
   /**
    * Слот не обязателен, если его содержимое покрыто другим слотом.
    *
@@ -69,16 +75,16 @@ export interface KitSlotDefinition {
  */
 export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
   { id: 'topobaseFull', hint: 'Молдагалиева.dwg → .dxf (полная топооснова)', accept: '.dxf', handling: 'parsed', parsedAtStage: null, basisItemId: 'topo' },
-  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull' },
+  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull', basisItemId: 'topo' },
   { id: 'technicalConditions', hint: 'ТУ_05-3-2723 (1).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null, basisItemId: 'tu' },
   { id: 'designBrief', hint: 'ТЗ_5669_Станкевича.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 4, basisItemId: 'assignment' },
   // Акт технического обследования разбирается текстовым слоем: он даёт материал
   // и диаметр уложенной трубы, протяжённость, глубину заложения и категорию
   // состояния — то, чего нет ни в ТУ, ни в геологии.
-  { id: 'surveyReport', hint: 'ТО_5669_Станкевича (2).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null },
+  { id: 'surveyReport', hint: 'ТО_5669_Станкевича (2).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null, basisItemId: 'survey_act' },
   { id: 'geologyReport', hint: 'Геологический Отчет.docx', accept: '.docx', handling: 'parsed', parsedAtStage: null, basisItemId: 'geology' },
-  { id: 'geologyAppendices', hint: 'Приложения 3, 4, 5 (.xls)', accept: '.xls,.xlsx', handling: 'basis', parsedAtStage: 3 },
-  { id: 'routeScheme', hint: 'Станкевича_ схема трассы.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 5 },
+  { id: 'geologyAppendices', hint: 'Приложения 3, 4, 5 (.xls)', accept: '.xls,.xlsx', handling: 'basis', parsedAtStage: 3, basisItemId: 'geology_appendices' },
+  { id: 'routeScheme', hint: 'Станкевича_ схема трассы.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 5, basisItemId: 'route_scheme' },
 ] as const
 
 /** Состояние одного слота. Пять видов, шестого нет. */

@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BASIS_ITEM_IDS } from './basisFiles'
+import type { BasisItemId } from './basisFiles'
+import { STANKEVICHA_KIT_SLOTS } from './kitWizard'
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -73,6 +76,9 @@ describe('saveBasisFile', () => {
       p_item_id: 'apz',
       p_file_name: 'АПЗ.pdf',
       p_base_content: base,
+      // Сохранение без разбора передаёт null, а не пустой объект: в базе
+      // это разные вещи — «разбора нет» против «разбор пуст».
+      p_extracted: null,
     })
     expect(mocks.saveDataset).not.toHaveBeenCalled()
   })
@@ -151,6 +157,82 @@ describe('save_basis_file SQL contract', () => {
     expect(sql).toMatch(/when unique_violation then/i)
     expect(sql).toMatch(/grant execute[\s\S]*to authenticated/i)
   })
+
+  /**
+   * СПИСОК В БАЗЕ И СПИСОК В КОДЕ — ОДИН СПИСОК.
+   *
+   * Мастер писал под ключами, которых нет в белом списке `save_basis_file`.
+   * База отвечала 22023, клиент считал это несовместимостью установки, уходил
+   * на запасной путь — и файлы терялись без единого сообщения. Ни один тест
+   * этого не видел: код и SQL проверялись порознь.
+   *
+   * Массив читается из миграции разбором, а не переписывается сюда руками:
+   * переписанный список разошёлся бы ровно так же, как разошлись первые два.
+   */
+  it('белый список базы совпадает с BASIS_ITEM_IDS и покрывает каждый слот', () => {
+    const sql = readFileSync(
+      new URL('../../../backend/migrations/0022_basis_kit_documents.sql', import.meta.url),
+      'utf8',
+    )
+    const declaration = /p_item_id = any \(array\[([\s\S]*?)\]::text\[\]\)/.exec(sql)
+    expect(declaration, 'в 0022 не найден белый список идентификаторов').not.toBeNull()
+    const fromSql = [...(declaration?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((match) => match[1])
+
+    expect([...fromSql].sort()).toEqual([...BASIS_ITEM_IDS].sort())
+
+    // И каждый слот мастера объявлен под именем, которое база принимает.
+    for (const slot of STANKEVICHA_KIT_SLOTS) {
+      expect(fromSql, `слот ${slot.id} пишет под ключом, которого нет в базе`)
+        .toContain(slot.basisItemId)
+    }
+  })
+
+  it('уже загруженные документы переезжают на канонические ключи', () => {
+    /*
+      Раздел ИРД показывал файлы мастера через таблицу соответствия, которую
+      этот заход убирает. Убрать таблицу и не перенести данные — та же потеря,
+      только с другого конца: файл владельца остался бы в базе и пропал бы с
+      экрана. Перенос обязан быть в миграции, а не в замысле.
+    */
+    const sql = readFileSync(
+      new URL('../../../backend/migrations/0022_basis_kit_documents.sql', import.meta.url),
+      'utf8',
+    )
+    for (const [oldKey, newKey] of [
+      ['stankevicha_topobaseFull', 'topo'],
+      ['stankevicha_surveyStankevicha', 'topo'],
+      ['stankevicha_technicalConditions', 'tu'],
+      ['stankevicha_designBrief', 'assignment'],
+      ['stankevicha_surveyReport', 'survey_act'],
+      ['stankevicha_geologyReport', 'geology'],
+      ['stankevicha_geologyAppendices', 'geology_appendices'],
+      ['stankevicha_routeScheme', 'route_scheme'],
+    ]) {
+      expect(sql, `перенос ${oldKey} не объявлен`).toContain(`'${oldKey}', '${newKey}'`)
+    }
+    // Разбор переезжает вместе с файлами: исходник лежит на диске инженера,
+    // и разобрать заново удастся не всегда.
+    expect(sql).toContain("'stankevicha_geologyReport', 'geologyReport', 'geology'")
+    expect(sql).toContain("'stankevicha_surveyReport', 'surveyAct', 'survey_act'")
+    // Загруженное самим разделом ИРД главнее копии мастера — как и на экране
+    // до переноса. Порядок операндов `||` и есть это правило.
+    expect(sql).toMatch(/moved\.files \|\| \(dataset\.content -> 'files'\)/)
+  })
+
+  it('пятый аргумент кладёт разбор в свой ключ и не трогает чужие', () => {
+    const sql = readFileSync(
+      new URL('../../../backend/migrations/0022_basis_kit_documents.sql', import.meta.url),
+      'utf8',
+    )
+    // Старая четырёхаргументная форма снята: две перегрузки — PGRST203.
+    expect(sql).toMatch(/drop function if exists public\.save_basis_file\(uuid, text, text, jsonb\)/i)
+    expect(sql).toMatch(/p_extracted jsonb default null/i)
+    // Разбор соседних документов объединяется, а не заменяется целиком.
+    expect(sql).toMatch(/merged_extracted := base_extracted \|\| stored_extracted/i)
+    // Вызов без разбора не стирает прежний: запись только под своим ключом.
+    expect(sql).toMatch(/if jsonb_typeof\(p_extracted\) = 'object' then/i)
+    expect(sql).toMatch(/merged_extracted \|\| jsonb_build_object\(p_item_id, p_extracted\)/i)
+  })
 })
 
 describe('запасной путь не теряет файлы', () => {
@@ -188,7 +270,7 @@ describe('запасной путь не теряет файлы', () => {
     })
     mocks.loadDatasetContent.mockImplementation(async () => stored)
 
-    const items = ['tu', 'assignment', 'geology', 'topo', 'apz', 'vertical']
+    const items: BasisItemId[] = ['tu', 'assignment', 'geology', 'topo', 'apz', 'vertical']
     for (const item of items) {
       await saveBasisFile('project-1', item, `${item}.pdf`, { fileName: `${item}.pdf` })
     }
@@ -204,10 +286,40 @@ describe('запасной путь не теряет файлы', () => {
     })
     mocks.loadDatasetContent.mockImplementation(async () => stored)
 
-    await Promise.all(['tu', 'assignment', 'geology'].map((item) =>
+    await Promise.all((['tu', 'assignment', 'geology'] as BasisItemId[]).map((item) =>
       saveBasisFile('project-1', item, `${item}.pdf`, { fileName: `${item}.pdf` })))
     expect(Object.keys((stored.files ?? {}) as Record<string, string>).sort())
       .toEqual(['assignment', 'geology', 'tu'])
+  })
+
+  it('разбор одного документа не стирает разбор другого и не пропадает сам', async () => {
+    /*
+      Вторая половина той же потери. Разбор геологии и разбор акта лежали
+      верхними ключами набора, и атомарный путь отдаёт верхние ключи
+      СОХРАНЁННОМУ: первая загрузка величины записывала, повторная молча
+      оставляла старые. Здесь проверяется запасной путь — у атомарного то же
+      правило записано в SQL и проверено отдельно.
+    */
+    let stored: Record<string, unknown> = {}
+    mocks.saveDataset.mockImplementation(async (_project: string, _kind: string, content: unknown) => {
+      stored = content as Record<string, unknown>
+    })
+    mocks.loadDatasetContent.mockImplementation(async () => stored)
+
+    await saveBasisFile('project-6', 'geology', 'Отчет.docx', {}, { freezingDepthCandidates: [{ valueM: 0.79 }] })
+    await saveBasisFile('project-6', 'survey_act', 'ТО.pdf', {}, { diameterMm: [{ value: 450 }] })
+    // Загрузка без разбора: имя файла меняется, чужие величины остаются.
+    await saveBasisFile('project-6', 'tu', 'ТУ.pdf', {})
+    // Повторная загрузка того же документа ЗАМЕЩАЕТ его разбор, а не хранит оба.
+    await saveBasisFile('project-6', 'geology', 'Отчет-2.docx', {}, { freezingDepthCandidates: [{ valueM: 1.03 }] })
+
+    expect(stored.extracted).toEqual({
+      geology: { freezingDepthCandidates: [{ valueM: 1.03 }] },
+      survey_act: { diameterMm: [{ value: 450 }] },
+    })
+    expect(stored.files).toEqual({
+      geology: 'Отчет-2.docx', survey_act: 'ТО.pdf', tu: 'ТУ.pdf',
+    })
   })
 
   it('отказ RPC не по причине её отсутствия не подменяется запасным путём', async () => {
@@ -215,7 +327,11 @@ describe('запасной путь не теряет файлы', () => {
     // экрана, а не превратиться в тихую запись мимо проверки.
     mocks.fetch.mockResolvedValue({ ok: true, json: async () => ({ paths: { '/rpc/save_basis_file': {} } }) })
     mocks.rpc.mockResolvedValue({ error: { code: '22023', message: 'invalid basis item: whatever' } })
-    await expect(saveBasisFile('project-1', 'whatever', 'x.pdf', {})).rejects.toMatchObject({ code: '22023' })
+    // Приведение здесь намеренное: компилятор такой ключ уже не пропускает —
+    // проверяется поведение при ключе, которого база не знает, а не подбор
+    // ключа. Обе двери заперты, и запирают их разные проверки.
+    const unknownItem = 'whatever' as BasisItemId
+    await expect(saveBasisFile('project-1', unknownItem, 'x.pdf', {})).rejects.toMatchObject({ code: '22023' })
     expect(mocks.saveDataset).not.toHaveBeenCalled()
   })
 })

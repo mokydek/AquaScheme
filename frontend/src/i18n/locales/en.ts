@@ -576,7 +576,6 @@ export const en = {
         hint: 'The input document set the project rests on (as in the reference object: design task, APZ, detailed plan, route selection act, master plan scheme, survey, geology report, vertical planning, technical conditions). Uploaded files are stored with the project',
         progress: 'Available in project: {{count}} of {{total}}',
         demoBreakdown: 'Training demo files: {{synthetic}} · uploaded originals: {{originals}}',
-        viaKit: 'from the kit wizard',
         demoBadge: 'DEMO FILE',
         references: 'Private project references: {{count}} files',
         referencesHint: 'Only private references added by the project owner are listed here. Confidential PDF/DWG files are not published in the site JavaScript.',

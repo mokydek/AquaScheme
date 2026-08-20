@@ -132,12 +132,12 @@ export function GeologySection({
    * снимаются — выбирает инженер.
    */
   const reportGeology = ((basisDataset?.content ?? {}) as {
-    items?: Record<string, { geologyReport?: {
+    extracted?: Record<string, {
       freezingDepthCandidates?: Array<{ valueM: number; soil: string | null; quote: string; form: string }>
       ige?: Array<{ code: string; name: string }>
       groundwater?: { minM: number; maxM: number } | null
-    } }>
-  }).items?.stankevicha_geologyReport?.geologyReport
+    } | undefined>
+  }).extracted?.geology
   const freezingCandidates = [
     ...(reportGeology?.freezingDepthCandidates ?? []).map((candidate) => ({
       soil: candidate.soil ?? '—', valueM: candidate.valueM, quote: candidate.quote,

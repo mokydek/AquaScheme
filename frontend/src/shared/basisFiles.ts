@@ -1,6 +1,27 @@
 import { loadDatasetContent, saveDataset } from './datasets'
 import { SUPABASE_ANON_KEY, SUPABASE_REST_URL, supabase } from './supabase'
 
+/**
+ * Идентификаторы, под которыми документ проекта может лечь в набор basis.
+ *
+ * ЗЕРКАЛО БЕЛОГО СПИСКА ИЗ БАЗЫ. Список живёт в `save_basis_file` (миграции
+ * 0015 и 0022) и повторён здесь, потому что клиенту он тоже нужен: слот,
+ * пишущий под незнакомым базе ключом, получал 22023, уходил на запасной путь и
+ * терял файлы молча. Расхождение двух списков ловит `basisFiles.test.ts`,
+ * читающий массив прямо из SQL, — а не пользователь.
+ *
+ * Первые девять — исходно-разрешительная документация. Последние три —
+ * документы объекта, которые в этот перечень не входят и входить не будут, но
+ * хранятся так же: с проверкой и атомарно.
+ */
+export const BASIS_ITEM_IDS = [
+  'assignment', 'apz', 'pdp', 'route_act', 'genplan_scheme',
+  'topo', 'geology', 'vertical', 'tu',
+  'survey_act', 'geology_appendices', 'route_scheme',
+] as const
+
+export type BasisItemId = (typeof BASIS_ITEM_IDS)[number]
+
 type JsonObject = Record<string, unknown>
 
 function jsonObject(value: unknown): JsonObject {
@@ -82,18 +103,25 @@ function queueBasisWrite<T>(task: () => Promise<T>): Promise<T> {
 
 async function saveBasisFileLegacy(
   projectId: string,
-  itemId: string,
+  itemId: BasisItemId,
   fileName: string,
   base: JsonObject,
+  extracted: JsonObject | undefined,
 ): Promise<void> {
   await queueBasisWrite(async () => {
     // Записанное в базе главнее снимка из браузера — как и в атомарном пути.
     const stored = jsonObject(await loadDatasetContent(projectId, 'basis'))
     const files = { ...jsonObject(base.files), ...jsonObject(stored.files) }
+    // Разбор одного слота не стирает разбор другого; вызов без разбора не
+    // стирает ничей: сохранить имя файла — не заявить, что величин больше нет.
+    const parsed = { ...jsonObject(base.extracted), ...jsonObject(stored.extracted) }
+    const merged = extracted === undefined ? parsed : { ...parsed, [itemId]: extracted }
     await saveDataset(projectId, 'basis', {
       ...base,
       ...stored,
       files: { ...files, [itemId]: fileName },
+      // Пустой ключ не заводится: набор без единого разбора так и выглядит.
+      ...(Object.keys(merged).length > 0 ? { extracted: merged } : {}),
     })
   })
 }
@@ -103,16 +131,22 @@ async function saveBasisFileLegacy(
  * siblings. Migration 0015 performs the merge atomically in PostgreSQL. The
  * legacy branch is deliberately limited to a missing RPC/schema-cache entry;
  * permissions, validation and runtime errors must remain visible.
+ *
+ * `extracted` — то, что слот вычитал из документа: величины с цитатами, а не
+ * подтверждённые инженером значения. Оно ложится в отдельное пространство
+ * `extracted[itemId]` и перезаписывается вместе с именем файла, потому что
+ * относится к тому же документу. Не передан — прежний разбор остаётся.
  */
 export async function saveBasisFile(
   projectId: string,
-  itemId: string,
+  itemId: BasisItemId,
   fileName: string,
   baseContent: unknown,
+  extracted?: JsonObject,
 ): Promise<void> {
   const base = jsonObject(baseContent)
   if (!await hasBasisFileRpc()) {
-    await saveBasisFileLegacy(projectId, itemId, fileName, base)
+    await saveBasisFileLegacy(projectId, itemId, fileName, base, extracted)
     return
   }
 
@@ -121,6 +155,7 @@ export async function saveBasisFile(
     p_item_id: itemId,
     p_file_name: fileName,
     p_base_content: base,
+    p_extracted: extracted ?? null,
   })
   if (!error) return
   if (!isMissingBasisFileRpc(error)) throw error
@@ -128,5 +163,5 @@ export async function saveBasisFile(
   // from its schema cache. Remember that mismatch for the rest of this page so
   // later uploads skip the same noisy 400/404 and use the compatible path.
   basisFileRpcCapability = Promise.resolve(false)
-  await saveBasisFileLegacy(projectId, itemId, fileName, base)
+  await saveBasisFileLegacy(projectId, itemId, fileName, base, extracted)
 }

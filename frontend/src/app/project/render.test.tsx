@@ -1187,16 +1187,14 @@ describe('промерзание: кандидаты отчёта видны, в
       basisDataset: {
         id: 'b1',
         content: {
-          items: {
-            stankevicha_geologyReport: {
-              fileName: 'Геологический Отчет.docx',
-              geologyReport: {
-                freezingDepthCandidates: [
-                  { valueM: 0.79, soil: 'суглинков', quote: 'сезонного промерзания для суглинков – 0,79м', form: 'prose' },
-                  { valueM: 1.03, soil: 'песка средней крупности', quote: 'для песка средней крупности – 1,03м', form: 'prose' },
-                ],
-                ige: [{ code: '1', name: 'суглинок твердый' }],
-              },
+          files: { geology: 'Геологический Отчет.docx' },
+          extracted: {
+            geology: {
+              freezingDepthCandidates: [
+                { valueM: 0.79, soil: 'суглинков', quote: 'сезонного промерзания для суглинков – 0,79м', form: 'prose' },
+                { valueM: 1.03, soil: 'песка средней крупности', quote: 'для песка средней крупности – 1,03м', form: 'prose' },
+              ],
+              ige: [{ code: '1', name: 'суглинок твердый' }],
             },
           },
         },
@@ -1303,15 +1301,19 @@ describe('реестры говорят про одни и те же бумаг�
    * комплект. Мастер писал в тот же набор basis-файлов своими ключами
    * (`stankevicha_<слот>`), и реестр ИРД их не видел. Инженер грузил документ
    * второй раз, потому что экран уверял, что его нет.
+   *
+   * Ключи мастера БОЛЬШЕ НЕ СУЩЕСТВУЮТ: слот пишет под тем именем, под каким
+   * документ знает база, и переводить между двумя словарями стало нечего.
+   * Здесь поэтому лежит то, что мастер запишет сегодня.
    */
   const uploadedByKit = {
     id: 'b1',
     content: {
       files: {
-        stankevicha_technicalConditions: 'ТУ_05-3-2723 (1).pdf',
-        stankevicha_designBrief: 'ТЗ_5669_Станкевича.pdf',
-        stankevicha_geologyReport: 'Геологический Отчет.docx',
-        stankevicha_surveyReport: 'ТО_5669_Станкевича.pdf',
+        tu: 'ТУ_05-3-2723 (1).pdf',
+        assignment: 'ТЗ_5669_Станкевича.pdf',
+        geology: 'Геологический Отчет.docx',
+        survey_act: 'ТО_5669_Станкевича.pdf',
       },
     },
   }
@@ -1319,15 +1321,12 @@ describe('реестры говорят про одни и те же бумаг�
     projectId: 'p1', dataset: uploadedByKit, onSaved: async () => {},
   } as never))
 
-  it('загруженное мастером засчитывается в ИРД и помечено источником', () => {
+  it('загруженное мастером засчитывается в ИРД', () => {
     // Три из четырёх — пункты ИРД: ТУ, задание, геология. Акт технического
     // обследования в перечень ИРД не входит и не засчитывается.
     expect(markup).toContain('ТУ_05-3-2723 (1).pdf')
     expect(markup).toContain('ТЗ_5669_Станкевича.pdf')
     expect(markup).toContain('Геологический Отчет.docx')
-    expect(markup).toContain('data-basis-via-kit="tu"')
-    expect(markup).toContain('data-basis-via-kit="assignment"')
-    expect(markup).toContain('data-basis-via-kit="geology"')
     expect(markup).toContain('project.basis.progress {&quot;count&quot;:3,&quot;total&quot;:9}')
   })
 
@@ -1337,13 +1336,18 @@ describe('реестры говорят про одни и те же бумаг�
     expect(markup).not.toContain('ТО_5669_Станкевича.pdf')
   })
 
-  it('соответствие слотов и пунктов ИРД объявлено один раз', () => {
-    const mapped = STANKEVICHA_KIT_SLOTS.filter((slot) => slot.basisItemId)
-    expect(mapped.map((slot) => [slot.id, slot.basisItemId])).toEqual([
+  it('каждый слот пишет под объявленным именем, своих ключей у мастера нет', () => {
+    // Имя документа в базе объявлено в реестре слотов и больше нигде: пара
+    // словарей и переводчик между ними — это и была потеря.
+    expect(STANKEVICHA_KIT_SLOTS.map((slot) => [slot.id, slot.basisItemId])).toEqual([
       ['topobaseFull', 'topo'],
+      ['surveyStankevicha', 'topo'],
       ['technicalConditions', 'tu'],
       ['designBrief', 'assignment'],
+      ['surveyReport', 'survey_act'],
       ['geologyReport', 'geology'],
+      ['geologyAppendices', 'geology_appendices'],
+      ['routeScheme', 'route_scheme'],
     ])
   })
 })
@@ -1362,7 +1366,7 @@ describe('десять величин акта видны, а не посчит�
     }
     const markup = html(createElement(ExistingNetworkSection, {
       projectId: 'p1', existing: [], points: [], designedLengthM: 0,
-      basisDataset: { id: 'b1', content: { items: { stankevicha_surveyReport: { surveyAct: facts } } } },
+      basisDataset: { id: 'b1', content: { extracted: { survey_act: facts } } },
       onChanged: async () => {},
     } as never))
     expect(markup).toContain('450')

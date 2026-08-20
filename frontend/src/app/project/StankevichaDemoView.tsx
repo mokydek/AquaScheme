@@ -9,7 +9,7 @@ import {
   stankevichaChainLengthM,
 } from '../../shared/stankevichaDemo'
 import { STANKEVICHA_KIT_SLOTS, emptyKitState, runKit } from '../../shared/kitWizard'
-import type { KitSlotState, KitState } from '../../shared/kitWizard'
+import type { KitSlotDefinition, KitSlotState, KitState } from '../../shared/kitWizard'
 import { saveBasisFile } from '../../shared/basisFiles'
 import { trainingScreensEnabled } from '../../shared/features'
 import { KitWizardPanel } from './KitWizardPanel'
@@ -72,7 +72,7 @@ export function StankevichaDemoView({
    * из тех же `parseDxfNetwork` и `classifyDxfConstraints`, а нераспознанные
    * слои идут в существующую таблицу ролей.
    */
-  const parseSurvey = async (file: File): Promise<KitSlotState> => {
+  const parseSurvey = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
     const { parseDxfNetwork, classifyDxfConstraints } = await import('@aquascheme/engine/dxfread')
     const data = parseDxfNetwork(await file.text())
     if (!data.ok) throw new Error(t('project.kit.dxfUnreadable'))
@@ -82,6 +82,14 @@ export function StankevichaDemoView({
       surveyPoints?: unknown[]
     }
     const roles = Object.values(constraints.roles ?? {})
+    /*
+      Съёмка попадает и в реестр ИРД, а не только в разбор. Слот разбирал DXF
+      и НИЧЕГО не записывал в набор документов: раздел ИРД показывал
+      «Топографическая съёмка — не загружено» на проекте, куда её только что
+      загрузили. Обе формы съёмки — один документ ИРД, и записанной остаётся
+      последняя загруженная: перезапись здесь такая же, как в самом реестре.
+    */
+    await saveBasisFile(projectId, slot.basisItemId, file.name, {})
     return {
       kind: 'parsed',
       fileName: file.name,
@@ -101,8 +109,8 @@ export function StankevichaDemoView({
    * извлечения, и второй такой же стал бы вторым источником правды. Слот
    * принимает файл, а величину показывает тогда, когда владелец её подтвердит.
    */
-  const acceptConditions = async (file: File): Promise<KitSlotState> => {
-    await saveBasisFile(projectId, 'stankevicha_technicalConditions', file.name, { fileName: file.name })
+  const acceptConditions = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
+    await saveBasisFile(projectId, slot.basisItemId, file.name, {})
     if (!confirmedDiameter) return { kind: 'stored', fileName: file.name, parsedAtStage: 1 }
     return {
       kind: 'parsed',
@@ -119,8 +127,7 @@ export function StankevichaDemoView({
    * источником правды. Слот показывает, СКОЛЬКО величин нашлось в документе, —
    * этого хватает, чтобы владелец увидел, что файл прочитан, а не проглочен.
    */
-  const acceptSurveyReport = async (file: File): Promise<KitSlotState> => {
-    await saveBasisFile(projectId, 'stankevicha_surveyReport', file.name, { fileName: file.name })
+  const acceptSurveyReport = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
     const { loadPdfTextByPage } = await import('../../shared/pdfText')
     const pages = (await loadPdfTextByPage(file)).map((page, index) => ({
       page: index + 1,
@@ -136,11 +143,14 @@ export function StankevichaDemoView({
       Раньше слот их извлекал, считал и ВЫБРАСЫВАЛ: на экране оставалось
       «величин 10», а ни Ø450, ни 458,94 м, ни глубин 3,7…5,2 м никто не видел.
       Извлечённая и никому не показанная величина равна неизвлечённой.
+
+      Запись одна, и она после разбора: документ без текстового слоя роняет
+      слот выше, и незачем оставлять в реестре имя файла, из которого ничего
+      не прочитано.
     */
-    await saveBasisFile(projectId, 'stankevicha_surveyReport', file.name, {
-      fileName: file.name,
-      surveyAct: facts,
-    })
+    // Разбор кладётся как есть: `extracted.survey_act` И ЕСТЬ величины акта,
+    // без ещё одного слоя с тем же именем.
+    await saveBasisFile(projectId, slot.basisItemId, file.name, {}, { ...facts })
     return {
       kind: 'parsed',
       fileName: file.name,
@@ -166,7 +176,7 @@ export function StankevichaDemoView({
    * читает предложение оттуда и показывает его кандидатами — выбор и
    * подтверждение остаются за инженером.
    */
-  const parseGeologyReport = async (file: File): Promise<KitSlotState> => {
+  const parseGeologyReport = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
     const { docxText } = await import('../../shared/docxText')
     const { parseGeologyReportSummary } = await import('@aquascheme/engine')
     const text = docxText(new Uint8Array(await file.arrayBuffer()))
@@ -175,15 +185,12 @@ export function StankevichaDemoView({
       throw new Error(t('project.kit.docxNoText'))
     }
     const summary = parseGeologyReportSummary(text)
-    await saveBasisFile(projectId, 'stankevicha_geologyReport', file.name, {
-      fileName: file.name,
+    await saveBasisFile(projectId, slot.basisItemId, file.name, {}, {
       // Предложение разбора: величины с цитатами, без единого выбора.
-      geologyReport: {
-        freezingDepthCandidates: summary.freezingDepthCandidates,
-        ige: summary.ige,
-        groundwater: summary.groundwater,
-        maxAggressiveness: summary.maxAggressiveness,
-      },
+      freezingDepthCandidates: summary.freezingDepthCandidates,
+      ige: summary.ige,
+      groundwater: summary.groundwater,
+      maxAggressiveness: summary.maxAggressiveness,
     })
     return {
       kind: 'parsed',
@@ -196,15 +203,15 @@ export function StankevichaDemoView({
     }
   }
 
-  const storeAsBasis = (slotId: string, stage: number) => async (file: File): Promise<KitSlotState> => {
-    await saveBasisFile(projectId, `stankevicha_${slotId}`, file.name, { fileName: file.name })
-    return { kind: 'stored', fileName: file.name, parsedAtStage: stage }
+  const storeAsBasis = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
+    await saveBasisFile(projectId, slot.basisItemId, file.name, {})
+    return { kind: 'stored', fileName: file.name, parsedAtStage: slot.parsedAtStage ?? 2 }
   }
 
   // Полная топооснова и съёмка Станкевича идут одним разбором: это DXF одного
   // вида, и второго конвейера для них не заводится.
   const PARSING_HANDLERS: Record<
-    (typeof PARSED_KIT_SLOT_IDS)[number], (file: File) => Promise<KitSlotState>
+    (typeof PARSED_KIT_SLOT_IDS)[number], (slot: KitSlotDefinition) => (file: File) => Promise<KitSlotState>
   > = {
     topobaseFull: parseSurvey,
     surveyStankevicha: parseSurvey,
@@ -215,14 +222,19 @@ export function StankevichaDemoView({
 
   const handlers: Record<string, (file: File) => Promise<KitSlotState>> = Object.fromEntries(
     STANKEVICHA_KIT_SLOTS.map((slot) => {
-      const parsing = (PARSING_HANDLERS as Record<string, ((file: File) => Promise<KitSlotState>) | undefined>)[slot.id]
-      if (slot.handling !== 'parsed') return [slot.id, storeAsBasis(slot.id, slot.parsedAtStage ?? 2)]
+      // Обработчик получает СЛОТ, а не только файл: имя, под которым документ
+      // ложится в базу, объявлено в реестре слотов и берётся оттуда. Иначе
+      // ключ пришлось бы повторять в каждом обработчике — и он разошёлся бы.
+      const parsing = (PARSING_HANDLERS as Record<
+        string, ((slot: KitSlotDefinition) => (file: File) => Promise<KitSlotState>) | undefined
+      >)[slot.id]
+      if (slot.handling !== 'parsed') return [slot.id, storeAsBasis(slot)]
       // Слот объявлен разбираемым, а разбирать нечем. Это дефект сборки, а не
       // повод тихо сохранить файл basis-файлом и отчитаться «отложено».
       if (!parsing) {
         return [slot.id, async () => { throw new Error(t('project.kit.handlerMissing', { slot: slot.id })) }]
       }
-      return [slot.id, parsing]
+      return [slot.id, parsing(slot)]
     }),
   )
 
