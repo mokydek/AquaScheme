@@ -738,6 +738,7 @@ export function ProjectPage() {
               existing={existing}
               points={topoPoints}
               designedLengthM={designedLengthM}
+              basisDataset={datasets.basis}
               onChanged={load}
             />
           )}

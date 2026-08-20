@@ -5,6 +5,7 @@ import { supabase } from '../../shared/supabase'
 import { useAuth } from '../../shared/auth'
 import type { DatasetRow } from '../../shared/datasets'
 import { saveBasisFile } from '../../shared/basisFiles'
+import { STANKEVICHA_KIT_SLOTS } from '../../shared/kitWizard'
 import { syntheticBasisArtifact } from '../../shared/basisDemo'
 import { formatAppError } from '../../shared/errorFormatting'
 import { Panel } from './Panel'
@@ -87,9 +88,26 @@ export function BasisSection({
     if (state.status === 'saved' || state.status === 'refreshError') displayedFiles[itemId] = state.fileName
   }
   const referenceFiles = content.referenceFiles ?? []
-  const uploadedCount = BASIS_ITEMS.filter((i) => displayedFiles[i.id]).length
+  /**
+   * Документ, загруженный мастером комплекта, ЗАСЧИТЫВАЕТСЯ ЗДЕСЬ.
+   *
+   * Мастер пишет в тот же набор basis-файлов, но своими ключами
+   * (`stankevicha_<слот>`), и реестр ИРД их не видел. На одной странице стояло
+   * «Готово 6 из 8» и «Доступно в проекте: 0 из 9» про один и тот же комплект,
+   * и инженер грузил документ второй раз, потому что экран уверял, что его нет.
+   *
+   * Соответствие берётся из реестра слотов, а не заводится здесь второй раз.
+   */
+  const fromKit: Record<string, string> = {}
+  for (const slot of STANKEVICHA_KIT_SLOTS) {
+    if (!slot.basisItemId) continue
+    const fileName = files[`stankevicha_${slot.id}`]
+    if (fileName) fromKit[slot.basisItemId] = fileName
+  }
+  const fileFor = (itemId: string): string | undefined => displayedFiles[itemId] ?? fromKit[itemId]
+  const uploadedCount = BASIS_ITEMS.filter((i) => fileFor(i.id)).length
   const syntheticCount = content.mode === 'synthetic'
-    ? BASIS_ITEMS.filter((item) => syntheticBasisArtifact(item.id, displayedFiles[item.id])).length
+    ? BASIS_ITEMS.filter((item) => syntheticBasisArtifact(item.id, fileFor(item.id))).length
     : 0
   const originalCount = uploadedCount - syntheticCount
 
@@ -197,7 +215,11 @@ export function BasisSection({
           <tbody>
             {BASIS_ITEMS.map((item) => {
               const state = rowStates[item.id]
-              const storedFileName = displayedFiles[item.id]
+              const storedFileName = fileFor(item.id)
+              // Откуда взялся файл, видно: загруженный мастером помечается,
+              // чтобы не выглядеть как загруженный здесь и не пропасть при
+              // следующей выгрузке через этот раздел.
+              const viaKit = !displayedFiles[item.id] && Boolean(fromKit[item.id])
               const demoArtifact = content.mode === 'synthetic'
                 ? syntheticBasisArtifact(item.id, storedFileName)
                 : null
@@ -209,6 +231,7 @@ export function BasisSection({
                     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                       <span>{storedFileName ?? t('project.basis.missing')}</span>
                       {demoArtifact && <span className="badge">{t('project.basis.demoBadge')}</span>}
+                      {viaKit && <span className="badge" data-basis-via-kit={item.id}>{t('project.basis.viaKit')}</span>}
                     </div>
                     {state?.status === 'saving' && (
                       <div className="stat-line" role="status" aria-live="polite" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>

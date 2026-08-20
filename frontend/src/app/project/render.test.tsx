@@ -58,6 +58,7 @@ const { NormsSection } = await import('./FormSections')
 const { WaterBranchNotice } = await import('./WaterBranchNotice')
 const { ReconstructionProfileNotes } = await import('./ReconstructionProfileNotes')
 const { GeologySection } = await import('./GeologySection')
+const { BasisSection } = await import('./BasisSection')
 const { ru } = await import('../../i18n/locales/ru')
 const { NORM_REGISTRY, unverifiedClauses, READINESS_SECTIONS, WATER_BRANCH_BLOCKER_CODE } = await import('@aquascheme/engine')
 const {
@@ -730,6 +731,7 @@ describe('шероховатость керамики принимается и�
   })
   const section = (material: string, roughnessMm: number | null) => html(createElement(ExistingNetworkSection, {
     projectId: 'pr1',
+    basisDataset: undefined,
     existing: [pipe(material, roughnessMm)],
     points: [],
     designedLengthM: 458.94,
@@ -1280,5 +1282,82 @@ describe('сообщения называют то, что произошло', 
     // 2,00 м нет ни в одном документе объекта: у Станкевича максимум 1,03 м.
     expect(code).not.toContain('DEFAULT_FREEZING_DEPTH_M')
     expect(ru.translation.project.gravity.freezingNotChosen).toContain('не считается')
+  })
+})
+
+describe('реестры говорят про одни и те же бумаги согласованно', () => {
+  /**
+   * На одной странице стояло «Мастер комплекта: готово 6 из 8» и
+   * «Исходно-разрешительная документация: доступно 0 из 9» — про ОДИН И ТОТ ЖЕ
+   * комплект. Мастер писал в тот же набор basis-файлов своими ключами
+   * (`stankevicha_<слот>`), и реестр ИРД их не видел. Инженер грузил документ
+   * второй раз, потому что экран уверял, что его нет.
+   */
+  const uploadedByKit = {
+    id: 'b1',
+    content: {
+      files: {
+        stankevicha_technicalConditions: 'ТУ_05-3-2723 (1).pdf',
+        stankevicha_designBrief: 'ТЗ_5669_Станкевича.pdf',
+        stankevicha_geologyReport: 'Геологический Отчет.docx',
+        stankevicha_surveyReport: 'ТО_5669_Станкевича.pdf',
+      },
+    },
+  }
+  const markup = html(createElement(BasisSection, {
+    projectId: 'p1', dataset: uploadedByKit, onSaved: async () => {},
+  } as never))
+
+  it('загруженное мастером засчитывается в ИРД и помечено источником', () => {
+    // Три из четырёх — пункты ИРД: ТУ, задание, геология. Акт технического
+    // обследования в перечень ИРД не входит и не засчитывается.
+    expect(markup).toContain('ТУ_05-3-2723 (1).pdf')
+    expect(markup).toContain('ТЗ_5669_Станкевича.pdf')
+    expect(markup).toContain('Геологический Отчет.docx')
+    expect(markup).toContain('data-basis-via-kit="tu"')
+    expect(markup).toContain('data-basis-via-kit="assignment"')
+    expect(markup).toContain('data-basis-via-kit="geology"')
+    expect(markup).toContain('project.basis.progress {&quot;count&quot;:3,&quot;total&quot;:9}')
+  })
+
+  it('акт обследования в ИРД не засчитывается: его там нет по составу', () => {
+    // Засчитать документ в перечень, которого он не член, — та же неправда,
+    // только с другого конца.
+    expect(markup).not.toContain('ТО_5669_Станкевича.pdf')
+  })
+
+  it('соответствие слотов и пунктов ИРД объявлено один раз', () => {
+    const mapped = STANKEVICHA_KIT_SLOTS.filter((slot) => slot.basisItemId)
+    expect(mapped.map((slot) => [slot.id, slot.basisItemId])).toEqual([
+      ['topobaseFull', 'topo'],
+      ['technicalConditions', 'tu'],
+      ['designBrief', 'assignment'],
+      ['geologyReport', 'geology'],
+    ])
+  })
+})
+
+describe('десять величин акта видны, а не посчитаны', () => {
+  it('раздел АТО показывает разобранное мастером с цитатами', () => {
+    // Слот извлекал величины, показывал число «10» и выбрасывал их. Ни Ø450,
+    // ни 458,94 м, ни глубин 3,7…5,2 м на экране не было.
+    const facts = {
+      diameterMm: [{ value: 450, page: 1, quote: 'диаметром 450 мм' }],
+      lengthM: [{ value: 458.94, page: 1, quote: 'протяжённостью 458,94 м' }],
+      material: [{ value: 'керамическая', page: 1, quote: 'труба керамическая' }],
+      depthRangeM: [{ value: { fromM: 3.7, toM: 5.2 }, page: 1, quote: 'на глубине 3,7-5,2 м' }],
+      category: [{ value: 'III', page: 1, quote: 'категория III' }],
+      verdicts: [], missing: [],
+    }
+    const markup = html(createElement(ExistingNetworkSection, {
+      projectId: 'p1', existing: [], points: [], designedLengthM: 0,
+      basisDataset: { id: 'b1', content: { items: { stankevicha_surveyReport: { surveyAct: facts } } } },
+      onChanged: async () => {},
+    } as never))
+    expect(markup).toContain('450')
+    expect(markup).toContain('458.94')
+    expect(markup).toContain('керамическая')
+    expect(markup).toContain('диаметром 450 мм')
+    expect(markup).toContain('протяжённостью 458,94 м')
   })
 })

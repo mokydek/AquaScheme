@@ -23,6 +23,19 @@ export type KitSlotHandling =
 export interface KitSlotDefinition {
   id: string
   /**
+   * Тот же документ в реестре исходно-разрешительной документации.
+   *
+   * Мастер и ИРД считали одни и те же бумаги по разным ключам: мастер писал
+   * `stankevicha_<слот>`, ИРД искал `tu`, `assignment`, `geology`, `topo`. На
+   * одной странице выходило «Готово 6 из 8» и «Доступно в проекте: 0 из 9» про
+   * ОДИН И ТОТ ЖЕ комплект, и инженер грузил документ второй раз.
+   *
+   * Соответствие объявлено ЗДЕСЬ и только здесь. Слот без `basisItemId` — не
+   * упущение: акт технического обследования, приложения к геологии и схема
+   * трассы в перечень ИРД не входят, и засчитывать их туда было бы неправдой.
+   */
+  basisItemId?: string
+  /**
    * Слот не обязателен, если его содержимое покрыто другим слотом.
    *
    * Съёмка Станкевича целиком лежит внутри полной топоосновы — проверено
@@ -55,15 +68,15 @@ export interface KitSlotDefinition {
  * данное, и попасть в расчёт он не должен.
  */
 export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
-  { id: 'topobaseFull', hint: 'Молдагалиева.dwg → .dxf (полная топооснова)', accept: '.dxf', handling: 'parsed', parsedAtStage: null },
+  { id: 'topobaseFull', hint: 'Молдагалиева.dwg → .dxf (полная топооснова)', accept: '.dxf', handling: 'parsed', parsedAtStage: null, basisItemId: 'topo' },
   { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull' },
-  { id: 'technicalConditions', hint: 'ТУ_05-3-2723 (1).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null },
-  { id: 'designBrief', hint: 'ТЗ_5669_Станкевича.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 4 },
+  { id: 'technicalConditions', hint: 'ТУ_05-3-2723 (1).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null, basisItemId: 'tu' },
+  { id: 'designBrief', hint: 'ТЗ_5669_Станкевича.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 4, basisItemId: 'assignment' },
   // Акт технического обследования разбирается текстовым слоем: он даёт материал
   // и диаметр уложенной трубы, протяжённость, глубину заложения и категорию
   // состояния — то, чего нет ни в ТУ, ни в геологии.
   { id: 'surveyReport', hint: 'ТО_5669_Станкевича (2).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null },
-  { id: 'geologyReport', hint: 'Геологический Отчет.docx', accept: '.docx', handling: 'parsed', parsedAtStage: null },
+  { id: 'geologyReport', hint: 'Геологический Отчет.docx', accept: '.docx', handling: 'parsed', parsedAtStage: null, basisItemId: 'geology' },
   { id: 'geologyAppendices', hint: 'Приложения 3, 4, 5 (.xls)', accept: '.xls,.xlsx', handling: 'basis', parsedAtStage: 3 },
   { id: 'routeScheme', hint: 'Станкевича_ схема трассы.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 5 },
 ] as const

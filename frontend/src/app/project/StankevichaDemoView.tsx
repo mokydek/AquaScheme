@@ -131,6 +131,16 @@ export function StankevichaDemoView({
     }
     const { countSurveyActValues, extractSurveyActFacts } = await import('@aquascheme/engine')
     const facts = extractSurveyActFacts(pages)
+    /*
+      Величины кладутся В ЗАПИСЬ BASIS-ФАЙЛА, а не пересчитываются заново.
+      Раньше слот их извлекал, считал и ВЫБРАСЫВАЛ: на экране оставалось
+      «величин 10», а ни Ø450, ни 458,94 м, ни глубин 3,7…5,2 м никто не видел.
+      Извлечённая и никому не показанная величина равна неизвлечённой.
+    */
+    await saveBasisFile(projectId, 'stankevicha_surveyReport', file.name, {
+      fileName: file.name,
+      surveyAct: facts,
+    })
     return {
       kind: 'parsed',
       fileName: file.name,

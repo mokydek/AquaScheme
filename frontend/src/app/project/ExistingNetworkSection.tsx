@@ -14,6 +14,7 @@ import type { ExistingPipeRow } from '../../shared/existing'
 import { confirmSurveyActValue, createSurveyAct } from '../../shared/surveyActs'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { Panel } from './Panel'
+import type { DatasetRow } from '../../shared/datasets'
 import { SurveyActValues } from './SurveyActValues'
 import type { SurveyActRow } from './SurveyActValues'
 
@@ -27,12 +28,21 @@ export function ExistingNetworkSection({
   existing,
   points,
   designedLengthM,
+  basisDataset,
   onChanged,
 }: {
   projectId: string
   existing: ExistingPipeRow[]
   points: SurveyPoint[]
   designedLengthM: number
+  /**
+   * Набор basis-файлов: в нём лежат величины акта, разобранного мастером.
+   *
+   * Раздел говорил «НЕТ ДАННЫХ» при загруженном и разобранном акте — величины
+   * жили в состоянии страницы и пропадали при перезагрузке, а из мастера сюда
+   * не попадали вовсе. Проп передаётся явно и без умолчания.
+   */
+  basisDataset: DatasetRow | undefined
   onChanged: () => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -48,6 +58,16 @@ export function ExistingNetworkSection({
    * он только прикреплялся сканом и лежал мёртвым грузом.
    */
   const [actFacts, setActFacts] = useState<SurveyActFacts | null>(null)
+  /**
+   * Величины акта: свежая загрузка либо то, что уже разобрал мастер комплекта.
+   *
+   * Разбор один и тот же (`extractSurveyActFacts`), второго здесь не заводится:
+   * мастер кладёт результат рядом с документом, раздел его показывает.
+   */
+  const storedActFacts = ((basisDataset?.content ?? {}) as {
+    items?: Record<string, { surveyAct?: SurveyActFacts }>
+  }).items?.stankevicha_surveyReport?.surveyAct ?? null
+  const shownActFacts = actFacts ?? storedActFacts
   const [actId, setActId] = useState<string | null>(null)
   const [actFileName, setActFileName] = useState<string>('')
   const [actConfirmed, setActConfirmed] = useState<string[]>([])
@@ -195,9 +215,9 @@ export function ExistingNetworkSection({
       {notice === 'invalid' && <p className="notice error">{t('project.existing.invalid')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
 
-      {actFacts && (
+      {shownActFacts && (
         <SurveyActValues
-          facts={actFacts}
+          facts={shownActFacts}
           fileName={actFileName}
           confirmed={actConfirmed}
           busy={busy}
