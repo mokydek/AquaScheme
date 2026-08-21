@@ -190,6 +190,9 @@ export function StankevichaDemoView({
     await saveBasisFile(projectId, slot.basisItemId, file.name, {}, {
       // Предложение разбора: величины с цитатами, без единого выбора.
       freezingDepthCandidates: summary.freezingDepthCandidates,
+      // Строки без единицы едут вместе с кандидатами: раздел геологии обязан
+      // показать и то, что разбор ОТВЕРГ, — иначе это тихая потеря.
+      freezingDepthUnitlessRows: summary.freezingDepthUnitlessRows,
       ige: summary.ige,
       groundwater: summary.groundwater,
       maxAggressiveness: summary.maxAggressiveness,

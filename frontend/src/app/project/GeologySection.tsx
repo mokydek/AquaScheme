@@ -134,6 +134,7 @@ export function GeologySection({
   const reportGeology = ((basisDataset?.content ?? {}) as {
     extracted?: Record<string, {
       freezingDepthCandidates?: Array<{ valueM: number; soil: string | null; quote: string; form: string }>
+      freezingDepthUnitlessRows?: Array<{ raw: number; soil: string | null; quote: string; form: string }>
       ige?: Array<{ code: string; name: string }>
       groundwater?: { minM: number; maxM: number } | null
     } | undefined>
@@ -146,6 +147,15 @@ export function GeologySection({
       soil: candidate.soil, valueM: candidate.valueM, quote: content?.freezingDepthQuote ?? '',
     })),
   ].filter((candidate, index, all) => all.findIndex((other) => other.valueM === candidate.valueM) === index)
+  /*
+    Строки, где число есть, а единицы нет.
+
+    Кнопкой не становятся и в кандидаты не попадают: разбор не может отличить
+    номер столбца от глубины по одному числу. Но и молчать о них нельзя —
+    молчаливая потеря кандидата не лучше молчаливой выдумки. Показываются
+    цитатой: по ней инженер решает за один взгляд.
+  */
+  const freezingUnitlessRows = reportGeology?.freezingDepthUnitlessRows ?? []
 
   const [freezing, setFreezing] = useState(content?.freezingDepthM == null ? '' : String(content.freezingDepthM))
   const [freezingSource, setFreezingSource] = useState(content?.freezingDepthSource ?? content?.sourceFile ?? '')
@@ -847,6 +857,21 @@ export function GeologySection({
               ))}
             </div>
             <p className="hint">{t('project.geology.frostCandidatesHint')}</p>
+          </div>
+        )}
+        {freezingUnitlessRows.length > 0 && (
+          <div className="field" data-freezing-unitless="true">
+            <span className="field-label">{t('project.geology.frostUnitless')}</span>
+            <ul className="hint">
+              {freezingUnitlessRows.map((row) => (
+                <li key={row.quote}>
+                  {t('project.geology.frostUnitlessRow', {
+                    raw: row.raw, soil: row.soil ?? '—', quote: row.quote.replace(/	/g, ' | '),
+                  })}
+                </li>
+              ))}
+            </ul>
+            <p className="hint">{t('project.geology.frostUnitlessHint')}</p>
           </div>
         )}
         <label className="field">

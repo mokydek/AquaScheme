@@ -1200,6 +1200,41 @@ describe('промерзание: кандидаты отчёта видны, в
     expect(bare).not.toContain('data-freezing-candidates')
   })
 
+  it('строка без единицы названа и кнопкой не становится', () => {
+    /*
+      2,00 м дважды выпалывали как выдуманную подстановку, и она вернулась
+      третьим путём — кандидатом «из документа», с цитатой. Теперь строка
+      видна как строка: разбор её отверг и сказал почему, а нажать на неё
+      нельзя.
+    */
+    const markup = html(createElement(GeologySection, {
+      projectId: 'p1',
+      dataset: { id: 'g4', content: { soilType: 'clay', groundwaterDepthM: 6, corrosivity: 'low' } },
+      basisDataset: {
+        id: 'b2',
+        content: {
+          files: { geology: 'Геологический Отчет.docx' },
+          extracted: {
+            geology: {
+              freezingDepthCandidates: [
+                { valueM: 1.17, soil: 'Крупнообломочные', quote: 'Крупнообломочные\t1,17м', form: 'table' },
+              ],
+              freezingDepthUnitlessRows: [
+                { raw: 2, soil: 'Суглинок твердый', quote: '1\tСуглинок твердый -35в;\t2\t2', form: 'table' },
+              ],
+            },
+          },
+        },
+      },
+      boreholes: [], surveyPoints: [], onChanged: async () => {},
+    } as never))
+    expect(markup).toContain('data-freezing-unitless="true"')
+    expect(markup).toContain('project.geology.frostUnitless')
+    // Кнопка есть только у настоящего кандидата.
+    expect(markup).toContain('data-freezing-candidate="Крупнообломочные"')
+    expect(markup).not.toContain('data-freezing-candidate="Суглинок твердый"')
+  })
+
   it('кандидаты из разобранного отчёта доходят до выбора с цитатой', () => {
     // Слот мастера кладёт разбор в запись basis-файла — не в набор геологии:
     // там живут подтверждённые величины, и разбор их не трогает.
@@ -1217,6 +1252,11 @@ describe('промерзание: кандидаты отчёта видны, в
                 { valueM: 1.03, soil: 'песка средней крупности', quote: 'для песка средней крупности – 1,03м', form: 'prose' },
               ],
               ige: [{ code: '1', name: 'суглинок твердый' }],
+              // Строка таблицы трудности разработки: «2» в конце — номер
+              // столбца. Кандидатом не стала, но и не пропала.
+              freezingDepthUnitlessRows: [
+                { raw: 2, soil: 'Суглинок твердый', quote: '1\tСуглинок твердый -35в;\t2\t2', form: 'table' },
+              ],
             },
           },
         },
