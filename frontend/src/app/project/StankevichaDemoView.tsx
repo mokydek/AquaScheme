@@ -11,6 +11,7 @@ import {
 import { STANKEVICHA_KIT_SLOTS, emptyKitState, runKit, verifyKitAgainstStored } from '../../shared/kitWizard'
 import type { KitSlotDefinition, KitSlotState, KitState, KitStoredCheck } from '../../shared/kitWizard'
 import { saveBasisFile } from '../../shared/basisFiles'
+import { extractGeologyDocument, extractSurveyActDocument } from '../../shared/documentExtraction'
 import { loadDatasetContent } from '../../shared/datasets'
 import { formatAppError } from '../../shared/errorFormatting'
 import { trainingScreensEnabled } from '../../shared/features'
@@ -130,16 +131,6 @@ export function StankevichaDemoView({
    * этого хватает, чтобы владелец увидел, что файл прочитан, а не проглочен.
    */
   const acceptSurveyReport = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
-    const { loadPdfTextByPage } = await import('../../shared/pdfText')
-    const pages = (await loadPdfTextByPage(file)).map((page, index) => ({
-      page: index + 1,
-      text: page.items.map((item) => item.str).join(' '),
-    }))
-    if (pages.every((page) => page.text.trim() === '')) {
-      throw new Error(t('project.existing.act.noTextLayer'))
-    }
-    const { countSurveyActValues, extractSurveyActFacts } = await import('@aquascheme/engine')
-    const facts = extractSurveyActFacts(pages)
     /*
       Величины кладутся В ЗАПИСЬ BASIS-ФАЙЛА, а не пересчитываются заново.
       Раньше слот их извлекал, считал и ВЫБРАСЫВАЛ: на экране оставалось
@@ -150,15 +141,15 @@ export function StankevichaDemoView({
       слот выше, и незачем оставлять в реестре имя файла, из которого ничего
       не прочитано.
     */
-    // Разбор кладётся как есть: `extracted.survey_act` И ЕСТЬ величины акта,
-    // без ещё одного слоя с тем же именем.
-    await saveBasisFile(projectId, slot.basisItemId, file.name, {}, { ...facts })
+    const { payload, pageCount, valueCount } = await extractSurveyActDocument(
+      file, t('project.existing.act.noTextLayer'))
+    await saveBasisFile(projectId, slot.basisItemId, file.name, {}, payload)
     return {
       kind: 'parsed',
       fileName: file.name,
       counters: [
-        { label: t('project.kit.counterActValues'), value: countSurveyActValues(facts) },
-        { label: t('project.kit.counterPages'), value: pages.length },
+        { label: t('project.kit.counterActValues'), value: valueCount },
+        { label: t('project.kit.counterPages'), value: pageCount },
       ],
     }
   }
@@ -179,31 +170,16 @@ export function StankevichaDemoView({
    * подтверждение остаются за инженером.
    */
   const parseGeologyReport = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
-    const { docxText } = await import('../../shared/docxText')
-    const { parseGeologyReportSummary } = await import('@aquascheme/engine')
-    const text = docxText(new Uint8Array(await file.arrayBuffer()))
-    if (text.trim() === '') {
-      // Молчаливое «сохранено» скрыло бы, что документ не прочитан.
-      throw new Error(t('project.kit.docxNoText'))
-    }
-    const summary = parseGeologyReportSummary(text)
-    await saveBasisFile(projectId, slot.basisItemId, file.name, {}, {
-      // Предложение разбора: величины с цитатами, без единого выбора.
-      freezingDepthCandidates: summary.freezingDepthCandidates,
-      // Строки без единицы едут вместе с кандидатами: раздел геологии обязан
-      // показать и то, что разбор ОТВЕРГ, — иначе это тихая потеря.
-      freezingDepthUnitlessRows: summary.freezingDepthUnitlessRows,
-      ige: summary.ige,
-      groundwater: summary.groundwater,
-      maxAggressiveness: summary.maxAggressiveness,
-    })
+    const { payload, charCount, candidateCount, igeCount } = await extractGeologyDocument(
+      file, t('project.kit.docxNoText'))
+    await saveBasisFile(projectId, slot.basisItemId, file.name, {}, payload)
     return {
       kind: 'parsed',
       fileName: file.name,
       counters: [
-        { label: t('project.kit.counterFreezingCandidates'), value: summary.freezingDepthCandidates.length },
-        { label: t('project.kit.counterIge'), value: summary.ige.length },
-        { label: t('project.kit.counterChars'), value: text.length },
+        { label: t('project.kit.counterFreezingCandidates'), value: candidateCount },
+        { label: t('project.kit.counterIge'), value: igeCount },
+        { label: t('project.kit.counterChars'), value: charCount },
       ],
     }
   }

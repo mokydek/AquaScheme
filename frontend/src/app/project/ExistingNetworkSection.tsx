@@ -17,6 +17,11 @@ import { Panel } from './Panel'
 import type { DatasetRow } from '../../shared/datasets'
 import { SurveyActValues } from './SurveyActValues'
 import type { SurveyActRow } from './SurveyActValues'
+import { extractionAge } from '@aquascheme/engine'
+import { ExtractionAgeNotice } from './ExtractionAgeNotice'
+import { extractSurveyActDocument } from '../../shared/documentExtraction'
+import { saveBasisFile } from '../../shared/basisFiles'
+import { formatAppError } from '../../shared/errorFormatting'
 
 const MATERIALS: ExistingMaterial[] = [
   'steel', 'cast_iron', 'concrete', 'asbestos', 'ceramic', 'pe', 'pvc', 'unknown',
@@ -68,6 +73,31 @@ export function ExistingNetworkSection({
     extracted?: Record<string, SurveyActFacts | undefined>
   }).extracted?.survey_act ?? null
   const shownActFacts = actFacts ?? storedActFacts
+  /*
+    Возраст разбора акта считается ОТДЕЛЬНО от геологии: у каждого документа
+    свой извлекатель и своя версия. Правка разбора геологии не должна вешать
+    предупреждение здесь — предупреждению, которое кричит про всё сразу,
+    перестают верить.
+  */
+  const actAge = extractionAge('survey_act', ((basisDataset?.content ?? {}) as {
+    extracted?: Record<string, unknown>
+  }).extracted?.survey_act)
+  const [actReparseBusy, setActReparseBusy] = useState(false)
+  const [actReparseError, setActReparseError] = useState<string | null>(null)
+  /** Перезапуск разбора акта — решением инженера; пишется только разбор. */
+  const reparseAct = async (file: File) => {
+    setActReparseBusy(true)
+    setActReparseError(null)
+    try {
+      const { payload } = await extractSurveyActDocument(file, t('project.existing.act.noTextLayer'))
+      await saveBasisFile(projectId, 'survey_act', file.name, {}, payload)
+      await onChanged()
+    } catch (cause) {
+      setActReparseError(formatAppError(cause))
+    } finally {
+      setActReparseBusy(false)
+    }
+  }
   const [actId, setActId] = useState<string | null>(null)
   const [actFileName, setActFileName] = useState<string>('')
   const [actConfirmed, setActConfirmed] = useState<string[]>([])
@@ -215,6 +245,15 @@ export function ExistingNetworkSection({
       {notice === 'invalid' && <p className="notice error">{t('project.existing.invalid')}</p>}
       {notice === 'error' && <p className="notice error">{t('project.saveError')}</p>}
 
+      <ExtractionAgeNotice
+        age={actAge}
+        itemId="survey_act"
+        fileName={actFileName}
+        accept=".pdf"
+        busy={actReparseBusy}
+        error={actReparseError}
+        onReparse={(file) => { void reparseAct(file) }}
+      />
       {shownActFacts && (
         <SurveyActValues
           facts={shownActFacts}

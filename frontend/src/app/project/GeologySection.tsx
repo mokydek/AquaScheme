@@ -23,6 +23,11 @@ import type { OcrProgress } from '../../shared/ocr'
 import { routeUpload, uploadErrorText } from '../../shared/upload'
 import { GeologyPdfImport } from './GeologyPdfImport'
 import { Panel } from './Panel'
+import { ExtractionAgeNotice } from './ExtractionAgeNotice'
+import { extractionAge } from '@aquascheme/engine'
+import { extractGeologyDocument } from '../../shared/documentExtraction'
+import { saveBasisFile } from '../../shared/basisFiles'
+import { formatAppError } from '../../shared/errorFormatting'
 
 type SoilType = 'sand' | 'loam' | 'clay' | 'rock'
 type Corrosivity = 'low' | 'medium' | 'high'
@@ -156,6 +161,46 @@ export function GeologySection({
     цитатой: по ней инженер решает за один взгляд.
   */
   const freezingUnitlessRows = reportGeology?.freezingDepthUnitlessRows ?? []
+  /*
+    Возраст сохранённого разбора. Считается по тому, что лежит в базе, а не по
+    тому, что умеет этот код: величины на экране — сохранённые.
+  */
+  const geologyAge = extractionAge('geology', reportGeology)
+  const geologyFileName = ((basisDataset?.content ?? {}) as { files?: Record<string, string> })
+    .files?.geology
+  const [reparseBusy, setReparseBusy] = useState(false)
+  const [reparseError, setReparseError] = useState<string | null>(null)
+  /**
+   * Перезапуск разбора — РЕШЕНИЕМ ИНЖЕНЕРА, а не сам по себе.
+   *
+   * Пере-разбор меняет данные проекта, и делать это молча при открытии
+   * страницы нельзя. Пишется только `extracted.geology`: набор геологии, где
+   * живут подтверждённые инженером величины, не трогается вовсе.
+   */
+  const reparseGeology = async (file: File) => {
+    setReparseBusy(true)
+    setReparseError(null)
+    try {
+      const { payload } = await extractGeologyDocument(file, t('project.kit.docxNoText'))
+      await saveBasisFile(projectId, 'geology', file.name, {}, payload)
+      await onChanged()
+    } catch (cause) {
+      setReparseError(formatAppError(cause))
+    } finally {
+      setReparseBusy(false)
+    }
+  }
+  /*
+    Выбранная величина, которой среди свежих кандидатов нет.
+
+    Пере-разбор не отменяет выбор человека — но и не притворяется, что выбор
+    относится к новым величинам. Именно так исчезает 2,00 м: он был выбран из
+    отчёта, а сегодняшний разбор его кандидатом не считает.
+  */
+  const chosenFreezing = content?.freezingDepthM ?? null
+  const chosenMissing = geologyAge?.kind === 'current' && chosenFreezing !== null
+    && freezingCandidates.length > 0
+    && !freezingCandidates.some((candidate) => candidate.valueM === chosenFreezing)
 
   const [freezing, setFreezing] = useState(content?.freezingDepthM == null ? '' : String(content.freezingDepthM))
   const [freezingSource, setFreezingSource] = useState(content?.freezingDepthSource ?? content?.sourceFile ?? '')
@@ -832,6 +877,20 @@ export function GeologySection({
           Нажатие подставляет величину и подписывает её грунтом и строкой
           отчёта — тем, на что можно сослаться.
         */}
+        <ExtractionAgeNotice
+          age={geologyAge}
+          itemId="geology"
+          fileName={geologyFileName}
+          accept=".docx"
+          busy={reparseBusy}
+          error={reparseError}
+          onReparse={(file) => { void reparseGeology(file) }}
+        />
+        {chosenMissing && (
+          <p className="stat-line warn" role="alert" data-freezing-chosen-missing="true">
+            {t('project.geology.frostChosenMissing', { value: (chosenFreezing ?? 0).toFixed(2) })}
+          </p>
+        )}
         {freezingCandidates.length > 0 && (
           <div className="field" data-freezing-candidates="true">
             <span className="field-label">{t('project.geology.frostCandidates')}</span>

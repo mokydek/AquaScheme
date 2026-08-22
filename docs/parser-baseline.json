@@ -1,0 +1,13 @@
+{
+  "_comment": "Отпечатки исходников разборов. Держит parser-versions.test.ts: исходник разошёлся с отпечатком — поднимите версию в PARSER_VERSIONS либо перепишите отпечаток, если правка косметическая. Молчаливого расхождения быть не должно: на нём уже трижды сгорели.",
+  "parsers": {
+    "geology": {
+      "source": "engine/src/geology.ts",
+      "sha256": "86869dc1e1eaf4b9ad1a45c3788b31585e30803fae360aa61e8782759b0fe8d1"
+    },
+    "survey_act": {
+      "source": "engine/src/survey-act.ts",
+      "sha256": "2b48ec254480c340c0196da767247122bd4d84620fd02cebebb1e8b2a333c3f8"
+    }
+  }
+}

@@ -1356,6 +1356,114 @@ describe('сообщения называют то, что произошло', 
   })
 })
 
+describe('экран говорит, каким разбором получены величины', () => {
+  /**
+   * ИЗМЕРЕНО НА ЖИВОМ САЙТЕ, ТРИЖДЫ. Правка извлечения чинит будущие загрузки
+   * и не трогает сделанные. Владелец открывал проект после каждой из трёх
+   * правок и видел старый результат: 2,00 м из таблицы нумерации ИГЭ стоял
+   * кандидатом уже после того, как разбор научился его отбрасывать.
+   */
+  const geology = (extraction: Record<string, unknown>) => html(createElement(GeologySection, {
+    projectId: 'p1',
+    dataset: { id: 'g5', content: { soilType: 'clay', groundwaterDepthM: 6, corrosivity: 'low' } },
+    basisDataset: {
+      id: 'b3',
+      content: { files: { geology: 'Геологический Отчет.docx' }, extracted: { geology: extraction } },
+    },
+    boreholes: [], surveyPoints: [], onChanged: async () => {},
+  } as never))
+
+  const CANDIDATES = [
+    { valueM: 1.17, soil: 'Крупнообломочные', quote: 'Крупнообломочные\t1,17м', form: 'table' },
+  ]
+
+  it('устаревший разбор назван обеими версиями, а величины остаются на месте', () => {
+    const markup = geology({ parserVersion: 1, freezingDepthCandidates: CANDIDATES })
+    expect(markup).toContain('data-extraction-age="outdated"')
+    expect(markup).toContain('project.extraction.outdated')
+    expect(markup).toContain('&quot;stored&quot;:1')
+    expect(markup).toContain('&quot;current&quot;:2')
+    // Величины не прячутся: на них могли уже сослаться.
+    expect(markup).toContain('data-freezing-candidate="Крупнообломочные"')
+    // Рядом — действие, а не только упрёк.
+    expect(markup).toContain('id="reparse-geology"')
+    expect(markup).toContain('project.extraction.noStoredFile')
+  })
+
+  it('запись без версии читается как «неизвестно», а не как свежая', () => {
+    // Ровно то, что лежит в базе владельца: разбор есть, версии нет.
+    const markup = geology({ freezingDepthCandidates: CANDIDATES })
+    expect(markup).toContain('data-extraction-age="unknown"')
+    expect(markup).toContain('project.extraction.unknown')
+    expect(markup).toContain('data-freezing-candidate="Крупнообломочные"')
+  })
+
+  it('действующий разбор молчит', () => {
+    const markup = geology({ parserVersion: 2, freezingDepthCandidates: CANDIDATES })
+    expect(markup).not.toContain('data-extraction-age')
+    expect(markup).toContain('data-freezing-candidate="Крупнообломочные"')
+  })
+
+  it('разбор новее кода перезапуском не лечится', () => {
+    const markup = geology({ parserVersion: 99, freezingDepthCandidates: CANDIDATES })
+    expect(markup).toContain('data-extraction-age="ahead"')
+    // Кнопка откатила бы чужую работу назад — её здесь нет.
+    expect(markup).not.toContain('id="reparse-geology"')
+  })
+
+  it('правка разбора геологии не вешает предупреждение на акт', () => {
+    /*
+      Общая версия объявила бы устаревшим всё сразу. У акта своя версия, она
+      не менялась — и раздел АТО молчит, пока молчать честно.
+    */
+    const facts = {
+      diameterMm: [{ value: 450, page: 1, quote: 'диаметром 450 мм' }],
+      lengthM: [], material: [], depthRangeM: [], category: [], verdicts: [], missing: [],
+    }
+    const markup = html(createElement(ExistingNetworkSection, {
+      projectId: 'p1', existing: [], points: [], designedLengthM: 0,
+      basisDataset: {
+        id: 'b4',
+        content: {
+          extracted: {
+            geology: { parserVersion: 1, freezingDepthCandidates: [] },
+            survey_act: { parserVersion: 1, ...facts },
+          },
+        },
+      },
+      onChanged: async () => {},
+    } as never))
+    expect(markup).not.toContain('data-extraction-age')
+    expect(markup).toContain('450')
+  })
+
+  it('выбранная величина, исчезнувшая после пере-разбора, названа', () => {
+    /*
+      Случай владельца после перезапуска: 2,00 м был выбран из отчёта, а
+      сегодняшний разбор кандидатом его не считает. Тихо подменить выбор
+      нельзя — правило «извлечённое ≠ подтверждённое» работает в обе стороны.
+    */
+    const markup = html(createElement(GeologySection, {
+      projectId: 'p1',
+      dataset: {
+        id: 'g6',
+        content: { soilType: 'clay', groundwaterDepthM: 6, corrosivity: 'low', freezingDepthM: 2 },
+      },
+      basisDataset: {
+        id: 'b5',
+        content: {
+          files: { geology: 'Геологический Отчет.docx' },
+          extracted: { geology: { parserVersion: 2, freezingDepthCandidates: CANDIDATES } },
+        },
+      },
+      boreholes: [], surveyPoints: [], onChanged: async () => {},
+    } as never))
+    expect(markup).toContain('data-freezing-chosen-missing="true"')
+    expect(markup).toContain('project.geology.frostChosenMissing')
+    expect(markup).toContain('2.00')
+  })
+})
+
 describe('реестры говорят про одни и те же бумаги согласованно', () => {
   /**
    * На одной странице стояло «Мастер комплекта: готово 6 из 8» и
