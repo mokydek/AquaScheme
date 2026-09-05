@@ -605,6 +605,17 @@ export function GravitySection({
   const gravityPlan = useMemo(() => {
     const profile = result?.profile
     if (!profile || profile.stations.length < 2) return null
+    /*
+      Глубина промерзания здесь ЕСТЬ — и это доказано, а не предполагается.
+
+      Ниже стояло `freezingDepth.valueM ?? 0`: подстановка, про которую можно
+      было рассуждать, что она недостижима (без выбранной величины `result`
+      равен null, а значит и `profile`). Рассуждение — не проверка. Явное
+      сужение делает недостижимость свойством типа: ноль в разбивку бассейнов
+      попасть больше не может, а если однажды сможет — расчёта просто не
+      будет, и это увидит человек.
+    */
+    if (freezingDepth.valueM === null) return null
     const design = new Map((result?.pipes ?? []).map((pipe) => [
       pipe.id,
       { diameterMm: pipe.diameterMm, slope: pipe.slope },
@@ -642,7 +653,7 @@ export function GravitySection({
     const outcome = catalogMaxDepthM > 0 && !feasibility.feasible
       ? applyGravityBasinLifts(profile, design, {
         maxDepthM: catalogMaxDepthM,
-        freezingDepthM: freezingDepth.valueM ?? 0,
+        freezingDepthM: freezingDepth.valueM,
       })
       : null
     const basins = outcome?.plan ?? null

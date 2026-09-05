@@ -209,8 +209,11 @@ export function SituationSchemeSection({
         // участок без неё объявляется стоп-фактором поимённо.
         roughnessMm: pipe.roughnessMm,
       })),
-      inletElevationM: lns?.groundElevation ?? 0,
-      outletElevationM: outlet?.groundElevation ?? 0,
+      // Отметки идут как есть: отсутствие выражается типом, а не нулём.
+      // Ноль здесь был неотличим от настоящей отметки 0,00 м и занижал
+      // требуемый напор, не роняя состояние расчёта.
+      inletElevationM: lns?.groundElevation ?? null,
+      outletElevationM: outlet?.groundElevation ?? null,
       availablePumpHeadM: constraints?.lns?.pumpHeadM ?? null,
     })
     return {

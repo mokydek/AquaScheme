@@ -28,7 +28,8 @@ export interface PressureMainResult {
   kind: 'pressure'
   status: 'calculated' | 'blocked'
   pipes: PressurePipeResult[]
-  staticHeadM: number
+  /** Геодезический перепад; `null` — хотя бы одна отметка не задана. */
+  staticHeadM: number | null
   frictionHeadM: number
   requiredPumpHeadM: number | null
   availablePumpHeadM: number | null
@@ -44,8 +45,18 @@ const round = (value: number, digits = 3) => {
 /** Darcy-Weisbach with Swamee-Jain friction factor, water at ~20 °C. */
 export function solvePressureMain(input: {
   pipes: PressurePipeInput[]
-  inletElevationM: number
-  outletElevationM: number
+  /**
+   * Отметка земли у ЛНС; `null` — не задана.
+   *
+   * ВЫЗЫВАЮЩИЙ ПОДСТАВЛЯЛ СЮДА НОЛЬ. Узел без отметки давал нулевой
+   * геодезический перепад, требуемый напор выходил заниженным, а состояние —
+   * «рассчитано». На объекте с абсолютными отметками около 685 м это не
+   * мелочь, и ноль здесь неотличим от настоящей отметки 0,00 м: подстановку
+   * нельзя было даже опознать по значению.
+   */
+  inletElevationM: number | null
+  /** Отметка земли у выпуска; `null` — не задана. */
+  outletElevationM: number | null
   availablePumpHeadM?: number | null
   localLossCoefficient?: number
 }): PressureMainResult {
@@ -84,7 +95,17 @@ export function solvePressureMain(input: {
         + 'величину принимает инженер по материалу — раздел «Каталог труб и материалов».')
     }
   }
-  const staticHeadM = Math.max(0, input.outletElevationM - input.inletElevationM)
+  if (input.inletElevationM === null) {
+    blockers.push('Не задана отметка земли у ЛНС: без неё геодезический перепад неизвестен, '
+      + 'и требуемый напор насоса не считается.')
+  }
+  if (input.outletElevationM === null) {
+    blockers.push('Не задана отметка земли у выпуска: без неё геодезический перепад неизвестен, '
+      + 'и требуемый напор насоса не считается.')
+  }
+  const staticHeadM = input.inletElevationM === null || input.outletElevationM === null
+    ? null
+    : Math.max(0, input.outletElevationM - input.inletElevationM)
   const frictionHeadM = pipes.reduce((sum, pipe) => sum + pipe.headlossM, 0)
   const last = pipes[pipes.length - 1]
   const velocityHeadM = last ? last.velocityMs ** 2 / (2 * 9.80665) : 0
@@ -102,7 +123,9 @@ export function solvePressureMain(input: {
    * незакрытая.
    */
   const localHeadM = (input.localLossCoefficient ?? 1.5) * velocityHeadM
-  const requiredPumpHeadM = blockers.length === 0 ? round(staticHeadM + frictionHeadM + localHeadM) : null
+  const requiredPumpHeadM = blockers.length === 0 && staticHeadM !== null
+    ? round(staticHeadM + frictionHeadM + localHeadM)
+    : null
   const availablePumpHeadM = input.availablePumpHeadM ?? null
   if (availablePumpHeadM == null) blockers.push('Не заданы характеристика насоса и доступный напор ЛНС.')
 
@@ -110,7 +133,7 @@ export function solvePressureMain(input: {
     kind: 'pressure',
     status: blockers.length === 0 ? 'calculated' : 'blocked',
     pipes,
-    staticHeadM: round(staticHeadM),
+    staticHeadM: staticHeadM === null ? null : round(staticHeadM),
     frictionHeadM: round(frictionHeadM),
     requiredPumpHeadM,
     availablePumpHeadM,

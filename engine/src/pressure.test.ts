@@ -96,3 +96,55 @@ describe('solvePressureMain', () => {
     expect(result.blockers.join(' ')).toContain('шероховатость')
   })
 })
+
+describe('отметки не подставляются нулём', () => {
+  /**
+   * `SituationSchemeSection` передавал сюда `lns?.groundElevation ?? 0`. Узел
+   * без отметки давал нулевой геодезический перепад, требуемый напор выходил
+   * заниженным, а состояние — «рассчитано». На объекте с абсолютными отметками
+   * около 685 м это не мелочь, и ноль был неотличим от настоящей отметки
+   * 0,00 м: подстановку нельзя было опознать даже по значению.
+   */
+  const pipe = {
+    id: 'P1', lengthM: 100, diameterMm: 200, flowLps: 40, roughnessMm: 0.1,
+  }
+
+  it('без отметки ЛНС напор не считается, и сказано почему', () => {
+    const result = solvePressureMain({
+      pipes: [pipe], inletElevationM: null, outletElevationM: 690, availablePumpHeadM: 30,
+    })
+    expect(result.status).toBe('blocked')
+    expect(result.staticHeadM).toBeNull()
+    expect(result.requiredPumpHeadM).toBeNull()
+    expect(result.blockers.join(' ')).toContain('отметка земли у ЛНС')
+  })
+
+  it('без отметки выпуска — то же самое', () => {
+    const result = solvePressureMain({
+      pipes: [pipe], inletElevationM: 685, outletElevationM: null, availablePumpHeadM: 30,
+    })
+    expect(result.status).toBe('blocked')
+    expect(result.staticHeadM).toBeNull()
+    expect(result.blockers.join(' ')).toContain('отметка земли у выпуска')
+  })
+
+  it('обе отметки заданы — считается как раньше', () => {
+    const result = solvePressureMain({
+      pipes: [pipe], inletElevationM: 685, outletElevationM: 690, availablePumpHeadM: 30,
+    })
+    expect(result.staticHeadM).toBeCloseTo(5, 3)
+    expect(result.status).toBe('calculated')
+  })
+
+  it('настоящие отметки объекта не выдаются за ноль', () => {
+    // 685 и 690 против 0 и 0: разница в требуемом напоре — все пять метров
+    // подъёма, которые подстановка съедала молча.
+    const real = solvePressureMain({
+      pipes: [pipe], inletElevationM: 685, outletElevationM: 690, availablePumpHeadM: 30,
+    })
+    const zeroed = solvePressureMain({
+      pipes: [pipe], inletElevationM: 0, outletElevationM: 0, availablePumpHeadM: 30,
+    })
+    expect((real.requiredPumpHeadM ?? 0) - (zeroed.requiredPumpHeadM ?? 0)).toBeCloseTo(5, 3)
+  })
+})

@@ -27,8 +27,11 @@ describe('подбор насосов ЛНС', () => {
     // Подставить подъём вместо требуемого напора — занизить агрегат. Проверяем,
     // что подбор опирается именно на расчёт.
     const result = pressure()
-    expect(result.staticHeadM).toBeCloseTo(12, 2)
-    expect(result.requiredPumpHeadM).toBeGreaterThan(result.staticHeadM)
+    // Перепад теперь может отсутствовать типом: отметки не подставляются нулём.
+    // Здесь они заданы обе, поэтому величина обязана быть числом.
+    expect(result.staticHeadM).not.toBeNull()
+    expect(result.staticHeadM as number).toBeCloseTo(12, 2)
+    expect(result.requiredPumpHeadM).toBeGreaterThan(result.staticHeadM as number)
     expect(result.frictionHeadM).toBeGreaterThan(0)
   })
 
