@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   gridToGeologyRows,
@@ -332,5 +333,79 @@ describe('кандидатом становится только то, что з
     // Осадки, снег и дни с градом в то же окно попадают и кандидатами не
     // становятся — ни до правки, ни после.
     expect(summary.freezingDepthUnitlessRows).toEqual([])
+  })
+})
+
+describe('фикстуры отчётов совпадают с подлинниками', () => {
+  /**
+   * ФИКСТУРА — ВЫПИСКА, А НЕ ПЕРЕСКАЗ.
+   *
+   * Строки обоих отчётов взяты дословно, но связь с документами держалась на
+   * честном слове: заменят отчёт — и проверки останутся зелёными на тексте,
+   * которого больше нет. Здесь эта связь проверяется.
+   *
+   * Пришпилены СТРОКИ С ВЕЛИЧИНАМИ — те, на которых стоят выводы. Связки
+   * («Классификация грунтов…», заголовок таблицы) в фикстуре сокращены
+   * намеренно, чтобы не тащить в тест лишнего, и сверять их дословно значило
+   * бы требовать от выписки быть копией.
+   *
+   * `docs/benchmark/` в git не входит; нет его — проверка пропускается и
+   * говорит об этом, а не притворяется пройденной. Как пересобрать — в
+   * `docs/benchmark/REBUILD.md`.
+   */
+  const BENCH = new URL('../../docs/benchmark/', import.meta.url)
+  const read = (relative: string): string | null => {
+    try {
+      return readFileSync(new URL(relative, BENCH), 'utf8')
+    } catch (cause) {
+      // ТОЛЬКО отсутствие файла означает «бенчмарка нет». Широкий catch здесь
+      // уже соврал один раз: он проглотил отсутствующий импорт и выдал это за
+      // «подлинников на машине нет» — проверка молча пропустилась вместо того,
+      // чтобы упасть.
+      if ((cause as { code?: string }).code === 'ENOENT') return null
+      throw cause
+    }
+  }
+  const stankevicha = read('stankevicha/raw/geology_report.txt')
+  const collector = read('taldykol/raw/geology_report.txt')
+
+  it.skipIf(stankevicha === null)('строки Станкевича стоят в исходном DOCX дословно', () => {
+    for (const line of [
+      `Суглинок, глина${TAB}0,79м`,
+      `Супеси, песок мелкий, песок пылеватый${TAB}0,96м`,
+      `Песок средней крупности, крупный, гравелистый${TAB}1,03м`,
+      `Крупнообломочные${TAB}1,17м`,
+      // Обе строки таблицы трудности разработки — те самые, что давали 1,00 и
+      // 2,00 м. Они обязаны быть в документе: без них дефект не воспроизводим.
+      `1${TAB}Суглинок твердый -35в;${TAB}2${TAB}2`,
+      `2${TAB}Песок пылеватый, средней крупности – 29а ;${TAB}1${TAB}1`,
+      'Нормативная глубина сезонного промерзания для суглинков – 0,79м',
+    ]) {
+      expect(stankevicha, `строки нет в подлиннике: ${JSON.stringify(line)}`).toContain(line)
+    }
+  })
+
+  it.skipIf(collector === null)('строки коллектора стоят в исходном PDF дословно', () => {
+    for (const line of [
+      'Нормативная глубина сезонного промерзания грунтов, см',
+      'суглинки и глины   - 171',
+      'супеси, пески мелкие и пылеватые   - 208',
+      'пески средние,   крупные и гравелистые   - 222',
+      'крупнообломочные грунты   - 253',
+    ]) {
+      expect(collector, `строки нет в подлиннике: ${JSON.stringify(line)}`).toContain(line)
+    }
+  })
+
+  it.skipIf(stankevicha === null)('подлинник даёт ровно то, что даёт фикстура', () => {
+    // Сильнее построчной сверки: разбор ЦЕЛОГО документа и разбор выписки
+    // должны сойтись величинами. Разойдутся — значит выписка перестала быть
+    // представительной, даже если каждая её строка на месте.
+    const fromReal = parseGeologyReportSummary(stankevicha as string)
+    const fromFixture = parseGeologyReportSummary(STANKEVICHA_REPORT)
+    expect(fromReal.freezingDepthCandidates.map((item) => item.valueM))
+      .toEqual(fromFixture.freezingDepthCandidates.map((item) => item.valueM))
+    expect(fromReal.freezingDepthUnitlessRows.map((row) => row.raw))
+      .toEqual(fromFixture.freezingDepthUnitlessRows.map((row) => row.raw))
   })
 })
