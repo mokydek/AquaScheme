@@ -68,6 +68,16 @@ const CRITICAL = [
   'frontend/src/shared/existing.ts',
   'frontend/src/shared/catalog.ts',
   'frontend/src/shared/stankevichaSeed.ts',
+  /*
+    Виды, из которых инженерные величины уходят В ДВИЖОК.
+
+    Сторож смотрел на движок и общие модули, а вызов расчёта собирают эти два
+    файла — и обе подстановки 2,00 м жили здесь. Он не увидел ни одну: первую
+    нашли глазами по чертежу, вторую владелец нашёл в исходнике. Закрыть случай,
+    не заведя наблюдение за местом, значит ждать третью.
+  */
+  'frontend/src/app/project/GravitySection.tsx',
+  'frontend/src/app/project/SituationSchemeSection.tsx',
 ]
 
 /**

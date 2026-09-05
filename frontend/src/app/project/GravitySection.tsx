@@ -594,10 +594,20 @@ export function GravitySection({
   const plannedSurface = useMemo(() => {
     const design = ((verticalPlanDataset?.content ?? null) as { points?: SurveyPoint[] } | null)?.points ?? []
     if (design.length === 0 || !result?.profile) return null
-    const path = result.profile.stations.map((station) => {
+    /*
+      Станция без узла — не точка в начале координат.
+
+      Здесь стояла подстановка нулём по координате: пропавший узел клал станцию
+      в начало координат, и поверхность считалась вдоль пути, уходящего к нулю. На экране
+      это отметки, а не ошибка: правдоподобные метры не про этот объект.
+      Пути нет — нет и поверхности, а причина видна тем, что её не показали.
+    */
+    const path: Array<{ x: number; y: number }> = []
+    for (const station of result.profile.stations) {
       const node = network.nodes.find((item) => item.id === station.nodeId)
-      return { x: node?.x ?? 0, y: node?.y ?? 0 }
-    })
+      if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) return null
+      path.push({ x: node.x, y: node.y })
+    }
     const along = plannedSurfaceAlong(path, design, surveyPoints)
     return new Map(result.profile.stations.map((station, index) => [station.nodeId, along[index]?.elevation ?? null]))
   }, [verticalPlanDataset, result, network, surveyPoints])
@@ -608,9 +618,9 @@ export function GravitySection({
     /*
       Глубина промерзания здесь ЕСТЬ — и это доказано, а не предполагается.
 
-      Ниже стояло `freezingDepth.valueM ?? 0`: подстановка, про которую можно
-      было рассуждать, что она недостижима (без выбранной величины `result`
-      равен null, а значит и `profile`). Рассуждение — не проверка. Явное
+      Ниже стояла подстановка нулём — та, про которую можно было рассуждать,
+      что она недостижима: без выбранной величины `result` равен null, а
+      значит и `profile`. Рассуждение — не проверка. Явное
       сужение делает недостижимость свойством типа: ноль в разбивку бассейнов
       попасть больше не может, а если однажды сможет — расчёта просто не
       будет, и это увидит человек.

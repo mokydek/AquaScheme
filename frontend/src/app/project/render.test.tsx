@@ -1396,6 +1396,24 @@ describe('сообщения называют то, что произошло', 
     expect(ru.translation.project.gravity.chooseFreezingLink).toContain('Геология')
   })
 
+  it('храповик подстановок смотрит на виды, а не только на движок', () => {
+    /*
+      Обе подстановки 2,00 м жили в видах, и сторож не увидел ни одну: в его
+      списке `CRITICAL` не было ни одного файла из `frontend/src/app/project/`.
+      Первую нашли глазами по чертежу, вторую владелец нашёл в исходнике.
+
+      Список ведётся руками — значит, из него можно так же руками убрать.
+      Проверка держит ровно те два файла, из которых уходит вызов расчёта.
+    */
+    const audit = readFileSync(new URL('../../../../scripts/fallback-audit.mjs', import.meta.url), 'utf8')
+    for (const watched of [
+      'frontend/src/app/project/GravitySection.tsx',
+      'frontend/src/app/project/SituationSchemeSection.tsx',
+    ]) {
+      expect(audit, `${watched} выпал из списка наблюдения`).toContain(watched)
+    }
+  })
+
   it('без выбранной глубины промерзания профиль не считается по числу из воздуха', () => {
     // Сторож смотрит на ОБА раздела: первую подстановку убрали из самотёка, а
     // вторая, в ситуационной схеме, осталась и в поле зрения не попала — её не
