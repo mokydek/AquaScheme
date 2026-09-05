@@ -197,6 +197,21 @@ export function GeologySection({
     относится к новым величинам. Именно так исчезает 2,00 м: он был выбран из
     отчёта, а сегодняшний разбор его кандидатом не считает.
   */
+  /*
+    ВЫБОР ЗАКРЫТ, ПОКА ВОЗРАСТ РАЗБОРА НЕ ИЗВЕСТЕН.
+
+    Предупреждение стояло над шестью нажимаемыми кнопками, и две из них были
+    мусором из таблицы нумерации ИГЭ. Инженер выбирает 2,00 м — она наибольшая,
+    «с запасом» выглядит осторожно, у неё есть цитата, — и труба ложится вдвое
+    глубже, чем требует отчёт. Предупреждение, которое обходится одним кликом,
+    предупреждением не является.
+
+    Величины при этом ОСТАЮТСЯ НА ЭКРАНЕ: на них могли уже сослаться, и прятать
+    их — та же неправда с другого конца. Закрыт только выбор, и рядом стоит
+    единственное действие, которое его открывает: перезапуск разбора.
+  */
+  const freezingChoiceLocked = geologyAge !== null
+    && (geologyAge.kind === 'unknown' || geologyAge.kind === 'outdated')
   const chosenFreezing = content?.freezingDepthM ?? null
   const chosenMissing = geologyAge?.kind === 'current' && chosenFreezing !== null
     && freezingCandidates.length > 0
@@ -895,7 +910,15 @@ export function GeologySection({
           <div className="field" data-freezing-candidates="true">
             <span className="field-label">{t('project.geology.frostCandidates')}</span>
             <div className="chip-row">
-              {freezingCandidates.map((candidate) => (
+              {freezingCandidates.map((candidate) => (freezingChoiceLocked ? (
+                <span
+                  key={candidate.soil}
+                  className="badge"
+                  data-freezing-candidate-locked={candidate.soil}
+                >
+                  {candidate.soil}: {candidate.valueM.toFixed(2)} м
+                </span>
+              ) : (
                 <button
                   type="button"
                   key={candidate.soil}
@@ -913,9 +936,13 @@ export function GeologySection({
                 >
                   {candidate.soil}: {candidate.valueM.toFixed(2)} м
                 </button>
-              ))}
+              )))}
             </div>
-            <p className="hint">{t('project.geology.frostCandidatesHint')}</p>
+            <p className="hint">
+              {freezingChoiceLocked
+                ? t('project.geology.frostChoiceLocked')
+                : t('project.geology.frostCandidatesHint')}
+            </p>
           </div>
         )}
         {freezingUnitlessRows.length > 0 && (

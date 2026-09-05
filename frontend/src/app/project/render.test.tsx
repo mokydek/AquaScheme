@@ -113,6 +113,39 @@ describe('готовность к выпуску на экране', () => {
     expect(markup.split('<td class="mono">FREEZING_DEPTH_UNVERIFIED</td>').length - 1).toBe(1)
   })
 
+  it('устаревшие листы названы, и сводка сходится', () => {
+    /*
+      На живом сайте стояло «Листов 5: к выпуску 0, рассчитано 0,
+      предварительно 0, заблокировано 0». Пять листов и четыре нуля — для
+      читателя невозможно: пятый статус в строке назван не был.
+    */
+    const stale = {
+      sheets: [
+        { id: '1', status: 'STALE', blockers: [], warnings: [] },
+        { id: '2', status: 'STALE', blockers: [], warnings: [] },
+        { id: '3', status: 'VERIFIED', blockers: [], warnings: [] },
+      ],
+    } as unknown as WorkingDrawingSet
+    const markup = html(createElement(ReadinessView, { drawingSet: stale }))
+    expect(markup).toContain('&quot;stale&quot;:2')
+    expect(markup).toContain('&quot;total&quot;:3')
+    // Всё сошлось — строки про остаток нет.
+    expect(markup).not.toContain('data-readiness-others')
+  })
+
+  it('статус, которого сводка не называет, выходит остатком, а не тишиной', () => {
+    const unknown = {
+      sheets: [
+        { id: '1', status: 'VERIFIED', blockers: [], warnings: [] },
+        { id: '2', status: 'НЕИЗВЕСТНЫЙ', blockers: [], warnings: [] },
+      ],
+    } as unknown as WorkingDrawingSet
+    const markup = html(createElement(ReadinessView, { drawingSet: unknown }))
+    expect(markup).toContain('data-readiness-others="true"')
+    expect(markup).toContain('project.readiness.others')
+    expect(markup).toContain('&quot;count&quot;:1')
+  })
+
   it('пустой набор не выдаётся за готовый', () => {
     const markup = html(createElement(ReadinessView, { drawingSet: { sheets: [] } as unknown as WorkingDrawingSet }))
     expect(markup).toContain('выпускать нечего')
@@ -1216,6 +1249,7 @@ describe('промерзание: кандидаты отчёта видны, в
           files: { geology: 'Геологический Отчет.docx' },
           extracted: {
             geology: {
+              parserVersion: 2,
               freezingDepthCandidates: [
                 { valueM: 1.17, soil: 'Крупнообломочные', quote: 'Крупнообломочные\t1,17м', form: 'table' },
               ],
@@ -1247,6 +1281,9 @@ describe('промерзание: кандидаты отчёта видны, в
           files: { geology: 'Геологический Отчет.docx' },
           extracted: {
             geology: {
+              // Выбор кандидатов открыт только при действующем разборе: с
+              // неизвестной версией величины видны, но не выбираются.
+              parserVersion: 2,
               freezingDepthCandidates: [
                 { valueM: 0.79, soil: 'суглинков', quote: 'сезонного промерзания для суглинков – 0,79м', form: 'prose' },
                 { valueM: 1.03, soil: 'песка средней крупности', quote: 'для песка средней крупности – 1,03м', form: 'prose' },
@@ -1384,7 +1421,11 @@ describe('экран говорит, каким разбором получен�
     expect(markup).toContain('&quot;stored&quot;:1')
     expect(markup).toContain('&quot;current&quot;:2')
     // Величины не прячутся: на них могли уже сослаться.
-    expect(markup).toContain('data-freezing-candidate="Крупнообломочные"')
+    expect(markup).toContain('data-freezing-candidate-locked="Крупнообломочные"')
+    // Но и не выбираются: предупреждение, обходимое одним кликом, — не
+    // предупреждение. Кнопки нет, есть одно действие — перезапуск.
+    expect(markup).not.toContain('data-freezing-candidate="Крупнообломочные"')
+    expect(markup).toContain('project.geology.frostChoiceLocked')
     // Рядом — действие, а не только упрёк.
     expect(markup).toContain('id="reparse-geology"')
     expect(markup).toContain('project.extraction.noStoredFile')
@@ -1395,13 +1436,18 @@ describe('экран говорит, каким разбором получен�
     const markup = geology({ freezingDepthCandidates: CANDIDATES })
     expect(markup).toContain('data-extraction-age="unknown"')
     expect(markup).toContain('project.extraction.unknown')
-    expect(markup).toContain('data-freezing-candidate="Крупнообломочные"')
+    // Ровно случай владельца: шесть кнопок, две из них мусор из таблицы
+    // нумерации ИГЭ, и все шесть нажимались. Теперь видны, но не выбираются.
+    expect(markup).toContain('data-freezing-candidate-locked="Крупнообломочные"')
+    expect(markup).not.toContain('data-freezing-candidate="Крупнообломочные"')
   })
 
   it('действующий разбор молчит', () => {
     const markup = geology({ parserVersion: 2, freezingDepthCandidates: CANDIDATES })
     expect(markup).not.toContain('data-extraction-age')
+    // Разбор действующий — выбор открыт.
     expect(markup).toContain('data-freezing-candidate="Крупнообломочные"')
+    expect(markup).not.toContain('data-freezing-candidate-locked')
   })
 
   it('разбор новее кода перезапуском не лечится', () => {

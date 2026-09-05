@@ -784,7 +784,8 @@ export const en = {
       },
       readiness: {
         title: 'Release readiness',
-        summary: 'Sheets {{total}}: releasable {{verified}} ({{percent}}%), calculated {{calculated}}, preliminary {{preliminary}}, blocked {{blocked}}',
+        summary: 'Sheets {{total}}: releasable {{verified}} ({{percent}}%), calculated {{calculated}}, preliminary {{preliminary}}, blocked {{blocked}}, stale {{stale}}',
+        others: 'Other statuses: {{count}}. The listed counts do not add up to the sheet total — the set has a status this line does not name.',
         thReason: 'Reason',
         thSheets: 'Sheets',
         thSection: 'Where it is cleared',
@@ -1334,6 +1335,7 @@ export const en = {
         noXlsxColumns: 'Borehole logs are not substituted with XLSX rows: the attached XLSX is an empty template with demonstration examples.',
         frostCandidates: 'Candidates from the report',
         frostCandidatesHint: 'The report gives the depth for several soils and does not say which one lies at the invert. Pick yours — the value and its citation are filled in; confirming is a separate step.',
+        frostChoiceLocked: 'Selection is locked: these values come from a different parse, and some of them may already have been discarded. Re-run the parse above and the candidates become selectable again.',
         frostUnitless: 'Report rows with no unit stated',
         frostUnitlessRow: '{{raw}} — no unit stated; soil: {{soil}}; document row: “{{quote}}”',
         frostUnitlessHint: 'Not counted as candidates: a bare number cannot be told apart from a column index. If it is a depth, enter it by hand and name the source.',

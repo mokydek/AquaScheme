@@ -128,3 +128,57 @@ describe('готовность проекта', () => {
     expect(unmapped, `коды без раздела: ${unmapped.join(', ')}`).toEqual([])
   })
 })
+
+describe('сводка сходится с числом листов', () => {
+  /**
+   * ИЗМЕРЕНО НА ЖИВОМ САЙТЕ: «Листов 5: к выпуску 0, рассчитано 0,
+   * предварительно 0, заблокировано 0». Пять листов, четыре нуля — для
+   * читателя это невозможно. Пятый статус, STALE, в строке назван не был, и
+   * устаревший лист исчезал из сводки, оставаясь в общем числе.
+   */
+  const ALL_STATUSES: WorkingDrawingSheet['status'][] = [
+    'BLOCKED', 'PRELIMINARY', 'CALCULATED', 'VERIFIED', 'STALE',
+  ]
+
+  it('сумма по byStatus равна числу листов для любого набора', () => {
+    // Каждый статус берётся разное число раз, включая ноль: набор, где
+    // сходится только «удобная» комбинация, инвариантом не является.
+    for (let shift = 0; shift < ALL_STATUSES.length; shift++) {
+      const sheets: WorkingDrawingSheet[] = []
+      ALL_STATUSES.forEach((status, index) => {
+        const count = (index + shift) % ALL_STATUSES.length
+        for (let n = 0; n < count; n++) sheets.push(sheet(`${status}-${shift}-${n}`, status))
+      })
+      const readiness = summarizeReadiness({ sheets } as WorkingDrawingSet)
+      const sum = ALL_STATUSES.reduce((total, status) => total + readiness.byStatus[status], 0)
+      expect(sum, `набор ${shift}: перечисленное не сходится с общим числом`)
+        .toBe(readiness.sheetCount)
+    }
+  })
+
+  it('устаревший лист считается, а не пропадает', () => {
+    const readiness = summarizeReadiness({
+      sheets: [sheet('s1', 'STALE'), sheet('s2', 'STALE'), sheet('s3', 'VERIFIED')],
+    } as WorkingDrawingSet)
+    expect(readiness.sheetCount).toBe(3)
+    expect(readiness.byStatus.STALE).toBe(2)
+    expect(readiness.byStatus.VERIFIED).toBe(1)
+  })
+
+  it('статус, которого шлюз не знает, виден недостачей, а не тишиной', () => {
+    /*
+      Свод типизирован пятью статусами, и шестой, пришедший из данных, в него
+      попасть не может: `if (sheet.status in byStatus)` его пропускает. Это
+      осознанно — но тогда сумма обязана разойтись с общим числом, чтобы вид
+      назвал разницу строкой «прочие статусы», а не показал ещё одну
+      невозможную арифметику.
+    */
+    const readiness = summarizeReadiness({
+      sheets: [sheet('s1', 'VERIFIED'), sheet('s2', 'НЕИЗВЕСТНЫЙ' as WorkingDrawingSheet['status'])],
+    } as WorkingDrawingSet)
+    const sum = ALL_STATUSES.reduce((total, status) => total + readiness.byStatus[status], 0)
+    expect(readiness.sheetCount).toBe(2)
+    expect(sum).toBe(1)
+    expect(readiness.sheetCount - sum).toBe(1)
+  })
+})

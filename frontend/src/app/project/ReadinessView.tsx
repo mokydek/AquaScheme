@@ -16,6 +16,22 @@ export function ReadinessView({ drawingSet }: { drawingSet: WorkingDrawingSet })
   const { t } = useTranslation()
   const readiness = summarizeReadiness(drawingSet)
   const { byStatus } = readiness
+  /*
+    ОСТАТОК НАЗЫВАЕТСЯ, А НЕ ПРОПАДАЕТ.
+
+    В строке стояло «Листов 5: к выпуску 0, рассчитано 0, предварительно 0,
+    заблокировано 0» — арифметически невозможное для читателя. Пятый статус,
+    STALE, в строке назван не был, и лист, ставший устаревшим, исчезал из
+    сводки, оставаясь в общем числе.
+
+    Пересчитывать здесь ничего нельзя — свод берётся из шлюза. Зато можно
+    проверить, что перечисленное сходится с общим числом, и назвать разницу.
+    Тогда следующий новый статус не спрячется так же: он выйдет строкой
+    «прочие статусы», а не тихой недостачей.
+  */
+  const named = byStatus.VERIFIED + byStatus.CALCULATED + byStatus.PRELIMINARY
+    + byStatus.BLOCKED + byStatus.STALE
+  const others = readiness.sheetCount - named
 
   return (
     <div>
@@ -28,8 +44,14 @@ export function ReadinessView({ drawingSet }: { drawingSet: WorkingDrawingSet })
           calculated: byStatus.CALCULATED,
           preliminary: byStatus.PRELIMINARY,
           blocked: byStatus.BLOCKED,
+          stale: byStatus.STALE,
         })}
       </p>
+      {others !== 0 && (
+        <p className="stat-line warn" role="alert" data-readiness-others="true">
+          {t('project.readiness.others', { count: others })}
+        </p>
+      )}
 
       {readiness.issues.length > 0 && (
         <div className="table-wrap">
