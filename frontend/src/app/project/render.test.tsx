@@ -1370,6 +1370,32 @@ describe('сообщения называют то, что произошло', 
     expect(ru.translation.project.demoDone).toContain('демо')
   })
 
+  it('отказ считать не превращается в пустой экран', () => {
+    /*
+      На живом сайте у проекта с шестью загруженными документами было: участков
+      0, схемы нет, кнопок выпуска нет — и ни слова о том, чего не хватает.
+      Отказ считать без промерзания правильный, но его следствием оказалось
+      молчание, а молчание хуже и подстановки, и пустого состояния.
+
+      Ветка `!result` разбирала три причины и не разбирала эту: она проваливалась
+      в `null`. Проверка по исходнику, потому что раздел не монтируется без
+      двух десятков пропов; она держит ровно то, что пропало, — ветку, ссылку
+      и то, что названо известным без промерзания.
+    */
+    const source = readFileSync(new URL('./GravitySection.tsx', import.meta.url), 'utf8')
+    const code = source.split(/\r?\n/).filter((line) => {
+      const trimmed = line.trim()
+      return !trimmed.startsWith('*') && !trimmed.startsWith('/*') && !trimmed.startsWith('//')
+    }).join(' ')
+    expect(code).toContain('data-gravity-needs-freezing')
+    expect(code).toContain("freezingDepth.valueM === null ?")
+    expect(code).toContain('knownWithoutFreezing')
+    // Ссылка ведёт прямо к разделу геологии, а не к общему совету.
+    expect(code).toContain('href="#geology"')
+    expect(ru.translation.project.gravity.knownWithoutFreezing).toContain('участков в сети')
+    expect(ru.translation.project.gravity.chooseFreezingLink).toContain('Геология')
+  })
+
   it('без выбранной глубины промерзания профиль не считается по числу из воздуха', () => {
     // Сторож смотрит на ОБА раздела: первую подстановку убрали из самотёка, а
     // вторая, в ситуационной схеме, осталась и в поле зрения не попала — её не

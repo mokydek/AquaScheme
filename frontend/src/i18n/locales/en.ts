@@ -240,6 +240,8 @@ export const en = {
         thGround: 'Ground, m',
         thPlanned: 'Design surface, m',
         freezingNotChosen: 'The frost depth is not chosen, so the profile is not computed: it sets the minimum burial, that is, the whole profile. There is no default here — and none in the project documents either. Pick a candidate from the report in the geology section.',
+knownWithoutFreezing: 'Known without the freezing depth: {{pipes}} sections in the network, {{measured}} of them have a length, totalling {{length}} m. What depends on it is the profile and everything after it: burials, normative slopes, lifts, the bill of materials.',
+chooseFreezingLink: 'Choose the freezing depth from the report candidates — the Geology section',
         freezingTitle: 'Frost depth for the profile',
         geologyCoverageTitle: 'Geology coverage along the route',
         reconstruction: {

@@ -488,6 +488,21 @@ export function GravitySection({
       .finally(() => setSaving(false))
   }, [catalogResolution.blocker, onRunComplete, pipes.length, projectId, result, routeStatus, runRequest])
 
+  /*
+    Что известно и без промерзания: состав сети и её длина.
+
+    Длина суммируется ТОЛЬКО по участкам, где она есть, а число таких участков
+    называется отдельно. Иначе участок без длины тихо вошёл бы в сумму нулём —
+    и «длина сети» оказалась бы меньше настоящей без всякого признака.
+  */
+  const networkLength = useMemo(() => {
+    const measured = network.pipes.filter((pipe) => Number.isFinite(pipe.lengthM))
+    return {
+      measured: measured.length,
+      totalM: measured.reduce((sum, pipe) => sum + pipe.lengthM, 0),
+    }
+  }, [network])
+
   const rows = useMemo(() => {
     if (!result) return []
     return [...result.pipes].sort((a, b) => b.flowLps - a.flowLps)
@@ -1618,6 +1633,33 @@ export function GravitySection({
             <p className="notice error">Гидравлический расчёт остановлен: инженерная трасса имеет статус «{routeStatus}». Завершите загрузку исходных данных и пересчитайте трассу.</p>
           ) : catalogResolution.blocker ? (
             <p className="notice error">{catalogResolution.blocker}</p>
+          ) : freezingDepth.valueM === null ? (
+            /*
+              МОЛЧАНИЕ ХУЖЕ ОБОИХ ИСХОДОВ.
+
+              Отказ считать профиль без выбранной глубины промерзания —
+              правильный и не откатывается: промерзание задаёт наименьшее
+              заглубление, то есть весь профиль. Но следствием было пустое
+              место: инженер, загрузивший весь комплект, видел ноль участков,
+              ни схемы, ни кнопок — и ни слова о том, чего не хватает.
+
+              Здесь названо и то, чего не хватает, и то, что УЖЕ известно без
+              промерзания: состав сети и её длина от него не зависят. Ссылка
+              ведёт прямо к кандидатам из отчёта, а не к общему совету.
+            */
+            <div className="notice warn" data-gravity-needs-freezing="true">
+              <p className="stat-line warn">{t('project.gravity.freezingNotChosen')}</p>
+              <p className="stat-line">
+                {t('project.gravity.knownWithoutFreezing', {
+                  pipes: network.pipes.length,
+                  measured: networkLength.measured,
+                  length: networkLength.totalM.toFixed(1),
+                })}
+              </p>
+              <p className="hint">
+                <a href="#geology">{t('project.gravity.chooseFreezingLink')}</a>
+              </p>
+            </div>
           ) : null}
           {systemType === 'storm' && (
             <p className="stat-line">{t('project.gravity.demoSeedHint')} Используйте безопасную кнопку «Загрузить синтетическое демо» в заголовке проекта.</p>
