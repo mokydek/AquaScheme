@@ -3,12 +3,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { strict as assert } from 'node:assert'
 import { test } from 'node:test'
-import { buildBootstrap, constraintStatements, migrationFiles } from './build-bootstrap.mjs'
+import { buildBootstrap, constraintStatements, migrationFiles, withoutCrlf } from './build-bootstrap.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 test('bootstrap.sql matches backend/migrations', () => {
-  const current = readFileSync(join(ROOT, 'backend', 'bootstrap.sql'), 'utf8')
+  const current = withoutCrlf(readFileSync(join(ROOT, 'backend', 'bootstrap.sql'), 'utf8'))
   assert.equal(
     current,
     buildBootstrap(),
@@ -32,7 +32,7 @@ test('migrations are concatenated in numeric order with none skipped', () => {
 test('every migration reaches the bootstrap; отличия — только отключённые строки', () => {
   const bootstrap = buildBootstrap()
   for (const name of migrationFiles()) {
-    const body = readFileSync(join(ROOT, 'backend', 'migrations', name), 'utf8').trimEnd()
+    const body = withoutCrlf(readFileSync(join(ROOT, 'backend', 'migrations', name), 'utf8')).trimEnd()
     assert.ok(bootstrap.includes(`-- BEGIN ${name}`), `${name} без маркера начала`)
     assert.ok(bootstrap.includes(`-- END ${name}`), `${name} без маркера конца`)
     // Тело миграции доходит целиком ЛИБО дословно, либо с закомментированными

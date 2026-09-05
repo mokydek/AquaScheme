@@ -9,6 +9,23 @@ const BASELINE = JSON.parse(readFileSync(new URL('../../docs/parser-baseline.jso
   parsers: Record<string, { source: string; sha256: string }>
 }
 
+/**
+ * Содержимое без переводов строк, зависящих от платформы.
+ *
+ * ОТПЕЧАТОК СЛОМАЛСЯ ИМЕННО ЗДЕСЬ. На выкладке Windows файлы приходят с CRLF,
+ * на выкладке с `core.autocrlf=input` — с LF, и sha256 одного и того же исходника
+ * получается разный: 86869dc1… против cc47368b…. Проверка, красная на одной машине
+ * и зелёная на другой, ловит не правку разбора, а способ выгрузки — и первым же
+ * делом обвинила невиновный файл.
+ *
+ * Перевод строки результата разбора не меняет, поэтому его здесь и не должно быть
+ * видно. Всё остальное — пробелы, комментарии, порядок строк — отпечаток меняет:
+ * сторож обязан спросить, а не догадываться.
+ */
+function normalized(source: string): string {
+  return source.replace(/\r\n/g, '\n')
+}
+
 describe('версия разбора не забывается', () => {
   /**
    * ЗАЩИТА ОТ ЗАБЫВЧИВОСТИ, А НЕ ОТ ОШИБКИ.
@@ -26,7 +43,7 @@ describe('версия разбора не забывается', () => {
   it('исходник каждого разбора совпадает с записанным отпечатком', () => {
     for (const [itemId, pinned] of Object.entries(BASELINE.parsers)) {
       const source = readFileSync(new URL(pinned.source, `file://${ROOT.replace(/\\/g, '/')}`), 'utf8')
-      const actual = createHash('sha256').update(source, 'utf8').digest('hex')
+      const actual = createHash('sha256').update(normalized(source), 'utf8').digest('hex')
       expect(actual, [
         `${pinned.source} изменился, а отпечаток в docs/parser-baseline.json прежний.`,
         `Правка меняет РЕЗУЛЬТАТ разбора — поднимите PARSER_VERSIONS.${itemId}`,
@@ -34,6 +51,20 @@ describe('версия разбора не забывается', () => {
         `Новый: ${actual}`,
       ].join(' ')).toBe(pinned.sha256)
     }
+  })
+
+  it('отпечаток не зависит от переводов строк выкладки', () => {
+    /*
+      Сторож обвинил невиновный файл: на выкладке Windows отпечаток совпадал, на
+      выкладке с LF — нет, и `main` был красным при пустом diff. Проверка, которая
+      зависит от способа выгрузки, ловит не то, ради чего заведена.
+    */
+    const withCrlf = 'const a = 1\r\nconst b = 2\r\n'
+    const withLf = 'const a = 1\nconst b = 2\n'
+    const digest = (source: string) => createHash('sha256').update(normalized(source), 'utf8').digest('hex')
+    expect(digest(withCrlf)).toBe(digest(withLf))
+    // А содержательная правка отпечаток по-прежнему меняет.
+    expect(digest(withLf)).not.toBe(digest('const a = 2\nconst b = 2\n'))
   })
 
   it('у каждой объявленной версии есть отпечаток, и наоборот', () => {

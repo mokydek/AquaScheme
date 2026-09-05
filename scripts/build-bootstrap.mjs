@@ -191,7 +191,7 @@ export function buildBootstrap() {
       '-- ============================================================',
       `-- BEGIN ${name}`,
       '-- ============================================================',
-      readFileSync(join(MIGRATIONS, name), 'utf8').trimEnd(),
+      withoutCrlf(readFileSync(join(MIGRATIONS, name), 'utf8')).trimEnd(),
       `-- END ${name}`,
       '',
     )
@@ -213,6 +213,19 @@ export function buildBootstrap() {
   return sql
 }
 
+/**
+ * Текст без CRLF.
+ *
+ * Git отдаёт файлы на Windows с CRLF, а склейка собирается в памяти с LF, и
+ * побайтовое сравнение краснело на свежей выкладке при полностью совпадающем
+ * содержимом: «bootstrap.sql устарел» на нетронутом файле. Перевод строки
+ * ничего не значит ни для SQL, ни для порядка миграций, и различать выкладки
+ * по нему проверка не должна.
+ */
+export function withoutCrlf(text) {
+  return text.replace(/\r\n/g, '\n')
+}
+
 if (process.argv[1] && process.argv[1].endsWith('build-bootstrap.mjs')) {
   const generated = buildBootstrap()
   if (process.argv.includes('--check')) {
@@ -223,7 +236,7 @@ if (process.argv[1] && process.argv[1].endsWith('build-bootstrap.mjs')) {
       console.error('backend/bootstrap.sql отсутствует. Выполните: node scripts/build-bootstrap.mjs')
       process.exit(1)
     }
-    if (current !== generated) {
+    if (withoutCrlf(current) !== generated) {
       console.error('backend/bootstrap.sql устарел относительно backend/migrations/.')
       console.error('Выполните: node scripts/build-bootstrap.mjs')
       process.exit(1)
