@@ -1,10 +1,10 @@
 {
   "_comment": "Текст интерфейса мимо словарей. Может только снижаться; обновляется через npm run audit:i18n -- --write-baseline. Приложение заявляет три языка, и зашитая по-русски строка двум из них показывается неверно.",
-  "total": 14,
+  "total": 12,
   "files": [
     {
       "file": "frontend/src/landing/NetworkFigure.tsx",
-      "count": 5
+      "count": 3
     },
     {
       "file": "frontend/src/app/project/NormRegistrySection.tsx",
