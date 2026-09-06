@@ -1648,40 +1648,51 @@ export function GravitySection({
       )}
       {!result && (
         <>
-          {pipes.length === 0 ? (
-            <p className="stat-line warn">{t('project.gravity.needNetwork')}</p>
-          ) : routeStatus === 'stale' || routeStatus === 'blocked' ? (
-            <p className="notice error">Гидравлический расчёт остановлен: инженерная трасса имеет статус «{routeStatus}». Завершите загрузку исходных данных и пересчитайте трассу.</p>
-          ) : catalogResolution.blocker ? (
-            <p className="notice error">{catalogResolution.blocker}</p>
-          ) : freezingDepth.valueM === null ? (
-            /*
-              МОЛЧАНИЕ ХУЖЕ ОБОИХ ИСХОДОВ.
+          {/*
+            ВСЕ ПРИЧИНЫ СРАЗУ, А НЕ ПЕРВАЯ ПО СПИСКУ.
 
-              Отказ считать профиль без выбранной глубины промерзания —
-              правильный и не откатывается: промерзание задаёт наименьшее
-              заглубление, то есть весь профиль. Но следствием было пустое
-              место: инженер, загрузивший весь комплект, видел ноль участков,
-              ни схемы, ни кнопок — и ни слова о том, чего не хватает.
+            Здесь стояла цепочка `? :`: срабатывала одна ветка, остальные
+            молчали. Владелец открыл проект, где не хватает и сети, и ряда
+            диаметров, и промерзания, — и увидел одну строку. Про добавленный
+            разбор «что известно без промерзания» он написал, что его нет: он и
+            не мог его увидеть, потому что раньше срабатывала ветка сети.
 
-              Здесь названо и то, чего не хватает, и то, что УЖЕ известно без
-              промерзания: состав сети и её длина от него не зависят. Ссылка
-              ведёт прямо к кандидатам из отчёта, а не к общему совету.
-            */
+            Инженеру нужно расстояние до результата целиком, а не первый шаг.
+            Причины независимы, значит и показываются независимо.
+          */}
+          {pipes.length === 0 && (
+            <p className="stat-line warn" data-gravity-needs-network="true">{t('project.gravity.needNetwork')}</p>
+          )}
+          {(routeStatus === 'stale' || routeStatus === 'blocked') && (
+            <p className="notice error" data-gravity-route-status={routeStatus}>
+              Гидравлический расчёт остановлен: инженерная трасса имеет статус «{routeStatus}». Завершите загрузку исходных данных и пересчитайте трассу.
+            </p>
+          )}
+          {catalogResolution.blocker && (
+            <p className="notice error" data-gravity-needs-catalog="true">{catalogResolution.blocker}</p>
+          )}
+          {freezingDepth.valueM === null && (
             <div className="notice warn" data-gravity-needs-freezing="true">
               <p className="stat-line warn">{t('project.gravity.freezingNotChosen')}</p>
-              <p className="stat-line">
-                {t('project.gravity.knownWithoutFreezing', {
-                  pipes: network.pipes.length,
-                  measured: networkLength.measured,
-                  length: networkLength.totalM.toFixed(1),
-                })}
-              </p>
+              {/*
+                Состав сети называется, только когда сеть есть: «участков 0,
+                длина 0,0 м» — не сведение, а шум поверх строки о том, что сети
+                нет.
+              */}
+              {network.pipes.length > 0 && (
+                <p className="stat-line">
+                  {t('project.gravity.knownWithoutFreezing', {
+                    pipes: network.pipes.length,
+                    measured: networkLength.measured,
+                    length: networkLength.totalM.toFixed(1),
+                  })}
+                </p>
+              )}
               <p className="hint">
                 <a href="#geology">{t('project.gravity.chooseFreezingLink')}</a>
               </p>
             </div>
-          ) : null}
+          )}
           {systemType === 'storm' && (
             <p className="stat-line">{t('project.gravity.demoSeedHint')} Используйте безопасную кнопку «Загрузить синтетическое демо» в заголовке проекта.</p>
           )}

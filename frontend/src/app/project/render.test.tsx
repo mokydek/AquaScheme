@@ -45,6 +45,7 @@ const { KitWizardPanel } = await import('./KitWizardPanel')
 const { SurveyActValues, surveyActRows } = await import('./SurveyActValues')
 const { ExistingNetworkSection } = await import('./ExistingNetworkSection')
 const { ImportSection } = await import('./ImportSection')
+const { GravitySection } = await import('./GravitySection')
 const { SituationSchemeView } = await import('./SituationSchemeView')
 const { buildSituationSchemeSvg } = await import('../../shared/projectAlbum')
 const { PLAN_LINE_STYLE } = await import('../../shared/planStyles')
@@ -1388,12 +1389,36 @@ describe('сообщения называют то, что произошло', 
       return !trimmed.startsWith('*') && !trimmed.startsWith('/*') && !trimmed.startsWith('//')
     }).join(' ')
     expect(code).toContain('data-gravity-needs-freezing')
-    expect(code).toContain("freezingDepth.valueM === null ?")
+    expect(code).toContain('freezingDepth.valueM === null &&')
     expect(code).toContain('knownWithoutFreezing')
     // Ссылка ведёт прямо к разделу геологии, а не к общему совету.
     expect(code).toContain('href="#geology"')
     expect(ru.translation.project.gravity.knownWithoutFreezing).toContain('участков в сети')
     expect(ru.translation.project.gravity.chooseFreezingLink).toContain('Геология')
+  })
+
+  it('раздел называет ВСЕ незакрытые причины, а не первую', () => {
+    /*
+      Разбор «что известно без промерзания» владелец на живом сайте не увидел, и
+      был прав: ветка стояла четвёртой в цепочке `? :`, а на его проекте
+      срабатывала первая — сети нет, конвертер не развёрнут. Одна причина
+      закрывала три остальных, и расстояние до результата было неизвестно.
+
+      Проверка монтирует раздел, а не читает исходник: вопрос был именно
+      «видно ли это на экране».
+    */
+    const markup = html(createElement(GravitySection, {
+      projectId: 'p1', systemType: 'sewer', projectName: 'Станкевича',
+      buildings: [], nodes: [], pipes: [],
+    } as never))
+    // Ни сети, ни промерзания — и сказано про обе причины, а не про первую.
+    // Ряд диаметров при пустом наборе условий блокером не становится: каталог
+    // берёт стандартный ряд, и заявлять здесь стоп было бы неправдой.
+    expect(markup).toContain('data-gravity-needs-network="true"')
+    expect(markup).toContain('data-gravity-needs-freezing="true"')
+    expect(markup).toContain('href="#geology"')
+    // Сети нет — состав сети не называется: «участков 0» это шум, а не сведение.
+    expect(markup).not.toContain('project.gravity.knownWithoutFreezing')
   })
 
   it('храповик подстановок смотрит на виды, а не только на движок', () => {
