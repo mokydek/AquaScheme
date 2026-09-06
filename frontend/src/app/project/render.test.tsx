@@ -642,6 +642,59 @@ describe('панель мастера комплекта', () => {
     expect(markup).toContain('ТУ_05-3-2723 (1).pdf')
   })
 
+  it('конвертация названа своим именем, а не общим «прогон…»', () => {
+    /*
+      На бесплатном тарифе первая загрузка DWG после простоя — около минуты
+      пробуждения сервиса плюс конвертация плюс разбор, и всё это время стояло
+      одно многоточие. Отличить пробуждение от зависания было нечем, а маршрут
+      тем временем молча тикал к таймауту в три минуты.
+    */
+    const converting = html(createElement(KitWizardPanel, {
+      state: emptyKitState(), picked: {}, busySlotId: 'topobaseFull', busyStage: 'converting',
+      onPick: () => {}, onRun: () => {},
+    }))
+    expect(converting).toContain('data-kit-busy="converting"')
+    expect(converting).toContain('project.kit.converting')
+    expect(converting).not.toContain('project.kit.running')
+
+    const parsing = html(createElement(KitWizardPanel, {
+      state: emptyKitState(), picked: {}, busySlotId: 'topobaseFull', busyStage: null,
+      onPick: () => {}, onRun: () => {},
+    }))
+    expect(parsing).toContain('data-kit-busy="running"')
+    expect(parsing).toContain('project.kit.running')
+  })
+
+  it('разобранная конвертация помечена, и тем же словом, что в импорте', () => {
+    const markup = html(createElement(KitWizardPanel, {
+      state: {
+        ...emptyKitState(),
+        topobaseFull: {
+          kind: 'parsed', fileName: 'Молдагалиева.dwg', convertedFromDwg: true,
+          counters: [{ label: 'слоёв', value: 50 }],
+        },
+        surveyStankevicha: {
+          kind: 'parsed', fileName: 'станкевича.dxf', counters: [{ label: 'слоёв', value: 28 }],
+        },
+      },
+      picked: {}, busySlotId: null, onPick: () => {}, onRun: () => {},
+    }))
+    expect(markup).toContain('data-kit-converted="topobaseFull"')
+    expect(markup).toContain('upload.convertedFromDwg')
+    // Обычный DXF пометки не получает: она означала бы конвертацию, которой нет.
+    expect(markup).not.toContain('data-kit-converted="surveyStankevicha"')
+  })
+
+  it('слоты чертежей принимают .dwg и не велят конвертировать руками', () => {
+    const markup = html(createElement(KitWizardPanel, {
+      state: emptyKitState(), picked: {}, busySlotId: null, onPick: () => {}, onRun: () => {},
+    }))
+    // `accept` уходит в диалог выбора файла: с `.dxf` владелец свой DWG не видел.
+    expect(markup).toContain('accept=".dxf,.dwg"')
+    // Подсказка больше не приказывает проделать руками то, что делает сервис.
+    expect(markup).not.toContain('→ .dxf')
+  })
+
   it('показывает все пять состояний и счётчики разбора', () => {
     const state = {
       ...emptyKitState(),

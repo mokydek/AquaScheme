@@ -11,7 +11,9 @@ import {
 import { STANKEVICHA_KIT_SLOTS, emptyKitState, runKit, verifyKitAgainstStored } from '../../shared/kitWizard'
 import type { KitSlotDefinition, KitSlotState, KitState, KitStoredCheck } from '../../shared/kitWizard'
 import { saveBasisFile } from '../../shared/basisFiles'
-import { extractGeologyDocument, extractSurveyActDocument } from '../../shared/documentExtraction'
+import { uploadErrorText } from '../../shared/upload'
+import type { UploadStage } from '../../shared/upload'
+import { extractGeologyDocument, extractSurveyActDocument, extractSurveyDrawing } from '../../shared/documentExtraction'
 import { loadDatasetContent } from '../../shared/datasets'
 import { formatAppError } from '../../shared/errorFormatting'
 import { trainingScreensEnabled } from '../../shared/features'
@@ -67,6 +69,14 @@ export function StankevichaDemoView({
   const [picked, setPicked] = useState<Record<string, File | undefined>>({})
   const [kit, setKit] = useState<KitState>(() => emptyKitState())
   const [busySlotId, setBusySlotId] = useState<string | null>(null)
+  /**
+   * Чего именно ждём, пока слот занят.
+   *
+   * «Прогон…» стоял и на разборе, и на минуте пробуждения сервиса конвертации.
+   * Владелец не мог отличить пробуждение от зависания, а маршрут тем временем
+   * молча тикал к таймауту в три минуты.
+   */
+  const [busyStage, setBusyStage] = useState<UploadStage | null>(null)
 
   /**
    * Разбор съёмки — тот же конвейер, что и для подосновы коллектора.
@@ -76,15 +86,26 @@ export function StankevichaDemoView({
    * слои идут в существующую таблицу ролей.
    */
   const parseSurvey = (slot: KitSlotDefinition) => async (file: File): Promise<KitSlotState> => {
-    const { parseDxfNetwork, classifyDxfConstraints } = await import('@aquascheme/engine/dxfread')
-    const data = parseDxfNetwork(await file.text())
-    if (!data.ok) throw new Error(t('project.kit.dxfUnreadable'))
-    const constraints = classifyDxfConstraints(data, {}) as unknown as {
-      roles?: Record<string, string>
-      textEntities?: unknown[]
-      surveyPoints?: unknown[]
+    /*
+      ЧЕРТЁЖ ИДЁТ ТЕМ ЖЕ МАРШРУТОМ, ЧТО И ВЕЗДЕ.
+
+      Разбор — в `documentExtraction`, рядом с геологией и актом; здесь только
+      перевод отказа в текст и счётчики. Второго маршрута загрузки не заводится:
+      скопировать конвертацию в слот значило бы развести два места, которые
+      обязаны разойтись.
+    */
+    let survey
+    try {
+      survey = await extractSurveyDrawing(file, t('project.kit.dxfUnreadable'), setBusyStage)
+    } catch (cause) {
+      // Отказ маршрута — ошибка слота с НАЗВАННОЙ причиной, а не `stored`:
+      // «сохранено, разбор позже» здесь было бы неправдой, разбора не будет.
+      const text = uploadErrorText(t, cause)
+      if (text !== null) throw new Error(text)
+      throw cause
+    } finally {
+      setBusyStage(null)
     }
-    const roles = Object.values(constraints.roles ?? {})
     /*
       Съёмка попадает и в реестр ИРД, а не только в разбор. Слот разбирал DXF
       и НИЧЕГО не записывал в набор документов: раздел ИРД показывал
@@ -96,13 +117,14 @@ export function StankevichaDemoView({
     return {
       kind: 'parsed',
       fileName: file.name,
+      convertedFromDwg: survey.fromDwg,
       counters: [
-        { label: t('project.kit.counterLayers'), value: data.layers.length },
-        { label: t('project.kit.counterRoledLayers'), value: roles.filter((role) => role !== 'unknown').length },
-        { label: t('project.kit.counterPoints'), value: data.points.length },
-        { label: t('project.kit.counterSegments'), value: data.segments.length },
-        { label: t('project.kit.counterMarks'), value: constraints.textEntities?.length ?? 0 },
-        { label: t('project.kit.counterElevations'), value: constraints.surveyPoints?.length ?? 0 },
+        { label: t('project.kit.counterLayers'), value: survey.layers },
+        { label: t('project.kit.counterRoledLayers'), value: survey.roledLayers },
+        { label: t('project.kit.counterPoints'), value: survey.points },
+        { label: t('project.kit.counterSegments'), value: survey.segments },
+        { label: t('project.kit.counterMarks'), value: survey.marks },
+        { label: t('project.kit.counterElevations'), value: survey.elevations },
       ],
     }
   }
@@ -255,6 +277,7 @@ export function StankevichaDemoView({
     }
     setKit(verifyKitAgainstStored(next, stored, t('project.kit.notInDatabase')))
     setBusySlotId(null)
+    setBusyStage(null)
   }
 
   const lengthM = stankevichaChainLengthM()
@@ -269,6 +292,7 @@ export function StankevichaDemoView({
         state={kit}
         picked={Object.fromEntries(STANKEVICHA_KIT_SLOTS.map((slot) => [slot.id, picked[slot.id]?.name]))}
         busySlotId={busySlotId}
+        busyStage={busyStage}
         onPick={pick}
         onRun={() => { void run() }}
       />

@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import type { ChangeEvent } from 'react'
 import { STANKEVICHA_KIT_SLOTS, kitProgress } from '../../shared/kitWizard'
 import type { KitSlotDefinition, KitState } from '../../shared/kitWizard'
+import type { UploadStage } from '../../shared/upload'
 
 /**
  * Панель мастера комплекта.
@@ -17,6 +18,7 @@ export function KitWizardPanel({
   state,
   picked,
   busySlotId,
+  busyStage,
   onPick,
   onRun,
   slots = STANKEVICHA_KIT_SLOTS,
@@ -25,6 +27,14 @@ export function KitWizardPanel({
   /** Выбранные, но ещё не прогнанные файлы: имя по слоту. */
   picked: Record<string, string | undefined>
   busySlotId: string | null
+  /**
+   * Чего ждём, пока слот занят. `null` — обычный разбор.
+   *
+   * Конвертация — не разбор, и называть их одним «прогон…» значит скрывать
+   * минуту пробуждения сервиса за тем же многоточием, что и секунду чтения
+   * файла. Процентов и обратного отсчёта здесь нет: их никто не считает.
+   */
+  busyStage?: UploadStage | null
   onPick: (slotId: string, event: ChangeEvent<HTMLInputElement>) => void
   onRun: () => void
   slots?: readonly KitSlotDefinition[]
@@ -39,6 +49,13 @@ export function KitWizardPanel({
       return (
         <>
           <span className="ok">{t('project.kit.statusParsed', { file: value.fileName })}</span>
+          {/*
+            Разобран не выбранный файл, а его конвертация. Тот же текст, что в
+            разделе импорта: одно событие — одно название.
+          */}
+          {value.convertedFromDwg && (
+            <span className="hint" data-kit-converted={slot.id}>{t('upload.convertedFromDwg')}</span>
+          )}
           <span className="hint" data-kit-counters={slot.id}>
             {value.counters.map((counter) => `${counter.label}: ${counter.value}`).join('; ')}
           </span>
@@ -127,7 +144,13 @@ export function KitWizardPanel({
                   </label>
                   <span className="hint">{picked[slot.id] ?? t('project.kit.notPicked')}</span>
                 </td>
-                <td>{busySlotId === slot.id ? <span className="hint">{t('project.kit.running')}</span> : status(slot)}</td>
+                <td>
+                  {busySlotId === slot.id ? (
+                    <span className="hint" data-kit-busy={busyStage ?? 'running'}>
+                      {busyStage === 'converting' ? t('project.kit.converting') : t('project.kit.running')}
+                    </span>
+                  ) : status(slot)}
+                </td>
               </tr>
             ))}
           </tbody>

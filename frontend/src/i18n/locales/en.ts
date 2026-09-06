@@ -383,6 +383,7 @@ chooseFreezingLink: 'Choose the freezing depth from the report candidates — th
         demoRun: 'Demo and full run',
         run: 'Run everything',
         running: 'Running',
+        converting: 'converting DWG to DXF in the service; after idling it takes up to a minute to wake',
         hint: 'Demo and full run: load the test district, route, hydraulics and material selection in one click. Run everything: the same pipeline on the current data',
         done: 'Project calculated and saved',
         releaseBlocked: 'not a single sheet of {{total}} is fit for issue; what holds them is in the “Release readiness” section below',

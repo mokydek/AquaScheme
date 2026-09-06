@@ -79,8 +79,8 @@ export interface KitSlotDefinition {
  * данное, и попасть в расчёт он не должен.
  */
 export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
-  { id: 'topobaseFull', hint: 'Молдагалиева.dwg → .dxf (полная топооснова)', accept: '.dxf', handling: 'parsed', parsedAtStage: null, basisItemId: 'topo' },
-  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg → .dxf', accept: '.dxf', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull', basisItemId: 'topo_survey' },
+  { id: 'topobaseFull', hint: 'Молдагалиева.dwg (полная топооснова)', accept: '.dxf,.dwg', handling: 'parsed', parsedAtStage: null, basisItemId: 'topo' },
+  { id: 'surveyStankevicha', hint: '_топо станкевича.dwg', accept: '.dxf,.dwg', handling: 'parsed', parsedAtStage: null, optional: true, coveredBy: 'topobaseFull', basisItemId: 'topo_survey' },
   { id: 'technicalConditions', hint: 'ТУ_05-3-2723 (1).pdf', accept: '.pdf', handling: 'parsed', parsedAtStage: null, basisItemId: 'tu' },
   { id: 'designBrief', hint: 'ТЗ_5669_Станкевича.pdf', accept: '.pdf', handling: 'basis', parsedAtStage: 4, basisItemId: 'assignment' },
   // Акт технического обследования разбирается текстовым слоем: он даёт материал
@@ -95,7 +95,20 @@ export const STANKEVICHA_KIT_SLOTS: readonly KitSlotDefinition[] = [
 /** Состояние одного слота. Пять видов, шестого нет. */
 export type KitSlotState =
   | { kind: 'empty' }
-  | { kind: 'parsed'; fileName: string; counters: Array<{ label: string; value: number }> }
+  | {
+    kind: 'parsed'
+    fileName: string
+    counters: Array<{ label: string; value: number }>
+    /**
+     * Разобран не выбранный файл, а его конвертация из DWG.
+     *
+     * Имя поля и текст на экране те же, что в разделе импорта
+     * (`upload.convertedFromDwg`): второго названия одному и тому же событию
+     * не заводится. Инженер обязан видеть, что чертёж прошёл через сервис, —
+     * иначе расхождение с исходным DWG будет нечем объяснить.
+     */
+    convertedFromDwg?: boolean
+  }
   | { kind: 'stored'; fileName: string; parsedAtStage: number }
   | { kind: 'failed'; fileName: string; reason: string }
   /**

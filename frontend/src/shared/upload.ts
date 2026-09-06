@@ -49,7 +49,11 @@ export async function convertDrawing(data: Blob | string, to: 'dwg' | 'dxf'): Pr
   const controller = new AbortController()
   // Render's free instance may need about a minute to wake up. Three minutes
   // still leaves enough headroom while guaranteeing that the UI can recover.
-  const timeout = window.setTimeout(() => controller.abort(), 180_000)
+  // `setTimeout`, а не `window.setTimeout`: маршрут не обязан жить в DOM.
+  // Привязка к `window` мешала прогнать его вне браузера — а прогон по
+  // настоящему файлу владельца и есть единственное доказательство, что он
+  // работает.
+  const timeout = setTimeout(() => controller.abort(), 180_000)
   try {
     response = await fetch(`${CONVERTER_URL}/convert?to=${to}&version=ACAD2018`, {
       method: 'POST',
@@ -59,11 +63,25 @@ export async function convertDrawing(data: Blob | string, to: 'dwg' | 'dxf'): Pr
   } catch {
     throw new UploadError('converterFailed', from)
   } finally {
-    window.clearTimeout(timeout)
+    clearTimeout(timeout)
   }
   if (!response.ok) throw new UploadError('converterFailed', from)
   return response.blob()
 }
+
+/**
+ * Этап маршрута, о котором можно сказать вслух.
+ *
+ * Конвертация — не разбор. На бесплатном тарифе первая загрузка DWG после
+ * простоя это около минуты пробуждения сервиса плюс сама конвертация, и всё
+ * это время экран показывал одно многоточие: отличить пробуждение от зависания
+ * было нечем. Маршрут знает, чего именно ждёт, — и говорит об этом вызвавшему.
+ *
+ * Этапов ровно столько, сколько маршрут различает. Процентов и обратного
+ * отсчёта здесь нет и не будет: их никто не считает, и показывать их значило бы
+ * выдумывать.
+ */
+export type UploadStage = 'converting'
 
 /** Kinds a section can receive after routing (DWG arrives as DXF text). */
 export type RoutedKind = Exclude<UploadFileKind, 'dwg' | 'unknown'>
@@ -77,11 +95,16 @@ export interface RoutedUpload {
   fromDwg?: boolean
 }
 
-export async function routeUpload(file: File, allowed: RoutedKind[]): Promise<RoutedUpload> {
+export async function routeUpload(
+  file: File,
+  allowed: RoutedKind[],
+  onStage?: (stage: UploadStage) => void,
+): Promise<RoutedUpload> {
   const kind = await detectFileKind(file)
   if (kind === 'unknown') throw new UploadError('unknownType', kind)
   if (kind === 'dwg') {
     if (!allowed.includes('dxf')) throw new UploadError('unsupportedType', kind)
+    onStage?.('converting')
     const dxf = await convertDrawing(file, 'dxf')
     return { kind: 'dxf', file, text: await dxf.text(), fromDwg: true }
   }

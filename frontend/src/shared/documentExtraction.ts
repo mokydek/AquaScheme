@@ -1,4 +1,6 @@
 import { PARSER_VERSIONS } from '@aquascheme/engine'
+import { routeUpload } from './upload'
+import type { UploadStage } from './upload'
 
 /**
  * Разбор документов проекта — одним местом на всё приложение.
@@ -82,5 +84,60 @@ export async function extractSurveyActDocument(
     payload: { parserVersion: PARSER_VERSIONS.survey_act, ...facts },
     pageCount: pages.length,
     valueCount: countSurveyActValues(facts),
+  }
+}
+
+/** Что дал разбор чертежа топоосновы. */
+export interface SurveyDrawingExtraction {
+  layers: number
+  roledLayers: number
+  points: number
+  segments: number
+  marks: number
+  elevations: number
+  /** Разобран не выбранный файл, а его конвертация из DWG. */
+  fromDwg: boolean
+}
+
+/**
+ * Разбирает чертёж топоосновы — DXF или DWG.
+ *
+ * DWG идёт через `routeUpload`, ТОТ ЖЕ маршрут, что и все прочие загрузки
+ * приложения. Слот мастера читал файл сам (`parseDxfNetwork(await
+ * file.text())`), поэтому DWG в него было не положить: `accept` не показывал
+ * его в диалоге, а подсказка велела владельцу конвертировать руками то, что
+ * сервис делает за пять секунд. Ошибки при этом не было — возможность просто
+ * не предлагалась.
+ *
+ * Скопировать конвертацию в слот было нельзя: два маршрута загрузки обязаны
+ * разойтись. Поэтому разбор переехал сюда, к разбору геологии и акта, а слот
+ * стал тонкой обёрткой.
+ *
+ * Отказ маршрута выходит наружу как `UploadError` — непереведённым: словарь
+ * живёт в интерфейсе, и переводить здесь значило бы завести его второй раз.
+ */
+export async function extractSurveyDrawing(
+  file: File,
+  unreadableMessage: string,
+  onStage?: (stage: UploadStage) => void,
+): Promise<SurveyDrawingExtraction> {
+  const routed = await routeUpload(file, ['dxf'], onStage)
+  const { parseDxfNetwork, classifyDxfConstraints } = await import('@aquascheme/engine/dxfread')
+  const data = parseDxfNetwork(routed.text ?? '')
+  if (!data.ok) throw new Error(unreadableMessage)
+  const constraints = classifyDxfConstraints(data, {}) as unknown as {
+    roles?: Record<string, string>
+    textEntities?: unknown[]
+    surveyPoints?: unknown[]
+  }
+  const roles = Object.values(constraints.roles ?? {})
+  return {
+    layers: data.layers.length,
+    roledLayers: roles.filter((role) => role !== 'unknown').length,
+    points: data.points.length,
+    segments: data.segments.length,
+    marks: constraints.textEntities?.length ?? 0,
+    elevations: constraints.surveyPoints?.length ?? 0,
+    fromDwg: routed.fromDwg === true,
   }
 }
