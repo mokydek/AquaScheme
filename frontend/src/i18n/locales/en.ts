@@ -6,35 +6,45 @@ export const en = {
       update: 'Refresh',
     },
     landing: {
-      kicker: 'Outdoor water supply networks',
-      title: 'Upload the surveys. Receive the design.',
+      kicker: 'Outdoor sewer networks',
+      title: 'Upload the survey. Get the design.',
       description:
-        'AquaScheme traces a looped network from the source to every building, runs hydraulic calculations with EPANET, selects pipe diameters and materials and produces DXF drawings, an explanatory note and a bill of materials.',
+        'AquaScheme reads the topographic survey, the utility conditions, the '
+        + 'inspection act and the geotechnical report, sizes the gravity sewer to '
+        + 'SN RK 4.01-03-2013 and produces working drawings, schedules and a bill of '
+        + 'materials. Every value remembers which document it came from.',
       cta: 'Open the application',
       ctaSecondary: 'How it works',
       figure: {
-        caption: 'Network W1. Looped layout',
+        caption: 'Sewer profile K1',
         sheet: 'Sheet 1',
       },
       how: {
         kicker: 'Process',
-        title: 'From surveys to drawings',
+        title: 'From survey to drawings',
         steps: {
           s1: {
-            title: 'Input data',
-            text: 'Upload a CSV or GeoJSON survey, place the buildings and set the source. Missing parameters are taken from the codes and clearly flagged.',
+            title: 'Source document set',
+            text: 'Survey, utility conditions, inspection act, geotechnical report. '
+              + 'The program extracts diameters, elevations and depths itself — each '
+              + 'finding with the quoted line and page number.',
           },
           s2: {
-            title: 'Routing',
-            text: 'The system builds a digital terrain model and traces a looped network from the source to every building around the development.',
+            title: 'Route and profile',
+            text: 'On reconstruction the profile is tied to the measured invert levels '
+              + 'of the existing manholes, not to the code minimum. Adverse gradients '
+              + 'are found and reported with numbers.',
           },
           s3: {
-            title: 'Hydraulics',
-            text: 'EPANET computes flow distribution, velocities and heads. Diameters are selected iteratively from the standard series.',
+            title: 'Gravity hydraulics',
+            text: 'Diameter, gradient, filling and self-cleansing velocity to '
+              + 'SN RK 4.01-03-2013. The diameter comes from the utility conditions, '
+              + 'not from the existing pipe.',
           },
           s4: {
-            title: 'Deliverables',
-            text: 'DXF drawings for AutoCAD, a PDF explanatory note and an XLSX bill of materials.',
+            title: 'Documentation',
+            text: 'Plan sheets by chainage, longitudinal profile, manhole schedule and '
+              + 'bill of materials. DXF for AutoCAD, explanatory note as PDF.',
           },
         },
       },
@@ -43,28 +53,37 @@ export const en = {
         title: 'The full engineering cycle',
         items: {
           f1: {
-            title: 'Water demand',
-            text: 'Design flows per SP RK 4.01-101 with peak factors and fire fighting demand.',
+            title: 'Every value keeps its source',
+            text: 'Each number records how it is backed: measured, taken from a '
+              + 'document, adopted from a code, or absent. The rank is on screen.',
           },
           f2: {
-            title: 'Looped layout',
-            text: 'Looping delivers reliability and even supply. Dead ends only where the codes allow them.',
+            title: 'Document extraction',
+            text: 'Utility conditions, inspection act and geotechnical report are '
+              + 'parsed. Extracted is not confirmed: only what the engineer confirms '
+              + 'enters the calculation.',
           },
           f3: {
-            title: 'Service pressure',
-            text: 'Every building gets pressure within the code range. Problem nodes are highlighted with recommendations.',
+            title: 'Profile from existing inverts',
+            text: 'Reconstruction ties into what is already in the ground. A gradient '
+              + 'conflict between ties is reported with numbers, never resolved silently.',
           },
           f4: {
             title: 'Pipe materials',
-            text: 'PE100, ductile iron, steel, PVC. Selection follows soils, groundwater, seismicity and working pressure.',
+            text: 'Selected strictly from the active catalogue: by soils, groundwater, '
+              + 'seismicity and burial depth. No suitable item — the program says so '
+              + 'instead of substituting the nearest one.',
           },
           f5: {
-            title: 'Seismic and hazards',
-            text: 'Site seismicity, subsidence and flooding are reflected in materials and joints.',
+            title: 'Geology and frost depth',
+            text: 'All frost-depth candidates are shown, each with its soil and the '
+              + 'quoted report line. The engineer chooses: documents can contradict '
+              + 'themselves.',
           },
           f6: {
-            title: 'Fittings and structures',
-            text: 'Gate valves, hydrants at most 150 m apart, air valves, washouts and manholes are placed automatically.',
+            title: 'Release gate',
+            text: 'A sheet is not released while any of its values is unconfirmed. '
+              + 'Every stop factor names the section and the action that clears it.',
           },
         },
       },
@@ -74,15 +93,16 @@ export const en = {
         items: {
           o1: {
             title: 'DXF drawings',
-            text: 'Network plan on the survey base at 1:500, longitudinal profiles of mains and manhole schedules. Layers follow GOST 21.704. Opens in AutoCAD.',
+            text: 'Plan sheets by chainage on the 1:500 survey base, longitudinal profile '
+              + 'and the overall network plan. Layers and linetypes follow GOST 21.704. Opens in AutoCAD.',
           },
           o2: {
             title: 'Explanatory note',
-            text: 'Input data, methodology, hydraulic calculation tables, pressure checks and design justifications with code references.',
+            text: 'Input data, methodology, hydraulic calculation tables, the required head check on the pressure main and design justifications with code references.',
           },
           o3: {
             title: 'Bill of materials',
-            text: 'Pipes by diameter and length, fittings, valves, hydrants and manholes.',
+            text: 'Pipes by diameter and length, fittings, valves and manholes.',
           },
         },
       },
@@ -91,8 +111,8 @@ export const en = {
         title: 'Every formula cites its clause',
         items: {
           n1: {
-            code: 'SP RK 4.01-101-2012',
-            name: 'Water supply. Outdoor networks and structures',
+            code: 'SN RK 4.01-03-2013*',
+            name: 'Sewerage. Outdoor networks and structures',
           },
           n2: {
             code: 'SP RK 2.03-30-2017',
@@ -100,11 +120,11 @@ export const en = {
           },
           n3: {
             code: 'GOST 21.704-2011',
-            name: 'Rules for working documentation of outdoor water supply networks',
+            name: 'Rules for working documentation of outdoor water supply and sewerage networks',
           },
           n4: {
-            code: 'SNiP 2.04.02-84*',
-            name: 'Reference. Hydraulic calculation methodology',
+            code: 'SP RK 4.01-103-2013',
+            name: 'Outdoor water supply and sewerage networks and structures',
           },
         },
       },
